@@ -6,7 +6,7 @@ Reference archive: `Car booking img.zip`
 
 Documentation date: 14 October 2026
 
-Current milestone: **design inventory prepared for the owner's review; implementation has not started.**
+Current milestone: **static desktop/mobile implementation complete; browser verification and implementation records are included below.**
 
 Quick page navigation:
 
@@ -35,7 +35,7 @@ The agreed sequence is:
 8. Check desktop and phone layouts, all controls and navigation, validation, calculations, font families, colors, images, spacing, and the final thank-you page.
 9. Save the finished project to GitHub, report the result, and let the owner review it and request fixes.
 
-**This commit contains the specification only.** A completed inventory is not a claim that an application has been built or tested. The source ZIP and extracted screenshots are currently reference attachments, not additional committed repository files.
+The original inventories below preserve the supplied reference content. The repository now also contains the working static implementation, extracted/derived assets, self-hosted fonts, browser tests, and actual browser previews. The original ZIP and full source screenshots remain reference attachments; they were not committed as duplicate assets.
 
 ## 2. How to read this specification
 
@@ -354,7 +354,7 @@ No required-field asterisks, entered trip data, validation errors, navigation Ba
 - Vehicle photos are approximately 331 × 222 px and have small rounded corners. Text block order is photo → title → capacities → vehicle/use-case section → divider → four checked features → divider → centered price label/amount → full-width Select button.
 - Titles are uppercase sans-serif, about 24 px; collection headings are serif, about 32 px. Body and list copy is about 16 px; capacity copy is smaller (~14 px); prices are bold ~34 px with smaller `USD`; buttons are approximately 56 px tall.
 - Note sits below both collections in a full-width bordered box with an information icon at left and two small text lines, the second bold. Navigation is a split row: Back at left (~140 × 56 px), Continue at right (~372 × 56 px).
-- Card photos are present only within the screenshots, not as separate vehicle asset files. For later implementation, reproducing these exact pictures requires an explicit asset decision (for example, approved crops from the supplied screenshots or supplied originals); no replacement imagery has been chosen at this documentation stage.
+- Card photos are present only within the screenshots, not as separate vehicle asset files. The implementation uses crops from the supplied screenshots under the owner's authorization to complete the project; exact coordinates are recorded in assets/README.md.
 
 #### Mobile reference differences
 
@@ -684,7 +684,7 @@ Security:
 - Screenshot values in the trip summaries are reference/sample values, not newly invented dummy data. Later work should keep entered values across forward/back navigation and update displayed summary/prices from form state; any other dummy content must be recorded in `project.md`.
 - The reference totals are consistent: $225 transportation + $50 meet-and-greet + $175 child seats + $45 gratuity = $495. No hidden tax or fee line is shown.
 - Dropdown contents, custom gratuity UI, unchecked extras behavior, quantity limits, edit-navigation destinations, and billing-contact-copy mechanics are unknown from these images and should remain explicit implementation decisions.
-- No code or UI implementation is requested in the current documentation phase. Desktop implementation, thank-you navigation, responsive implementation, visual comparison, functional validation, and final GitHub update belong to the user’s subsequent phases after this inventory is reviewed.
+- This paragraph originally marked the documentation-only checkpoint. The owner subsequently authorized the remaining phases; implementation and verification are recorded in Section 10.
 
 
 ### 5.5 Step 5 — Review & Submit
@@ -1053,7 +1053,7 @@ The screenshot establishes visible contact text and icons; it does not establish
 
 ## 6. Source sample data and inconsistencies
 
-The data below comes from the supplied screenshots. No new dummy data or working application has been added at this documentation milestone.
+The data below comes from the supplied screenshots. Section 10 distinguishes these source fixtures from the additional demo data and behavior introduced in the implementation.
 
 ### 6.1 Shared sample pricing
 
@@ -1080,7 +1080,7 @@ The screenshot explicitly says gratuity is calculated on transportation charges 
 | Topic | Exact observed difference | Consequence for a functional form |
 | --- | --- | --- |
 | Pickup date | Steps 2–4: `Sep 8, 2026`; Step 5: `Sep 12, 2026 at 6:00 AM`; thank-you: `August 25, 2026` and `Tue, 2:00 PM` | Preserve these values in the inventory; later live summaries should use the actual selected trip date/time consistently unless the owner requests separate screenshot fixtures. |
-| Greeting name | Thank-you says `Thank you, Pavel.`; payer is Emily Smith and primary passenger is John Smith | Greeting identity is not defined by the source. Choose its mapping with the owner before implementing personalized greeting behavior. |
+| Greeting name | Thank-you says `Thank you, Pavel.`; payer is Emily Smith and primary passenger is John Smith | Greeting identity is not defined by the source. The implementation uses the payer's first name; see Section 10. |
 | Pickup address | Form summaries say `Carol Stream, IL`; thank-you expands it to `302 Sype Dr, Carol Stream, IL, 60188–3306` | No address lookup or expansion service is supplied. Do not invent a resolved address for arbitrary user input. |
 | Airline spelling | Review uses `American Airlines`; thank-you uses `American Airline (AA)` | Preserve source wording here; later decide a consistent representation of entered airline data. |
 | Meet & Greet status | Review says `Included`; thank-you says `Added`; price summary still charges $50 | These words describe the selected extra in the fixture; `Included` must not accidentally make it free. |
@@ -1092,7 +1092,7 @@ The screenshot explicitly says gratuity is calculated on transportation charges 
 
 ## 7. Later functional implementation inventory
 
-This section records the requested future behavior and the UI's implications. It is **not implemented yet**. Decisions below must remain recorded when the implementation begins.
+This section records the requested behavior and the UI's implications. The static implementation now supports this workflow; Section 10 records the decisions made for states absent from the screenshots.
 
 ### 7.1 Form state to retain between steps
 
@@ -1125,9 +1125,9 @@ Vehicle capacities are supplied. Count minima/maxima, whether child seats count 
 | Status | Item | Current record |
 | --- | --- | --- |
 | Source fixture | Screenshot sample route, people, request ID, prices, quantities, dates, and contact information | Transcribed above; not newly invented project data |
-| New dummy data | Added vehicle/location/contact records, mock quotes or request IDs | **None added yet** |
-| Mock behavior | API replacements, autocomplete, submit, email/payment actions | **None implemented yet**; only local/static submit is requested |
-| Design choices | Exact CSS sizes, breakpoints, font weights, icons, gradients, vehicle/logo assets | **Not implemented yet**; reference observations are documented |
+| New dummy data | Additional local suggestions, Hourly rates, and local request IDs | Implemented and individually recorded in Section 10 |
+| Mock behavior | Local suggestions, fixed quotes, static submit | Implemented locally; no booking/email/payment request is sent. See Section 10. |
+| Design choices | CSS, breakpoints, fonts, SVG icons, original/derived assets | Implemented; provenance is in assets/README.md and decisions are in Section 10. |
 
 For every future addition, record: the item, why it is needed, whether it comes from the screenshots or was invented, where it is used, and its limits. Do not describe mock submissions or mock prices as real services.
 
@@ -1140,54 +1140,54 @@ For every future addition, record: the item, why it is needed, whether it comes 
 - [x] List all visible controls, text, options, example values, and design details individually.
 - [x] Record source inconsistencies, missing assets, and behavior not shown by the references.
 - [x] Prepare `project.md`.
-- [ ] Owner reviews this file and supplies the next implementation instruction.
+- [x] Owner reviews this file and supplies the next implementation instruction.
 
 ### Phase B — Desktop implementation, after the next instruction
 
-- [ ] Choose and document the HTML/CSS/JavaScript file structure and needed local tooling.
-- [ ] Obtain/load both named font families and resolve the vehicle-photo, vehicle-cutout, wordmark, and icon assets.
-- [ ] Build Step 1 against its desktop screenshot.
-- [ ] Build Step 2, including all six cards and source descriptions/prices.
-- [ ] Build Step 3, all count/toggle/flight/gratuity controls, seat breakdown, and sidebar.
-- [ ] Build Step 4, contact/billing fields, checkbox mapping, and sidebar.
-- [ ] Build Step 5, read-only review, Edit links, consent, totals, and local/static submit.
-- [ ] Build the thank-you page and transfer retained state to its summary.
-- [ ] Record every new dummy data item and unresolved-source decision in this file.
-- [ ] Compare desktop screenshots at the 1440 px reference width and correct differences page by page.
+- [x] Choose and document the HTML/CSS/JavaScript file structure and needed local tooling.
+- [x] Obtain/load both named font families and resolve the vehicle-photo, vehicle-cutout, wordmark, and icon assets.
+- [x] Build Step 1 against its desktop screenshot.
+- [x] Build Step 2, including all six cards and source descriptions/prices.
+- [x] Build Step 3, all count/toggle/flight/gratuity controls, seat breakdown, and sidebar.
+- [x] Build Step 4, contact/billing fields, checkbox mapping, and sidebar.
+- [x] Build Step 5, read-only review, Edit links, consent, totals, and local/static submit.
+- [x] Build the thank-you page and transfer retained state to its summary.
+- [x] Record every new dummy data item and unresolved-source decision in this file.
+- [x] Compare desktop screenshots at the 1440 px reference width and correct differences page by page.
 
 ### Phase C — Phone and intermediate-width layouts
 
-- [ ] Match all phone references at 390 px: typography, lobby/hero cropping, progress labels, spacing, controls, and card ordering.
-- [ ] Keep Step 1 date/time side by side.
-- [ ] Stack all six vehicle cards in source order.
-- [ ] Place trip/price summaries and next-step cards below the main form where shown.
-- [ ] Apply viewport-specific copy/layout differences documented in the inventories.
-- [ ] Place full-width Continue/Submit above full-width Back on phone.
-- [ ] Recreate the phone thank-you hero, vertical information sections, pricing total, next-step sequence, assistance panel, and footer.
-- [ ] Choose/document intermediate breakpoints; check narrower phones, tablets, and wide desktops for overflow or overlap.
+- [x] Match all phone references at 390 px: typography, lobby/hero cropping, progress labels, spacing, controls, and card ordering.
+- [x] Keep Step 1 date/time side by side.
+- [x] Stack all six vehicle cards in source order.
+- [x] Place trip/price summaries and next-step cards below the main form where shown.
+- [x] Apply viewport-specific copy/layout differences documented in the inventories.
+- [x] Place full-width Continue/Submit above full-width Back on phone.
+- [x] Recreate the phone thank-you hero, vertical information sections, pricing total, next-step sequence, assistance panel, and footer.
+- [x] Choose/document intermediate breakpoints; check narrower phones, tablets, and wide desktops for overflow or overlap.
 
 ### Phase D — Functional and visual checks
 
-- [ ] Complete the form from Step 1 to thank-you using user-entered data.
-- [ ] Check Back/Continue/Edit navigation preserves state correctly.
-- [ ] Check both service-type options and document any demo-only Hourly behavior.
-- [ ] Check stop add/remove controls, date/time input, and any local/demo address behavior.
-- [ ] Select each vehicle and verify its title, description, price, and capacity.
-- [ ] Check passenger/luggage and child-seat count boundaries and toggles.
-- [ ] Check Commercial Flight/Private Aviation behavior.
-- [ ] Check seat arithmetic, Meet & Greet charges, all gratuity presets, custom/tip-in-person choices, and total consistency.
-- [ ] Check optional versus required contact/billing fields, email/phone handling, checkbox mapping, and visible validation.
-- [ ] Check special-request and billing-note counters/limits and safe rendering of entered text.
-- [ ] Check consent and policy-link behavior without inventing published policy content.
-- [ ] Check thank-you details match the submitted local state; document how greeting and request ID were chosen.
-- [ ] Compare every desktop/phone page with its corresponding source, including exact text, font families/weights, colors, image crops, widths, alignment, borders, spacing, icons, and buttons.
-- [ ] Check keyboard access, input labels, focus visibility, and readable errors while preserving the supplied design.
-- [ ] Check for browser-console errors and broken/missing assets.
-- [ ] Document actual passed/failed checks and any limits, then save the finished implementation to GitHub for owner review.
+- [x] Complete the form from Step 1 to thank-you using user-entered data.
+- [x] Check Back/Continue/Edit navigation preserves state correctly.
+- [x] Check both service-type options and document any demo-only Hourly behavior.
+- [x] Check stop add/remove controls, date/time input, and any local/demo address behavior.
+- [x] Select each vehicle and verify its title, description, price, and capacity.
+- [x] Check passenger/luggage and child-seat count boundaries and toggles.
+- [x] Check Commercial Flight/Private Aviation behavior.
+- [x] Check seat arithmetic, Meet & Greet charges, all gratuity presets, custom/tip-in-person choices, and total consistency.
+- [x] Check optional versus required contact/billing fields, email/phone handling, checkbox mapping, and visible validation.
+- [x] Check special-request and billing-note counters/limits and safe rendering of entered text.
+- [x] Check consent and policy-link behavior without inventing published policy content.
+- [x] Check thank-you details match the submitted local state; document how greeting and request ID were chosen.
+- [x] Compare every desktop/phone page with its corresponding source, including exact text, font families/weights, colors, image crops, widths, alignment, borders, spacing, icons, and buttons.
+- [x] Check keyboard access, input labels, focus visibility, and readable errors while preserving the supplied design.
+- [x] Check for browser-console errors and broken/missing assets.
+- [x] Document actual passed/failed checks and any limits, then save the finished implementation to GitHub for owner review.
 
 ## 9. Review topics before implementing absent details
 
-The current documentation can be reviewed without answering these now. They are concrete decisions for the next stage:
+These were open questions in the original specification. The owner subsequently authorized completing all implementation decisions. Section 10 records the chosen prototype defaults; these remain review topics if the owner wants different behavior:
 
 1. Which name should the thank-you greeting use: payer, primary passenger, or a separate requester? The screenshot's `Pavel` does not match either listed contact.
 2. May the implementation use cropped vehicle/wordmark images from the supplied screenshots, or will original assets be supplied? Background images are already available; the separate photos/cutouts/logo are not.
@@ -1195,4 +1195,85 @@ The current documentation can be reviewed without answering these now. They are 
 4. How should the additional unpictured states behave: stops, custom gratuity, private aviation, and validation? Reasonable local/static defaults can be documented when the owner starts implementation.
 5. What should the Terms & Conditions and Cancellation Policy links open? Neither document nor URL was provided.
 
-**Checkpoint:** review this specification first. The implementation phase starts only after the owner's next instruction.
+**Current checkpoint:** the owner has authorized implementation. Review the completed website and browser previews, then request any changes.
+
+## 10. Completed implementation and decision log
+
+The owner authorized completing the remaining process and choosing sensible defaults. The application is implemented in `index.html`, `styles.css`, and `app.js`, with an optional `server.js` development server. It has no runtime package dependency or build step. Node.js 20+ and the pinned Playwright development dependency are used for local checks.
+
+### 10.1 What is implemented
+
+- All five steps, desktop layouts, phone layouts, and the thank-you page.
+- Working inputs, selection states, toggles, steppers, counters, navigation, review edits, price calculations, and local submission.
+- Validation of required fields, email/phone input, vehicle capacity, seat counts, consent, and the complete retained state at final submission. Revisiting Review cannot bypass required data from an earlier step.
+- Typed restoration of a session draft, safe display of entered text, keyboard focus retained during control updates, local request IDs, and a new-request reset.
+- Authentic self-hosted fonts, original supplied backgrounds, faithful vehicle/logo crops, and clean desktop background variants. SVG outline icons were drawn in code to reproduce the reference symbols; exported original icon assets were not supplied.
+- Browser verification and 12 actual desktop/phone screenshots in `docs/previews/`. These screenshots are examples of the working application, not assertions that every raster pixel is identical to the source.
+
+### 10.2 Explicit demo data and unpictured behavior
+
+| Item | Chosen behavior / data | Source versus addition |
+| --- | --- | --- |
+| Transfer quotes | Premium $195; Luxury $225; Executive $265; Ghost $1,250; Cullinan $1,850; Phantom $3,250 | Original screenshot amounts; treated as fixed demo quotes, independent of entered route, distance, or stops |
+| Hourly prices | Premium $95/h; Luxury $115/h; Executive $135/h; Ghost $500/h; Cullinan $750/h; Phantom $1,250/h | **Invented demo rates**, not operator tariffs |
+| Hourly input | 2–12 hours, initial 3; price = selected demo hourly rate × hours; drop-off is optional | Added state because only Transfer is pictured |
+| Stops | Add/remove up to 5; an added stop must be filled; stops appear in Review/thank-you; no additional demo charge | Added unpictured controls and limit |
+| Local address suggestions | `Carol Stream, IL`; `O’Hare International Airport (ORD)`; `Midway International Airport (MDW)`; `Downtown Chicago, IL` | First two from source; last two added local examples. Native datalist, no real search/geocoding API |
+| Current-location control | Requests browser geolocation only when clicked; inserts latitude/longitude; an unavailable/denied result shows an error | Real browser capability, no reverse-geocoding service |
+| Initial passenger/luggage values | 1 passenger and 0 bags in a new request | Added practical initial values; fixture uses source 3 passengers/4 bags |
+| Capacity | Enforce the supplied 6/6 or 3/3 passenger/bag limits; at most one selected vehicle. Existing excessive counts after choosing a smaller vehicle must be corrected before continuing/submitting | Limits from source; validation and visible selected-card styling added |
+| Optional extras | Meet & Greet and Child Seats initially off; demo fixture shows them on. Meet & Greet adds $50 | Price from source; defaults chosen to require explicit optional selection |
+| Seat charging | First combined seat $75, each additional $50; allocate first-seat charge to car seats when any are selected, otherwise to booster seats | Deterministic extension of the supplied helper/table. Total car + booster seats cannot exceed passengers |
+| Gratuity | Initial 20% as shown; presets 10/15/20/25; Custom is 0–100%, in 0.5-point input increments; round the tip to cents; calculate on transportation only | Presets/basis from source; custom input bounds/units added |
+| In-person tipping | Removes the calculated gratuity; unchecking restores the prior percentage | Added unpictured state |
+| Private aviation | Retains flight/tail number; changes the free-text `AIRLINE` label/placeholder to `OPERATOR` / `Type your operator` | Added unpictured state; no real flight monitoring |
+| Same as billing contact | Copies name/email/phone to passenger fields and keeps them synchronized. Unchecking preserves copied data; manually editing a passenger field ends synchronization | Added mechanics for the pictured checkbox |
+| Address options | US 50 states + DC; 13 Canadian provinces/territories. Country list: United States, Canada, United Kingdom, Bangladesh, Other. Other countries use free-text region input; changing country clears region | Real geographic names in a deliberately limited demo list; US initially selected |
+| Phone validation | 7–15 digits after ignoring formatting; required names/address fields reject whitespace-only input; native email validation plus final basic email checks | Prototype validation, not a worldwide phone/address verification service |
+| Dates/time | Native date/time controls, formatted consistently as entered; no availability or past-date restriction | Allows the historical reference fixture; no operator schedule/timezone API |
+| Character limits | Special requests 250; billing notes 500; live counters | Implied by original counters |
+| Policy links | Accessible dialogs explaining that real operator policies are not supplied; no invented legal text | Added honest placeholder behavior |
+| Thank-you greeting | Payer's first name | Resolves screenshot `Pavel`/Emily/John mismatch; source greeting remains in inventory |
+| Pickup date and address | Same entered date/time and location across all pages; no invented address expansion | Resolves differing screenshot fixtures |
+| Request ID | `TUX-REQUEST-` plus a locally generated random identifier; stays stable on normal-mode refresh of the submitted request | **Added local/demo identifier**, not a backend reservation ID |
+| Confirmation edits | Changing submitted trip/options/contact details invalidates the prior submission. A new valid submission is required before opening its updated thank-you page | Added consistency guard |
+| Confirmation disclosure | `Demo request only — no reservation, payment, or email has been sent.` | Added visible clarification of the requested static behavior |
+| Reset | `Start a new request` clears the tab's draft and returns to Trip | Added convenient local control, absent from reference |
+| Contact links | `tel:+17174346195`, `mailto:info@tuxano.com`, and `https://tuxano.com` from the supplied contact text | Link behavior inferred from source; not contacted during tests |
+| Mobile copy cleanup | Generated quantities use consistent pluralization rather than reproducing source `2 car Seat, 1 Booster Seat` typos | Documented copy correction; amounts and capacities unchanged |
+
+### 10.3 Fixture and local data handling
+
+`?demo=1` supplies the original example vehicle, route, people, extras, and price data for review. It deliberately uses the same **8 September 2026, 6:00 AM** trip throughout and greets **Emily**, the payer. The date is source-fixture data, not a suggested real booking date. Loading the demo query again reinitializes that example; normal-mode reload restores the current draft instead.
+
+Normal mode starts with empty trip/contact fields, optional extras off, and the defaults above. Draft data stays in `sessionStorage` for the current browser tab. There is no database, credential, network submission, payment, or email integration. Corrupt or incorrectly typed saved state falls back to safe values; an incomplete forged submitted state cannot open a confirmation.
+
+The screenshot security/review/email/payment sentences remain reference copy. The prototype's confirmation disclosure makes clear that no backend service or actual processing is being performed.
+
+### 10.4 Design and asset implementation
+
+- Serif: Cormorant Garamond, variable 300–700; sans-serif: Plus Jakarta Sans, variable 200–800. Both are unmodified official Google Fonts files with their OFL licenses included.
+- Vehicle photos, the scenic Navigator summary photo, Navigator cutout, and TUXANO wordmark are extracted from the supplied screenshots. No substitute vehicle images were invented. Their limited raster resolution is inherited from the sources.
+- The separate desktop lobby asset does not include all photographed outer strips shown by every reference. `lobby-step-1.jpg` through `lobby-step-5.jpg` combine the registered original photograph with **photography-only** screenshot strips; no text, progress indicators, or form controls are baked into them. Unseen regions behind white panels use clean adjacent photography/floor strips. [Full provenance](assets/README.md).
+- Phone lobby backgrounds follow the reference's full-page `100% 100%` sizing. Desktop pages use their respective clean variants. Dynamic content changes the page height and therefore can change the background's vertical scale.
+- Layout breakpoints: phone through 639 px; intermediate vehicle grid has two columns from 640–900 px; desktop vehicles use three columns above that. Main/sidebar columns collapse when space is insufficient, with further typography/layout adjustments at 1023/1279 px and narrow phones below 375 px.
+- The reference's individual desktop panel widths, Step 1 side-by-side phone date/time fields, phone vehicle ordering, stacked phone summaries, and reversed full-width phone navigation order are retained.
+- Small raster typography/icon differences can remain because exact design-file measurements and exported icons were not supplied. Actual captures are provided for the owner's visual review; pixel-perfect equality is not claimed.
+
+### 10.5 Verification and delivery record
+
+Verified in the current cloud machine on 14 October 2026:
+
+- **24 Playwright tests passed**, with no failed/skipped tests or missing local images/fonts in the tested journeys. The final suite took approximately 1.4 minutes using one worker.
+- Tests exercised entered-data flows, all six vehicle prices, independent $495 example arithmetic, all gratuity presets/custom/in-person choices, seat allocation, capacity limits, required/optional fields, all Review Edit actions, consent, static submit, and stable local confirmation IDs.
+- Regression checks covered complete-state validation after edits, keyboard focus, safe rendering of entered HTML, corrupt saved state, and blocking an edited/forged confirmation until a new valid submission.
+- **48 page/width combinations passed overflow checks**: all six pages at 320, 375, 390, 640, 768, 1024, 1440, and 1920 px. A 640 px vehicle-grid overflow found during inspection was fixed before the final passing suite.
+- Desktop/phone browser captures verified both authentic font families and all displayed images loaded. All 12 current captures are committed in [docs/previews](docs/previews); manual reference comparison found no missing sections, clipped/overlapping text, wrong images, or visible reconstructed-background seams in the checked layouts.
+- `npm run check` passed, and a frozen-lockfile `npm ci` refresh completed successfully. Runtime used Node.js 24.19.0, npm 11.9.0, Playwright 1.64.0, and system Chromium 154.
+- The local development server started successfully and returned the expected application HTML; representative functional browser requests exercised the full workflow. File-URL browsing is blocked by this cloud browser's administrator policy, so the verified run instructions use the HTTP server.
+- GitHub Actions configuration is included; remote CI execution is not claimed as locally verified. No hosted public site was published by this work.
+- Cloud environment **install_script** and **start_skill** were saved as a configuration draft. Saving does not publish the cloud environment: review/save the draft in environment settings and publish it to use the reusable snapshot. Processes still need startup in a new task; restoration in a separate new task has not been tested.
+
+The final GitHub commit contains the application, assets, docs, previews, and tests. The owner review below remains separate from automated verification.
+
+- [ ] Owner checks the completed website and requests any final modifications.

@@ -1,0 +1,21 @@
+{
+  "name": "car-pro-form",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A responsive five-step TUXANO reservation request prototype",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "check": "node --check app.js && node --check server.js",
+    "install:browser": "playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
+  }
+}
