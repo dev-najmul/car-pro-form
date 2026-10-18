@@ -25,7 +25,7 @@ GOOGLE_ROUTES_API_KEY=YOUR_SERVER_ROUTES_KEY
 For local use, create `.env.local` from the names in [.env.example](.env.example), preserving any existing configuration. The server loads that ignored file without shell evaluation; existing injected environment variables take precedence. Keep real key values out of commits, screenshots, logs, and release ZIPs.
 
 - Enable billing, Maps JavaScript API, Places API (New), and Routes API in the relevant Google Cloud project.
-- Restrict the browser key to the permitted website HTTP referrers and Maps JavaScript/Places APIs; GitHub Pages additionally needs Routes API on that browser key. This key is intentionally delivered to the browser.
+- Restrict the browser key to the permitted website HTTP referrers and Maps JavaScript/Places APIs; only the optional browser-only routing mode additionally needs Routes API on that key. This key is intentionally delivered to the browser.
 - Use a separate Routes-only server key, with appropriate server/IP restrictions. It is never included in browser configuration. Hosting with changing egress IPs needs a suitable server-access arrangement.
 - Allow outbound access to `maps.googleapis.com`, `maps.gstatic.com`, `places.googleapis.com`, and `routes.googleapis.com`. Use HTTPS for a deployed site and browser geolocation.
 
@@ -35,7 +35,7 @@ There are three supported hosting modes. `npm start` uses the private Routes key
 
 The site is [dev-najmul.github.io/car-pro-form](https://dev-najmul.github.io/car-pro-form/). Version 1.1.1 fixes the previous deployment mismatch: GitHub Pages cannot execute Node endpoints such as `/api/maps/config`.
 
-1. In [repository Actions secrets](https://github.com/dev-najmul/car-pro-form/settings/secrets/actions), add **`GOOGLE_MAPS_BROWSER_KEY`** containing the Maps/Places **browser key**. The separate Routes server key remains private and is only used by Node hosting.
+1. In [repository Actions secrets](https://github.com/dev-najmul/car-pro-form/settings/secrets/actions), add **`GOOGLE_MAPS_BROWSER_KEY`** containing the Maps/Places **browser key**. The separate Routes server key remains private in the route backend.
 2. The browser key needs **Maps JavaScript API and Places API (New)**. The second server key supplies Routes access for the temporary test backend. Only the optional browser-only mode needs **Routes API on the browser key**. Add `https://dev-najmul.github.io/*` to its allowed website referrers while preserving other required development/production referrers. Origin-based referrers are needed because browsers can omit the page path.
 3. For the temporary test backend, also add Actions secret **`GOOGLE_ROUTES_API_KEY`** with the second Routes Server key. That key is available only to the backend process. The Pages configuration contains a public HTTPS endpoint and expiration, never this server credential.
 4. Pages must use **GitHub Actions** as its build source. The **Deploy GitHub Pages** workflow builds/publishes on `main` pushes and can be run manually from Actions. Its `dist` artifact includes only public files and generated browser configuration.
@@ -131,6 +131,8 @@ The pre-integration version is preserved as [car-pro-form-static-v1.0.0-before-m
 The owner requested using the supplied two keys for testing, with no further client Google Cloud changes. Both repository secrets have now been added by the owner. The Pages deployment starts a private Node Routes backend on the GitHub Actions runner and exposes it through an account-free Cloudflare Quick Tunnel. Google Maps suggestions remain on the original Pages origin. This mirrors the later WordPress server-side route request without converting the prototype into a plugin yet.
 
 Each test session lasts **two hours** and permits **200 provider requests**, with the existing 30-request/minute limit. The UI shows the local expiration. The deployment job deliberately remains **in progress** during that period to keep the test server alive; the Pages publishing step can already be complete. Run **Actions → Deploy GitHub Pages → Run workflow** to start a new session, then refresh the form. A code push also replaces the session. Markdown-only status commits preserve the running backend. When the session expires or the workflow is cancelled, new routes show an explicit unavailable/expired message rather than fabricated metrics.
+
+A separate **Check live GitHub Pages** workflow can be run manually after publishing. It uses real Google Places/Routes and synthetic contact inputs to verify the public form through thank-you, checks distance/wait pricing and phone layout, and saves screenshots plus a sanitized report as an Actions artifact. It requires no private key in the test browser.
 
 The tunnel binary is pinned to Cloudflared 2026.10.1 and its official SHA-256 digest is checked before execution. The backend accepts browser route requests only from the configured Pages origin, keeps the server key on the runner, and does not persist provider results. The temporary infrastructure is for prototype testing; the later WordPress plugin will make the route request from the WordPress host.
 

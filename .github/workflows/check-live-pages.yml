@@ -1,0 +1,32 @@
+name: Check live GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Check real Places, private Routes preview and complete booking flow
+        run: node scripts/check-live-pages.mjs
+      - name: Save live screenshots and sanitized report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-pages-results
+          path: |
+            test-results/live-pages/*.png
+            test-results/live-pages/report.json
+          retention-days: 7
+          if-no-files-found: warn
