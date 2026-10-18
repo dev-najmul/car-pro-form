@@ -43,7 +43,7 @@ try {
   await choose('Drop-off location', 'Patuakhali Bangladesh', /Patuakhali.*Bangladesh/i);
   assert.equal((await originalResponsePromise).status(), 200);
   await expect(page.getByTestId('route-distance')).toBeVisible();
-  const originalRequestCount = requests.length;
+  let originalRequestCount = requests.length;
   const preview = page.getByTestId('device-location-preview');
   await page.getByRole('button', { name: 'Use current location', exact: true }).click();
   await expect(preview).toContainText(/approximate|accuracy/i);
@@ -53,7 +53,52 @@ try {
   assert.equal(requests.length, originalRequestCount);
   await page.screenshot({ path: resolve(artifacts, 'coarse-dhaka-rejected-desktop.png'), fullPage: true });
   report.coarseReadingRejected = true;
-  await page.getByRole('button', { name: 'Cancel location detection', exact: true }).click();
+  // The PC estimate remains rejected, but users can correct it on a real map.
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+  const picker = page.getByTestId('pickup-map-picker');
+  await expect(picker.locator('[data-pickup-map] .gm-style')).toBeVisible();
+  const mapUse = page.getByRole('button', { name: 'Use this map point', exact: true });
+  await expect(mapUse).toBeDisabled();
+  const search = page.getByLabel('Search map for pickup', { exact: true });
+  await search.fill('Nathullahbad Central Bus Terminal');
+  await page.getByRole('option', { name: /Nathullahbad Central Bus Terminal/i }).first().click();
+  await expect(mapUse).toBeEnabled();
+  await expect(picker).toContainText(/22\.7/);
+  // Exercise a real map click in addition to Places search/recentering.
+  const selectedPin = picker.getByRole('link', { name: 'View selected pin in Google Maps', exact: true });
+  const searchedPin = new URL(await selectedPin.getAttribute('href')).searchParams.get('query');
+  const mapCanvas = picker.locator('[data-pickup-map]');
+  const mapBounds = await mapCanvas.boundingBox();
+  await mapCanvas.click({ position: { x: mapBounds.width / 2 + 24, y: mapBounds.height / 2 + 18 } });
+  await expect.poll(async () => new URL(await selectedPin.getAttribute('href')).searchParams.get('query')).not.toBe(searchedPin);
+  const [chosenLatitude, chosenLongitude] = new URL(await selectedPin.getAttribute('href')).searchParams.get('query').split(',').map(Number);
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(originalPickup);
+  assert.equal(requests.length, originalRequestCount);
+  await page.setViewportSize({ width: 390, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({ path: resolve(artifacts, 'manual-map-picker-phone.png'), fullPage: true });
+  const mapResponsePromise = page.waitForResponse(value => value.url() === config.routeEndpoint && value.request().method() === 'POST');
+  await mapUse.click();
+  const mapResponse = await mapResponsePromise;
+  assert.equal(mapResponse.status(), 200);
+  const mapRoute = await mapResponse.json();
+  const mapOrigin = mapResponse.request().postDataJSON().origin;
+  assert.deepEqual(mapOrigin, { latitude: chosenLatitude, longitude: chosenLongitude });
+  assert.equal(mapOrigin.placeId, undefined);
+  assert.ok(mapOrigin.latitude > 22.6 && mapOrigin.latitude < 22.8);
+  assert.ok(mapOrigin.longitude > 90.2 && mapOrigin.longitude < 90.5);
+  assert.ok(mapRoute.distanceMeters > 10000 && mapRoute.distanceMeters < 150000);
+  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue(formatDuration(mapRoute.durationSeconds));
+  await expect(page.getByTestId('route-distance')).toHaveText(`${(mapRoute.distanceMeters / 1000).toFixed(1)} km / ${(mapRoute.distanceMeters / 1609.344).toFixed(1)} mi`);
+  report.manualMapFallback = { origin: mapOrigin, distanceMeters: mapRoute.distanceMeters, durationSeconds: mapRoute.durationSeconds, confirmed: true };
+  await page.screenshot({ path: resolve(artifacts, 'manual-map-route-phone.png'), fullPage: true });
+  // Restore the original deliberate Place choice for the native-device checks.
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const resetResponse = page.waitForResponse(value => value.url() === config.routeEndpoint && value.request().method() === 'POST');
+  await choose('Pickup location', 'Nathullahbad Central Bus Terminal', /Nathullahbad Central Bus Terminal/i);
+  assert.equal((await resetResponse).status(), 200);
+  originalRequestCount = requests.length;
 
   const precise = { latitude: 22.714, longitude: 90.35, accuracy: 20 };
   await context.setGeolocation(precise);

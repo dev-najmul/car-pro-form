@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createMapsApiHandler } from "./maps-api.js";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-const publicFiles = new Set(["index.html", "terms.html", "privacy.html", "styles.css", "app.js", "maps.js", "pricing.js"]);
+const publicFiles = new Set(["index.html", "terms.html", "privacy.html", "styles.css", "app.js", "maps.js", "pickup-map.js", "pricing.js"]);
 const assetExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".ttf", ".woff", ".woff2", ".txt", ".md"]);
 const previewExtensions = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 const types = {

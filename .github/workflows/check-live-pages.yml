@@ -22,7 +22,7 @@ jobs:
         run: node scripts/check-live-pages.mjs
       - name: Check real Bangladesh locations, route identities, waiting and all vehicle quotes
         run: node scripts/check-live-bangladesh.mjs
-      - name: Check device-location quality and confirmation with real Google services
+      - name: Check device-location quality, manual map correction and confirmation with real Google services
         run: node scripts/check-live-device-location.mjs
       - name: Save live screenshots and sanitized report
         if: always()

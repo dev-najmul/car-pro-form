@@ -10,7 +10,7 @@ async function fixture(t) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const sourceDirectory = join(directory, 'source'), outputDirectory = join(directory, 'public');
   await mkdir(join(sourceDirectory, 'assets', 'licenses'), { recursive: true });
-  for (const file of ['index.html', 'styles.css', 'app.js', 'maps.js', 'pricing.js', 'terms.html', 'privacy.html']) await writeFile(join(sourceDirectory, file), `public ${file}`);
+  for (const file of ['index.html', 'styles.css', 'app.js', 'maps.js', 'pickup-map.js', 'pricing.js', 'terms.html', 'privacy.html']) await writeFile(join(sourceDirectory, file), `public ${file}`);
   await writeFile(join(sourceDirectory, 'assets', 'photo.png'), 'photo');
   await writeFile(join(sourceDirectory, 'assets', 'font.woff2'), 'font');
   await writeFile(join(sourceDirectory, 'assets', 'licenses', 'OFL.txt'), 'license');
@@ -25,7 +25,7 @@ test('Pages build publishes only public assets and browser configuration, withou
   const config = JSON.parse(await readFile(join(options.outputDirectory, 'maps-config.json'), 'utf8'));
   assert.deepEqual(config, { browserKey: options.browserKey, browserConfigured: true, routesConfigured: true, providerMode: 'browser' });
   const files = await readdir(options.outputDirectory, { recursive: true });
-  for (const name of ['index.html', 'maps.js', 'pricing.js', 'terms.html', 'privacy.html', 'assets/photo.png', 'assets/font.woff2', 'assets/licenses/OFL.txt']) assert.ok(files.includes(name), name);
+  for (const name of ['index.html', 'maps.js', 'pickup-map.js', 'pricing.js', 'terms.html', 'privacy.html', 'assets/photo.png', 'assets/font.woff2', 'assets/licenses/OFL.txt']) assert.ok(files.includes(name), name);
   for (const name of ['.env.local', 'server.js', 'maps-api.js', 'project.md', 'assets/private.env']) assert.ok(!files.includes(name), name);
   for (const file of files.filter(file => file.includes('.'))) {
     try { assert.ok(!(await readFile(join(options.outputDirectory, file), 'utf8')).includes('private-server-key.fixture')); } catch (error) { if (error.code !== 'EISDIR') throw error; }

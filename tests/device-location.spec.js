@@ -81,6 +81,144 @@ async function settle(page) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
+const mapPicker = page => page.getByTestId('pickup-map-picker');
+const mapConfirm = page => page.getByRole('button', { name: 'Use this map point', exact: true });
+async function openMap(page) {
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+  await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
+}
+
+test('a 100 km PC estimate offers an exact map correction without accepting its initial center', async ({ page }) => {
+  await originalTrip(page);
+  const before = controls.get(page).requests.length;
+  await detect(page).click();
+  await respond(page, { latitude: 23.7891, longitude: 90.4126, accuracy: 100000 });
+  await expect(preview(page)).toContainText('100.0 km');
+  await openMap(page);
+  await expect(mapConfirm(page)).toBeDisabled();
+  expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).options.center)).toEqual({ lat: 23.7891, lng: 90.4126 });
+  await page.evaluate(() => window.__mapPickerMock.maps.at(-1).emit('idle'));
+  await expect(mapConfirm(page)).toBeDisabled();
+  await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
+  await expect(mapConfirm(page)).toBeEnabled();
+  await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
+  await expect(pickup(page)).toHaveValue('Original confirmed pickup');
+  expect(controls.get(page).requests).toHaveLength(before);
+  await mapConfirm(page).click();
+  await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: 22.7095, longitude: 90.3667 });
+  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  await expect(page.getByTestId('route-distance')).toBeVisible();
+});
+
+test('map search is keyboard accessible, does not submit the booking, and uses the selected place coordinates', async ({ page }) => {
+  await originalTrip(page);
+  await openMap(page);
+  await page.evaluate(() => { window.__mapsMock.locations = { ['test-' + encodeURIComponent('Nathullahbad, Barishal')]: { lat: 22.7095, lng: 90.3667 } }; });
+  const search = page.getByLabel('Search map for pickup', { exact: true });
+  await search.fill('Nathullahbad, Barishal');
+  await expect(page.getByRole('option', { name: 'Nathullahbad, Barishal', exact: true })).toBeVisible();
+  await search.press('Enter');
+  await expect(page).toHaveURL(/#trip$/);
+  await expect(mapConfirm(page)).toBeDisabled();
+  await search.press('ArrowDown'); await search.press('Enter');
+  await expect(mapConfirm(page)).toBeEnabled();
+  await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
+  expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.7095);
+  await search.fill('A different unfinished search');
+  await expect(mapConfirm(page)).toBeDisabled();
+  await expect(pickup(page)).toHaveValue('Original confirmed pickup');
+  await search.fill('Nathullahbad, Barishal');
+  await page.getByRole('option', { name: 'Nathullahbad, Barishal', exact: true }).click();
+  await expect(mapConfirm(page)).toBeEnabled();
+  await mapConfirm(page).click();
+  await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: 22.7095, longitude: 90.3667 });
+});
+
+test('map dragging keeps the final exact point and ignores obsolete nearby responses', async ({ page }) => {
+  await originalTrip(page); await openMap(page);
+  await page.evaluate(() => {
+    window.__nearbyMock = { hold: true, places: [{ displayName: 'Old landmark', formattedAddress: 'Wrong old point', location: { lat: () => 22.7, lng: () => 90.3 } }] };
+    window.__mapPickerMock.click(22.7, 90.3);
+  });
+  await expect.poll(() => page.evaluate(() => window.__mapsMock.pending.filter(item => item.kind === 'nearby').length)).toBe(1);
+  await page.evaluate(() => { window.__nearbyMock = { places: [] }; window.__mapPickerMock.drag(22.7095, 90.3667); });
+  await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
+  await page.evaluate(() => window.__mapsMock.release('nearby', 'nearby'));
+  await settle(page);
+  await expect(mapPicker(page)).not.toContainText('Old landmark');
+  await mapConfirm(page).click();
+  await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: 22.7095, longitude: 90.3667 });
+});
+
+test('opening and cancelling the map invalidates late GPS and map callbacks without changing pickup', async ({ page }) => {
+  await originalTrip(page);
+  const before = controls.get(page).requests.length;
+  await detect(page).click(); await openMap(page);
+  await respond(page);
+  await expect(mapPicker(page)).toBeVisible();
+  await expect(mapConfirm(page)).toBeDisabled();
+  await page.evaluate(() => { window.__nearbyMock = { hold: true }; window.__mapPickerMock.click(22.7095, 90.3667); });
+  await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
+  await page.evaluate(() => { window.__mapsMock.release('nearby', 'nearby'); window.__mapPickerMock.drag(23.7891, 90.4126); });
+  await settle(page);
+  await expect(mapPicker(page)).toHaveCount(0);
+  await expect(pickup(page)).toHaveValue('Original confirmed pickup');
+  expect(controls.get(page).requests).toHaveLength(before);
+});
+
+test('map selection survives a service rerender but manual pickup typing cancels it', async ({ page }) => {
+  await originalTrip(page); await openMap(page);
+  await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
+  await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
+  await expect(mapConfirm(page)).toBeEnabled();
+  await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
+  await pickup(page).fill('My different pickup');
+  await expect(mapPicker(page)).toHaveCount(0);
+  await expect(pickup(page)).toHaveValue('My different pickup');
+});
+
+test('map load failure retains manual address search and an obsolete map import cannot reopen a cancelled picker', async ({ page }) => {
+  await originalTrip(page);
+  await page.evaluate(() => {
+    const original = google.maps.importLibrary;
+    window.__releaseMapImport = null;
+    google.maps.importLibrary = name => name === 'maps' ? new Promise(resolve => { window.__releaseMapImport = () => original(name).then(resolve); }) : original(name);
+  });
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => typeof window.__releaseMapImport)).toBe('function');
+  await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
+  await page.evaluate(() => window.__releaseMapImport());
+  await settle(page);
+  await expect(mapPicker(page)).toHaveCount(0);
+  expect(await page.evaluate(() => window.__mapPickerMock.maps.length)).toBe(0);
+  await page.evaluate(() => {
+    const original = google.maps.importLibrary;
+    google.maps.importLibrary = name => name === 'maps' ? Promise.reject(new Error('Map provider unavailable')) : original(name);
+  });
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+  await expect(mapPicker(page)).toContainText('The map could not load');
+  await expect(mapConfirm(page)).toBeDisabled();
+  await expect(pickup(page)).toHaveValue('Original confirmed pickup');
+  await selectPlace(page, 'Pickup location', 'New confirmed address');
+  await expect(mapPicker(page)).toHaveCount(0);
+  await expect(pickup(page)).toHaveValue('New confirmed address');
+});
+
+test('map picker fits a phone and confirmed coordinate pickup requires reselection after reload', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await originalTrip(page); await openMap(page);
+  await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await mapConfirm(page).click();
+  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')));
+  expect(saved.trip.pickupPlace).toBeNull();
+  expect(saved.trip.pickup).toBe('');
+  await page.reload();
+  await expect(pickup(page)).toHaveValue('');
+  await expect(page.getByTestId('route-distance')).toHaveCount(0);
+});
+
 test('precise device position requires confirmation and routes original coordinates instead of a nearby landmark', async ({ page }) => {
   await originalTrip(page);
   const initialRequests = controls.get(page).requests.length;

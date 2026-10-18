@@ -3923,4 +3923,19 @@ a {
 .device-location-actions { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 14px; }
 .device-location-actions .btn { width: 100%; min-height: 44px; height: auto; padding: 12px; font-size: 13px; line-height: 1.5; }
 .device-location-actions .text-link { font-size: 12px; line-height: 1.7; text-align: left; }
+.pickup-map-open { display: inline-block; margin-top: 9px; font-size: 13px; }
+.pickup-map-open[hidden] { display: none; }
+.pickup-map-picker .map-search-label { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
+.pickup-map-picker .location-input { position: relative; z-index: 3; }
+.pickup-map-picker .input { padding-left: 12px; font-size: 14px; }
+.pickup-map-frame { position: relative; margin: 10px 0; height: 320px; border: 1px solid #ccd2dc; border-radius: 4px; overflow: hidden; }
+.pickup-map-canvas { width: 100%; height: 100%; }
+.pickup-map-pin { position: absolute; top: 50%; left: 50%; width: 32px; height: 38px; transform: translate(-50%, -100%); pointer-events: none; color: #10265a; filter: drop-shadow(0 1px 2px #fff); }
+.pickup-map-pin .icon { width: 32px; height: 38px; stroke-width: 2.5; fill: white; }
+.pickup-map-picker [data-map-selection] > a { text-decoration: underline; text-underline-offset: 3px; }
+.pickup-map-picker [data-map-status] { min-height: 40px; }
+@media (max-width: 600px) {
+  .pickup-map-frame { height: 290px; }
+  .pickup-map-picker { padding: 12px; }
+}
 .location-target[disabled] { opacity: .45; cursor: wait; }

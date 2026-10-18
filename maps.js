@@ -180,7 +180,9 @@ export class MapsClient {
     const name = place.displayName || '', address = place.formattedAddress || '';
     const label = name && address && !address.toLowerCase().includes(name.toLowerCase()) ? `${name}, ${address}` : address || name || fallback;
     if (!label) throw new Error('Please select this location again to restore its address.');
-    return { placeId: place.id, name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
+    const coordinates = coordinatesOf(place.location);
+    if (!coordinates) throw new Error('This place has no valid map position. Please choose another suggestion.');
+    return { placeId: place.id, ...coordinates, name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
   }
   async describeDeviceLocation(point) {
     if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to find nearby landmarks.');

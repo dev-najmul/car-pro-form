@@ -5,13 +5,63 @@ export function installPlacesStub() {
     await new Promise(resolve => control.pending.push({ kind, key, resolve }));
   };
   let token = 0;
+  const latLng = value => {
+    const lat = typeof value?.lat === 'function' ? value.lat() : value?.lat ?? value?.latitude;
+    const lng = typeof value?.lng === 'function' ? value.lng() : value?.lng ?? value?.longitude;
+    return { lat: () => lat, lng: () => lng };
+  };
+  const picker = window.__mapPickerMock = {
+    maps: [], choices: [],
+    click(lat, lng) {
+      this.choices.push({ kind: 'click', latitude: lat, longitude: lng });
+      this.maps.at(-1)?.emit('click', { latLng: latLng({ lat, lng }) });
+    },
+    drag(lat, lng) {
+      this.choices.push({ kind: 'drag', latitude: lat, longitude: lng });
+      const map = this.maps.at(-1);
+      if (!map) return;
+      map.emit('dragstart');
+      map.center = latLng({ lat, lng });
+      map.emit('dragend');
+      map.emit('idle');
+    },
+  };
+  class MockMap {
+    constructor(element, options) {
+      this.element = element; this.options = options; this.center = latLng(options.center);
+      this.zoom = options.zoom; this.listeners = new Map();
+      const canvas = document.createElement('div');
+      canvas.dataset.testid = 'google-map-mock-canvas';
+      canvas.textContent = 'Google Maps test map';
+      Object.assign(canvas.style, { width: '100%', height: '100%', minHeight: '280px', background: '#e2e8df', display: 'grid', placeItems: 'center' });
+      element.append(canvas); picker.maps.push(this);
+    }
+    getCenter() { return this.center; }
+    getDiv() { return this.element; }
+    panTo(center) {
+      this.center = latLng(center);
+      queueMicrotask(() => this.emit('idle'));
+    }
+    setCenter(center) { this.panTo(center); }
+    setZoom(zoom) { this.zoom = zoom; }
+    addListener(name, listener) {
+      if (!this.listeners.has(name)) this.listeners.set(name, new Set());
+      this.listeners.get(name).add(listener);
+      return { remove: () => this.listeners.get(name)?.delete(listener) };
+    }
+    emit(name, event) { for (const listener of this.listeners.get(name) || []) listener(event); }
+    unbindAll() { this.listeners.clear(); }
+  }
   const makePlace = (id, kind) => {
     const query = id.startsWith('test-') ? decodeURIComponent(id.slice(5)) : id;
     return {
       id, displayName: window.__placeDisplayNames?.[id] || '', formattedAddress: window.__placeCanonicalLabels?.[id] || query,
-      location: { lat: () => 41, lng: () => -87 },
+      location: latLng(control.locations?.[id] || { lat: 41, lng: -87 }),
       attributions: [{ provider: 'Demo Places Provider', providerURI: 'https://example.com/maps-attribution' }],
-      fetchFields: async request => { control.calls.push({ kind, query, id, fields: request.fields }); await wait('details', query); },
+      fetchFields: async function(request) {
+        control.calls.push({ kind, query, id, fields: request.fields }); await wait('details', query);
+        if (control.locations?.[id]) this.location = latLng(control.locations[id]);
+      },
     };
   };
   class Place {
@@ -27,6 +77,7 @@ export function installPlacesStub() {
   const point = value => value instanceof Place ? { kind: 'place', placeId: value.id } : { kind: 'coordinates', lat: value.lat, lng: value.lng };
   window.google = { maps: { importLibrary: async name => {
     control.libraries.push(name);
+    if (name === 'maps') return { Map: MockMap };
     if (name === 'routes') return { Route: { computeRoutes: async request => {
       const key = request.destination.id || 'coordinates';
       control.calls.push({ kind: 'route', key, request: {
@@ -56,5 +107,5 @@ export function installPlacesStub() {
         } })) };
       } },
     };
-  } } };
+  }, event: { clearInstanceListeners: map => map.listeners?.clear() } } };
 }
