@@ -3909,3 +3909,18 @@ a {
 .route-comparison p { margin: 0; color: var(--muted); }
 
 .trip-panel .helper { white-space: normal; align-items: flex-start; }
+
+.device-location-panel { margin-top: 12px; padding: 14px; border: 1px solid #cbd5e6; border-radius: 4px; background: #f7f8fb; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.device-location-panel h4 { margin: 0 0 8px; font-size: 13px; line-height: 1.5; font-weight: 600; }
+.device-location-panel p { margin: 8px 0; }
+.device-location-message { color: var(--muted); }
+.device-location-context { font-weight: 500; }
+.device-location-panel dl { margin: 10px 0; }
+.device-location-panel dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin: 5px 0; }
+.device-location-panel dt { color: var(--muted); }
+.device-location-panel dd { margin: 0; }
+.device-location-panel > a { color: #17336c; text-decoration: underline; text-underline-offset: 3px; }
+.device-location-actions { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 14px; }
+.device-location-actions .btn { width: 100%; min-height: 44px; height: auto; padding: 12px; font-size: 13px; line-height: 1.5; }
+.device-location-actions .text-link { font-size: 12px; line-height: 1.7; text-align: left; }
+.location-target[disabled] { opacity: .45; cursor: wait; }

@@ -15,7 +15,7 @@
 
       <section>
         <h2>Information kept in this tab</h2>
-        <p>The application uses your browser’s session storage to keep a draft. The draft can include trip details, your location search text, selected place IDs or device coordinates, stop waiting times, vehicle and extra selections, contact and passenger details, billing address, notes, agreement selection, and the local demonstration request ID.</p>
+        <p>The application uses your browser’s session storage to keep a draft. The draft can include trip details, your location search text, selected place IDs, stop waiting times, vehicle and extra selections, contact and passenger details, billing address, notes, agreement selection, and the local demonstration request ID.</p>
         <p>This storage belongs to the current browser tab. Its lifetime depends on your browser’s tab and session restoration behavior. The application does not send these contact, passenger, billing, or note fields to a reservation database.</p>
         <p>Google suggestion lists, fetched place details and provider attributions, and driving distance and duration results are used in memory rather than persisted in the browser draft. Selected place IDs can be retained so that the selected locations can be used again.</p>
       </section>
@@ -30,7 +30,7 @@
 
       <section>
         <h2>Using your current location</h2>
-        <p>The current-location button asks your browser for geolocation permission. If you allow access, the returned coordinates are used as the pickup location, can be retained in the tab’s draft, and are sent to Google when calculating that route. You can enter and select a pickup address instead, and you can manage location permission in your browser.</p>
+        <p>The current-location button asks your browser for geolocation permission. If you allow access, the application requests a fresh high-accuracy reading and checks its reported accuracy and timestamp. A precise reading is shown for your confirmation before it can replace the pickup. Google Places may receive those coordinates to find nearby landmark context; that landmark is not your exact address and does not replace the coordinates. After you confirm, the original coordinates are sent to Google when calculating the route. Device-coordinate pickups and nearby labels are not restored as verified locations from the tab’s draft; detect and confirm again after reload. A PC may return an inaccurate network-based location, so manual address selection remains available. You can manage location permission in your browser.</p>
       </section>
 
       <section>

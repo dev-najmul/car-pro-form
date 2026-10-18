@@ -1,6 +1,60 @@
 const SDK_CALLBACK = '__tuxanoGoogleMapsReady';
 const text = value => typeof value === 'string' ? value : value?.text || value?.toString?.() || '';
 
+export const DEVICE_LOCATION_POLICY = Object.freeze({ maxAccuracyMeters: 100, maxAgeMs: 60000, timeoutMs: 15000 });
+
+export function normalizeDevicePosition(position, now = Date.now()) {
+  const latitude = position?.coords?.latitude, longitude = position?.coords?.longitude;
+  const accuracyMeters = position?.coords?.accuracy, capturedAt = position?.timestamp;
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180 || !Number.isFinite(accuracyMeters) || accuracyMeters < 0 || !Number.isFinite(capturedAt) || !Number.isFinite(now)) {
+    throw new Error('Your device returned an invalid location. Please try again or enter your pickup address.');
+  }
+  if (now - capturedAt > DEVICE_LOCATION_POLICY.maxAgeMs || capturedAt - now > 5000) {
+    throw new Error('Your device returned an old or incorrectly timed location. Please try again or enter your pickup address.');
+  }
+  return { latitude, longitude, accuracyMeters, capturedAt, precise: accuracyMeters <= DEVICE_LOCATION_POLICY.maxAccuracyMeters };
+}
+
+export function requestDeviceLocation(geolocation = globalThis.navigator?.geolocation) {
+  return new Promise((resolve, reject) => {
+    if (typeof geolocation?.getCurrentPosition !== 'function') {
+      reject(new Error('Current location is unavailable on this device. Please enter your pickup address.'));
+      return;
+    }
+    let settled = false;
+    const finish = (failure, point) => {
+      if (settled) return;
+      settled = true; clearTimeout(watchdog);
+      if (failure) reject(failure); else resolve(point);
+    };
+    const unavailable = () => new Error('Your device could not determine your location. Please try again or enter your pickup address.');
+    const timedOut = () => new Error('Finding your location took too long. Please try again or enter your pickup address.');
+    // Some browser/platform providers do not honor their own timeout reliably.
+    const watchdog = setTimeout(() => finish(timedOut()), DEVICE_LOCATION_POLICY.timeoutMs + 5000);
+    try {
+      geolocation.getCurrentPosition(position => {
+        try { finish(null, normalizeDevicePosition(position)); } catch (failure) { finish(failure); }
+      }, failure => {
+        finish(failure?.code === 1
+          ? new Error('Location permission was denied. Please allow location access or enter your pickup address.')
+          : failure?.code === 3 ? timedOut() : unavailable());
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: DEVICE_LOCATION_POLICY.timeoutMs });
+    } catch { finish(unavailable()); }
+  });
+}
+
+const coordinatesOf = location => {
+  const latitude = typeof location?.lat === 'function' ? location.lat() : location?.lat;
+  const longitude = typeof location?.lng === 'function' ? location.lng() : location?.lng;
+  return Number.isFinite(latitude) && Math.abs(latitude) <= 90 && Number.isFinite(longitude) && Math.abs(longitude) <= 180 ? { latitude, longitude } : null;
+};
+const pointDistanceMeters = (a, b) => {
+  const radians = value => value * Math.PI / 180;
+  const dLat = radians(b.latitude - a.latitude), dLng = radians(b.longitude - a.longitude);
+  const term = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, term))));
+};
+
 const MAPS_URL_LIMIT = 2000;
 const mapLinkPoint = point => {
   if (!point || typeof point !== 'object' || Array.isArray(point)) return null;
@@ -127,6 +181,36 @@ export class MapsClient {
     const label = name && address && !address.toLowerCase().includes(name.toLowerCase()) ? `${name}, ${address}` : address || name || fallback;
     if (!label) throw new Error('Please select this location again to restore its address.');
     return { placeId: place.id, name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
+  }
+  async describeDeviceLocation(point) {
+    if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to find nearby landmarks.');
+    let timer;
+    try {
+      return await Promise.race([
+        (async () => {
+          const { Place, SearchNearbyRankPreference } = await this.ready();
+          const result = await Place.searchNearby({
+            fields: ['displayName', 'formattedAddress', 'location', 'attributions'],
+            locationRestriction: { center: { lat: point.latitude, lng: point.longitude }, radius: 50 },
+            rankPreference: SearchNearbyRankPreference.DISTANCE,
+            maxResultCount: 3,
+          });
+          const closest = (result.places || []).map(place => {
+            const location = coordinatesOf(place.location);
+            return { place, distance: location ? pointDistanceMeters(point, location) : Infinity };
+          }).filter(({ place, distance }) => distance <= 50 && text(place.displayName).trim()).sort((a, b) => a.distance - b.distance)[0]?.place;
+          // A nearby business is context, never a replacement pickup or an exact address.
+          return {
+            nearbyName: closest ? text(closest.displayName) : '',
+            nearbyAddress: closest ? text(closest.formattedAddress) : '',
+            attributions: (closest?.attributions || []).map(attribution => ({ displayName: attribution.provider || '', uri: attribution.providerURI || '' })),
+          };
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Nearby landmark lookup timed out.')), 7000); }),
+      ]);
+    } catch {
+      throw new Error('Nearby landmarks could not be loaded. Please confirm the detected coordinates on the map or enter your pickup address.');
+    } finally { clearTimeout(timer); }
   }
   async route(request, signal) {
     const config = await this.config();

@@ -1,0 +1,114 @@
+import assert from 'node:assert/strict';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { chromium, expect } from '@playwright/test';
+import { formatDuration, PRICING, quoteTransportation } from '../pricing.js';
+
+const site = 'https://dev-najmul.github.io/car-pro-form/';
+const artifacts = resolve('test-results/live-device-location');
+const redact = value => String(value).replace(/AIza[\w-]{35}/g, '[redacted]');
+const report = { site, startedAt: new Date().toISOString(), passed: false, deviceSource: 'Controlled browser geolocation; Google Places Nearby and Routes are real', browserErrors: [] };
+let browser, context, page;
+await mkdir(artifacts, { recursive: true });
+try {
+  const response = await fetch(new URL('maps-config.json', site), { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+  const config = await response.json();
+  assert.equal(config.providerMode, 'remote');
+  assert.ok(Date.parse(config.previewExpiresAt) > Date.now() + 120000);
+  const endpoint = new URL(config.routeEndpoint);
+  assert.equal(endpoint.protocol, 'https:');
+  assert.match(endpoint.hostname, /^[a-z0-9-]+\.trycloudflare\.com$/);
+  browser = await chromium.launch({ headless: true });
+  context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, timezoneId: 'Asia/Dhaka', permissions: ['geolocation'], geolocation: { latitude: 23.7891, longitude: 90.4126, accuracy: 12000 } });
+  page = await context.newPage(); page.setDefaultTimeout(30000);
+  page.on('pageerror', error => report.browserErrors.push(redact(error.message)));
+  page.on('console', message => { if (message.type() === 'error') report.browserErrors.push(redact(message.text())); });
+  const requests = [];
+  page.on('request', request => { if (request.url() === config.routeEndpoint && request.method() === 'POST') requests.push(request.postDataJSON()); });
+  await page.goto(site, { waitUntil: 'domcontentloaded' });
+  async function choose(label, query, pattern) {
+    await page.getByLabel(label, { exact: true }).fill(query);
+    await page.getByRole('option', { name: pattern }).first().click();
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue(pattern);
+  }
+  await choose('Pickup location', 'Nathullahbad Central Bus Terminal', /Nathullahbad Central Bus Terminal/i);
+  const originalPickup = await page.getByLabel('Pickup location', { exact: true }).inputValue();
+  const originalId = new URL(await page.getByRole('link', { name: 'View selected pickup location in Google Maps' }).getAttribute('href')).searchParams.get('query_place_id');
+  assert.equal(originalId, 'ChIJWd5tgSc0VTcR6Gc887Of8GA');
+  const originalResponsePromise = page.waitForResponse(value => value.url() === config.routeEndpoint && value.request().method() === 'POST');
+  await choose('Drop-off location', 'Patuakhali Bangladesh', /Patuakhali.*Bangladesh/i);
+  assert.equal((await originalResponsePromise).status(), 200);
+  await expect(page.getByTestId('route-distance')).toBeVisible();
+  const originalRequestCount = requests.length;
+  const preview = page.getByTestId('device-location-preview');
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect(preview).toContainText(/approximate|accuracy/i);
+  await expect(preview).toContainText('12.0 km');
+  await expect(page.getByRole('button', { name: 'Use this pickup location', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(originalPickup);
+  assert.equal(requests.length, originalRequestCount);
+  await page.screenshot({ path: resolve(artifacts, 'coarse-dhaka-rejected-desktop.png'), fullPage: true });
+  report.coarseReadingRejected = true;
+  await page.getByRole('button', { name: 'Cancel location detection', exact: true }).click();
+
+  const precise = { latitude: 22.714, longitude: 90.35, accuracy: 20 };
+  await context.setGeolocation(precise);
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use this pickup location', exact: true })).toBeVisible();
+  await expect(preview).toContainText(/Near .+/);
+  await expect(preview).toContainText(/Barishal|Barisal|বরিশাল/i);
+  await expect(preview).toContainText('20 m');
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(originalPickup);
+  assert.equal(requests.length, originalRequestCount);
+  const map = new URL(await preview.getByRole('link', { name: /Google Maps/ }).getAttribute('href'));
+  assert.equal(map.searchParams.get('query'), `${precise.latitude},${precise.longitude}`);
+  assert.equal(map.searchParams.has('query_place_id'), false);
+  report.nearbyLabel = await preview.locator('.device-location-context').innerText();
+  await page.screenshot({ path: resolve(artifacts, 'precise-preview-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({ path: resolve(artifacts, 'precise-preview-phone.png'), fullPage: true });
+  const routePromise = page.waitForResponse(value => value.url() === config.routeEndpoint && value.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Use this pickup location', exact: true }).click();
+  const routed = await routePromise;
+  assert.equal(routed.status(), 200);
+  const route = await routed.json();
+  assert.equal(route.provider, 'google');
+  assert.deepEqual(routed.request().postDataJSON().origin, { latitude: precise.latitude, longitude: precise.longitude });
+  assert.ok(route.distanceMeters > 0 && route.distanceMeters < 150000);
+  await expect(page.getByTestId('route-distance')).toHaveText(`${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi`);
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue(formatDuration(route.durationSeconds));
+  const routeMap = new URL(await page.getByRole('link', { name: 'View route in Google Maps', exact: true }).getAttribute('href'));
+  assert.equal(routeMap.searchParams.get('origin'), `${precise.latitude},${precise.longitude}`);
+  assert.equal(routeMap.searchParams.has('origin_place_id'), false);
+  await page.getByLabel('Date', { exact: true }).fill(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+  await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
+  await page.screenshot({ path: resolve(artifacts, 'confirmed-device-route-phone.png'), fullPage: true });
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await page.waitForURL('**/#vehicles');
+  for (const vehicle of Object.keys(PRICING)) {
+    const quote = quoteTransportation(vehicle, route, 0, 'transfer', 3);
+    await expect(page.locator(`[data-vehicle-card="${vehicle}"] .vehicle-price strong`)).toHaveText(`$${quote.transportation.toLocaleString('en-US')}USD`);
+  }
+  await page.getByRole('button', { name: 'Step 1: Trip', exact: true }).click();
+  await page.reload();
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue('');
+  await expect(page.getByTestId('route-distance')).toHaveCount(0);
+  assert.deepEqual(report.browserErrors, []);
+  report.route = { distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds, origin: { latitude: precise.latitude, longitude: precise.longitude } };
+  report.explicitConfirmationPassed = true;
+  report.rawCoordinatesPreserved = true;
+  report.reloadRequiresNewPickup = true;
+  report.passed = true;
+  console.log(redact(JSON.stringify(report)));
+} catch (failure) {
+  report.error = redact(failure.message);
+  console.error(`::error::${report.error.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+  if (page && !page.isClosed()) await page.screenshot({ path: resolve(artifacts, 'failure.png'), fullPage: true }).catch(() => {});
+  process.exitCode = 1;
+} finally {
+  report.finishedAt = new Date().toISOString();
+  await writeFile(resolve(artifacts, 'report.json'), redact(JSON.stringify(report, null, 2)) + '\n');
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `\n### Device-location public check: ${report.passed ? 'passed' : 'failed'}\n\nControlled browser positions with real Google Nearby/Routes. Coarse Dhaka reading rejected; precise Barishal reading requires confirmation and preserves original coordinates. This does not verify the owner's physical laptop location.\n${report.error ? '\n' + report.error + '\n' : ''}`);
+  await context?.close(); await browser?.close();
+}

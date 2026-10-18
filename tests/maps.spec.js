@@ -420,8 +420,12 @@ test('browser Routes SDK uses Place waypoints, millisecond durations, ordered st
   });
   expect(request.fields).toEqual(expect.arrayContaining(['distanceMeters', 'durationMillis']));
   await context.grantPermissions(['geolocation']);
-  await context.setGeolocation({ latitude: 41.88, longitude: -87.63 });
+  await context.setGeolocation({ latitude: 41.88, longitude: -87.63, accuracy: 20 });
   await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect(page.getByTestId('device-location-preview')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use this pickup location', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1)?.request.origin)).toEqual({ kind: 'place', placeId: pointId('Demo Pickup') });
+  await page.getByRole('button', { name: 'Use this pickup location', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1)?.request.origin)).toEqual({ kind: 'coordinates', lat: 41.88, lng: -87.63 });
   await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
   await passengers(page);

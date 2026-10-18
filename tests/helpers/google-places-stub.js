@@ -14,7 +14,16 @@ export function installPlacesStub() {
       fetchFields: async request => { control.calls.push({ kind, query, id, fields: request.fields }); await wait('details', query); },
     };
   };
-  class Place { constructor({ id }) { Object.assign(this, makePlace(id, 'restore')); } }
+  class Place {
+    constructor({ id }) { Object.assign(this, makePlace(id, 'restore')); }
+    static async searchNearby(request) {
+      control.calls.push({ kind: 'nearby', request });
+      const nearby = window.__nearbyMock || {};
+      if (nearby.hold) await new Promise(resolve => control.pending.push({ kind: 'nearby', key: 'nearby', resolve }));
+      if (nearby.fail) throw new Error('Nearby place lookup is unavailable.');
+      return { places: nearby.places || [] };
+    }
+  }
   const point = value => value instanceof Place ? { kind: 'place', placeId: value.id } : { kind: 'coordinates', lat: value.lat, lng: value.lng };
   window.google = { maps: { importLibrary: async name => {
     control.libraries.push(name);
@@ -33,6 +42,7 @@ export function installPlacesStub() {
     } } };
     return {
       Place,
+      SearchNearbyRankPreference: { DISTANCE: 'DISTANCE' },
       AutocompleteSessionToken: class { constructor() { this.token = ++token; } },
       AutocompleteSuggestion: { fetchAutocompleteSuggestions: async request => {
         const query = request.input;

@@ -1,4 +1,4 @@
-import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks } from "./maps.js";
+import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE_LOCATION_POLICY, normalizeDevicePosition, requestDeviceLocation } from "./maps.js";
 import { quoteTransportation, formatDuration } from "./pricing.js";
 /* Google provides route metrics. Prices and booking submission remain a demo. */
 (() => {
@@ -11,6 +11,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
   let autocompleteCleanups = [];
   let advancing = false, locationGeneration = 0, navigationGeneration = 0;
   let restoringPlaces = false;
+  let deviceLocation = { status: "idle", candidate: null, message: "" };
   const newStopId = () => "stop-" + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
   const makeStop = (text = "") => ({ id: newStopId(), text, query: text, place: null, waitMinutes: 5 });
   const routes = [
@@ -296,13 +297,21 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
       if (!point || typeof point !== "object" || Array.isArray(point)) return null;
       const text = typeof point.text === "string" ? point.text.slice(0, 1024) : fallback;
       if (typeof point.placeId === "string" && point.placeId.length > 0 && point.placeId.length <= 512) return { placeId: point.placeId, text };
-      if (Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90 && Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180) return { latitude: point.latitude, longitude: point.longitude, text };
+      // A saved device coordinate is not a newly verified current pickup.
+      // Keep manually selected Place IDs, but require fresh device confirmation.
       return null;
     };
     clean.trip.pickupQuery = typeof saved.trip?.pickupQuery === "string" ? saved.trip.pickupQuery : clean.trip.pickup;
     clean.trip.dropoffQuery = typeof saved.trip?.dropoffQuery === "string" ? saved.trip.dropoffQuery : clean.trip.dropoff;
     clean.trip.pickupPlace = safePlace(saved.trip?.pickupPlace, clean.trip.pickup);
     clean.trip.dropoffPlace = safePlace(saved.trip?.dropoffPlace, clean.trip.dropoff);
+    for (const key of ["pickup", "dropoff"]) {
+      const previous = saved.trip?.[key + "Place"];
+      if (previous && typeof previous === "object" && !previous.placeId && ("latitude" in previous || "longitude" in previous)) {
+        clean.trip[key] = ""; clean.trip[key + "Query"] = "";
+        deviceLocation = { status: "error", candidate: null, message: "Your saved device location needs a fresh check. Detect your location again or search for your pickup address." };
+      }
+    }
     const seen = new Set();
     clean.trip.stops = Array.isArray(saved.trip?.stops) ? saved.trip.stops.slice(0, 5).map(stop => {
       if (typeof stop === "string") return makeStop(stop);
@@ -372,8 +381,10 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
       if (!DEMO_MODE) {
         for (const key of ["pickup", "dropoff"]) {
           const query = state.trip[key + "Query"] || "";
-          snapshot.trip[key] = query;
-          snapshot.trip[key + "Place"] = persistPlace(state.trip[key + "Place"], query);
+          const devicePoint = state.trip[key + "Place"] && !state.trip[key + "Place"].placeId;
+          snapshot.trip[key] = devicePoint ? "" : query;
+          snapshot.trip[key + "Query"] = devicePoint ? "" : query;
+          snapshot.trip[key + "Place"] = devicePoint ? null : persistPlace(state.trip[key + "Place"], query);
         }
         snapshot.trip.stops = state.trip.stops.map(stop => ({ id: stop.id, text: stop.query, query: stop.query, waitMinutes: stop.waitMinutes, place: persistPlace(stop.place, stop.query) }));
       }
@@ -490,6 +501,75 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
     `<header class="page-header"><h1>RESERVATION REQUEST</h1><p>Complete the form below to request your executive transportation.</p><nav class="progress" aria-label="Reservation steps"><ol>${labels.map((label, i) => `<li class="${step === i ? "active" : ""}"><button type="button" data-go="${i}" aria-label="Step ${i + 1}: ${label}" ${i > state.completed ? "disabled" : ""} ${step === i ? 'aria-current="step"' : ""}><span class="step-circle">${i + 1}</span><span class="step-label">${label}</span></button></li>`).join("")}</ol></nav></header>`;
 
   const selectedPoint = (point, value) => Boolean(point && point.text === value && (point.placeId || Number.isFinite(point.latitude) && Number.isFinite(point.longitude)));
+  const deviceBusy = () => ["locating", "resolving"].includes(deviceLocation.status);
+  const accuracyLabel = meters => meters === 0 ? "under 1 m" : meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.ceil(meters)} m`;
+  function deviceLocationMarkup() {
+    if (deviceLocation.status === "idle") return "";
+    const candidate = deviceLocation.candidate;
+    const url = candidate ? googlePlaceUrl(candidate) : "";
+    return `<section class="device-location-panel" data-testid="device-location-preview" aria-label="Check detected pickup location"><h4>${deviceBusy() ? "CHECKING YOUR LOCATION" : "CHECK DETECTED PICKUP"}</h4><p class="device-location-message" role="status">${e(deviceLocation.message)}</p>${candidate ? `<p class="device-location-context">${e(candidate.text)}</p><dl><div><dt>Detected coordinates</dt><dd>${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}</dd></div><div><dt>Reported accuracy</dt><dd>Within ${accuracyLabel(candidate.accuracyMeters)}</dd></div></dl>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">View detected location in Google Maps</a>` : ""}${candidate.nearbyName ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span><span>Nearby landmark, not an exact pickup address.</span></div>${attributionsMarkup(candidate.attributions || [])}` : ""}` : ""}<div class="device-location-actions">${deviceLocation.status === "ready" && candidate?.precise ? '<button type="button" class="btn primary" data-action="use-device-location">Use this pickup location</button>' : ""}${!deviceBusy() ? '<button type="button" class="text-link" data-action="locate">Try location again</button>' : ""}<button type="button" class="text-link" data-action="cancel-device-location">Cancel location detection</button></div></section>`;
+  }
+  function refreshDeviceLocation() {
+    const box = app.querySelector(".device-location-wrap");
+    if (box) box.innerHTML = deviceLocationMarkup();
+    const button = app.querySelector('[data-action="locate"].location-target');
+    if (button) { button.disabled = deviceBusy(); button.setAttribute("aria-busy", String(deviceBusy())); }
+  }
+  function cancelDeviceLocation() {
+    ++locationGeneration;
+    deviceLocation = { status: "idle", candidate: null, message: "" };
+    refreshDeviceLocation();
+  }
+  async function detectDeviceLocation() {
+    const generation = ++locationGeneration, navigation = navigationGeneration, originalState = state;
+    const pickupBefore = state.trip.pickup;
+    const current = () => generation === locationGeneration && navigation === navigationGeneration && state === originalState && step === 0 && state.trip.pickup === pickupBefore;
+    deviceLocation = { status: "locating", candidate: null, message: "Requesting a fresh, high-accuracy device location. Your pickup stays unchanged until you confirm." };
+    refreshDeviceLocation();
+    try {
+      const point = await requestDeviceLocation();
+      if (!current()) return;
+      const candidate = { ...point, text: "Detected coordinates — address unavailable", attributions: [] };
+      if (!point.precise) {
+        deviceLocation = { status: "coarse", candidate, message: `Your browser only provided an approximate position (within ${accuracyLabel(point.accuracyMeters)}). Pickup needs accuracy within ${DEVICE_LOCATION_POLICY.maxAccuracyMeters} m. On a PC this may be a network estimate in another city. Search for your exact pickup address or try again.` };
+        refreshDeviceLocation(); return;
+      }
+      deviceLocation = { status: "resolving", candidate, message: "Finding a nearby landmark. Check the detected pin and address before using this pickup." };
+      refreshDeviceLocation();
+      let description, lookupFailed = false;
+      try { description = await maps.describeDeviceLocation(point); } catch { lookupFailed = true; }
+      if (!current()) return;
+      if (description?.nearbyName) {
+        candidate.nearbyName = description.nearbyName;
+        candidate.text = `Near ${description.nearbyName}${description.nearbyAddress ? `, ${description.nearbyAddress}` : ""} (device location)`;
+        candidate.attributions = description.attributions;
+      }
+      deviceLocation = { status: "ready", candidate, message: description?.nearbyName ? "This is your device's estimate. Check the city, nearby landmark and map pin. Use it only if this is your intended pickup." : `${lookupFailed ? "Nearby landmark lookup is unavailable." : "No nearby address was found."} The coordinates are still your device's estimate. Check the pin on Google Maps or search for your pickup address.` };
+      refreshDeviceLocation();
+    } catch (failure) {
+      if (!current()) return;
+      deviceLocation = { status: "error", candidate: null, message: failure.message || "Your device could not determine a reliable location. Please search for your pickup address." };
+      refreshDeviceLocation();
+    }
+  }
+  function useDeviceLocation() {
+    const candidate = deviceLocation.candidate;
+    if (deviceLocation.status !== "ready" || !candidate) return;
+    try {
+      const fresh = normalizeDevicePosition({ coords: { latitude: candidate.latitude, longitude: candidate.longitude, accuracy: candidate.accuracyMeters }, timestamp: candidate.capturedAt });
+      if (!fresh.precise) throw new Error("This position is not precise enough. Please search for your pickup address.");
+    } catch (failure) {
+      deviceLocation = { status: "error", candidate, message: failure.message };
+      refreshDeviceLocation(); return;
+    }
+    cancelDeviceLocation(); dirty(); invalidateRoute();
+    state.trip.pickup = candidate.text;
+    state.trip.pickupQuery = `${candidate.latitude}, ${candidate.longitude}`;
+    state.trip.pickupPlace = { ...candidate, source: "device", confirmedAt: Date.now() };
+    save(); render(); calculateRoute();
+    app.querySelector('[data-place-field="pickup"]')?.focus();
+    announce("Detected pickup confirmed. The route uses your original device coordinates.");
+  }
   function selectedLocationMarkup(fieldId) {
     if (DEMO_MODE || restoringPlaces) return "";
     const stopIndex = fieldId.startsWith("stop:") ? state.trip.stops.findIndex(stop => stop.id === fieldId.slice(5)) : -1;
@@ -499,7 +579,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
     if (!selectedPoint(point, value)) return "";
     const label = stop ? `stop ${stopIndex + 1}` : `${fieldId} location`;
     const url = googlePlaceUrl(point);
-    return `<span class="selected-location-label">Selected ${e(label)}</span><span class="selected-location-address">${e(point.text)}</span>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="View selected ${e(label)} in Google Maps">View place in Google Maps</a>` : ""}`;
+    return `<span class="selected-location-label">Selected ${e(label)}</span><span class="selected-location-address">${e(point.text)}</span>${point.source === "device" ? `<span class="selected-location-label">Device coordinates: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} · accuracy within ${accuracyLabel(point.accuracyMeters)}. Confirmed ${e(new Date(point.confirmedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))}.</span>` : ""}${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="View selected ${e(label)} in Google Maps">View place in Google Maps</a>` : ""}`;
   }
   function selectedLocationBox(fieldId) {
     const content = selectedLocationMarkup(fieldId);
@@ -536,13 +616,15 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
     const route = usableRoute();
     const travel = route ? formatDuration(route.durationSeconds + waitingMinutes() * 60) : "";
     const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : "Select pickup, drop-off, and any stops from the location suggestions.";
-    const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId);
+    const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId || point?.nearbyName);
     const previewNote = full && maps.previewExpiresAt ? `<p class="test-session-note">Temporary live test · Route server available until ${e(new Date(maps.previewExpiresAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))}.</p>` : '';
     return `${previewNote}${full ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : ""}" role="${routeStatus === "error" ? "alert" : "status"}">${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
   }
   function providerAttributions() {
     const points = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)];
-    const entries = points.flatMap(point => point?.attributions || []);
+    return attributionsMarkup(points.flatMap(point => point?.attributions || []));
+  }
+  function attributionsMarkup(entries) {
     return entries.length ? `<div class="place-providers">${entries.map(a => { let url; try { url = new URL(a.uri); } catch { return e(a.displayName); } return url.protocol === "https:" ? `<a href="${e(url.href)}" target="_blank" rel="noopener noreferrer">${e(a.displayName)}</a>` : e(a.displayName); }).join(" · ")}</div>` : "";
   }
   function refreshRoutePanel() {
@@ -587,7 +669,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
           const stop = state.trip.stops.find(item => item.id === fieldId.slice(5));
           if (!stop) return;
           stop.text = place.text; stop.place = place;
-        } else { if (fieldId === "pickup") ++locationGeneration; state.trip[fieldId] = place.text; state.trip[fieldId + "Place"] = place; }
+        } else { if (fieldId === "pickup") cancelDeviceLocation(); state.trip[fieldId] = place.text; state.trip[fieldId + "Place"] = place; }
         input.value = place.text;
         save(); refreshRoutePanel(); calculateRoute();
       }, onError: message => announce(message) }));
@@ -621,7 +703,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
   // Step 1: selected Google places, ordered stopovers, separate pickup clock time,
   // and an automatic driving + waiting duration.
   function tripPage() {
-    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location">${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}`;
+    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${target ? `<div class="device-location-wrap">${deviceLocationMarkup()}</div>` : ""}`;
     const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
     return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= 5 ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:11}, (_,i) => i + 2).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div><div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
@@ -896,6 +978,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
     if (index === 5 && !state.submitted) return;
     if (index < 5 && index > state.completed) return;
     if (index === step) return;
+    cancelDeviceLocation();
     ++navigationGeneration;
     step = index;
     history[replace ? "replaceState" : "pushState"](
@@ -1126,7 +1209,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
         : input.value,
     );
     if (["trip.pickup", "trip.dropoff"].includes(path)) {
-      if (path === "trip.pickup") ++locationGeneration;
+      if (path === "trip.pickup") cancelDeviceLocation();
       const key = path.slice(5); state.trip[key + "Place"] = null; state.trip[key + "Query"] = input.value; invalidateRoute();
     }
     if (path.startsWith("passenger.") && state.same) {
@@ -1271,7 +1354,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
       case "retry-route":
         invalidateRoute(); calculateRoute(); break;
       case "reset":
-        ++locationGeneration;
+        cancelDeviceLocation();
         restoringPlaces = false;
         DEMO_MODE = false;
         invalidateRoute(); state = defaults();
@@ -1281,39 +1364,13 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
         go(0, true);
         break;
       case "locate":
-        if (!navigator.geolocation) {
-          error(
-            "Current location is unavailable. Please enter your pickup location.",
-          );
-          return;
-        }
-        button.disabled = true;
-        const locating = ++locationGeneration;
-        const pickupBefore = state.trip.pickup;
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            if (locating !== locationGeneration || step !== 0 || state.trip.pickup !== pickupBefore) return;
-            dirty();
-            invalidateRoute();
-            state.trip.pickup = `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
-            state.trip.pickupQuery = state.trip.pickup;
-            state.trip.pickupPlace = { text: state.trip.pickup, latitude: position.coords.latitude, longitude: position.coords.longitude };
-            save();
-            render(); calculateRoute();
-            announce(
-              "Coordinates added. You may replace them with an address.",
-            );
-          },
-          () => {
-            if (locating !== locationGeneration || step !== 0) return;
-            button.disabled = false;
-            error(
-              "We could not access your location. Please enter your pickup location.",
-            );
-          },
-          { timeout: 10000 },
-        );
+        await detectDeviceLocation(); break;
+      case "cancel-device-location":
+        cancelDeviceLocation();
+        app.querySelector('[data-place-field="pickup"]')?.focus();
         break;
+      case "use-device-location":
+        useDeviceLocation(); break;
     }
   });
   window.addEventListener("hashchange", () => {
@@ -1321,6 +1378,7 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
     const allowed =
       index === 5 ? state.submitted : index >= 0 && index <= state.completed;
     if (allowed) {
+      cancelDeviceLocation();
       ++navigationGeneration;
       step = index;
       render();
