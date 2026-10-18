@@ -1,3 +1,5 @@
+**Current Pages review status:** version 1.1.1 fixes the static-host architecture and passes 91 checks; public deployment still needs the three owner settings in [Section 12](#12-github-pages-hosting-fix--version-111).
+
 # Car Pro Form — Project Specification
 
 ## 2026-10-18 — Google Maps integration scope
@@ -1442,3 +1444,34 @@ Google route metrics are estimates; this phase adds neither operator availabilit
 
 - **Release checks:** the pre-change ZIP passed integrity and SHA-256 verification. All 63 current tracked/unignored release files and decompressed backup entries were scanned: no Google API key values were found. Private `.env.local` is ignored and is not served; `/server.js` is also not public. Both public prototype policy pages returned HTTP 200 and fit a 320 px viewport.
 - **Reusable environment configuration:** updated `install_script` and `start_skill` were saved in the environment draft, including Node 24.5+, unit/browser checks, proxy/key handling, and trusted Chromium setup. Current-instance live checks passed; publishing the draft and restoring a new task are separate platform actions and have not been verified.
+
+
+## 12. GitHub Pages hosting fix — version 1.1.1
+
+### Reported failure and diagnosis
+
+The owner tested **https://dev-najmul.github.io/car-pro-form/#trip** and saw “Location search is temporarily unavailable.” The earlier live verification used the Node application, while this URL was being published directly from the `main` branch as static files. Actual requests confirmed the home page returned HTTP 200 but `/api/maps/config` returned HTTP 404. The config failure happened before Google loaded. The earlier statement that the integration was complete did not establish that this Pages URL worked.
+
+### Corrected implementation
+
+- A module-relative `maps-config.json` supports both the site root and `/car-pro-form/`. Node serves this dynamically with `providerMode: server`, preserving its existing API/proxy and private Routes key. The original `/api/maps/config` endpoint remains supported.
+- The new public-only Pages build generates `providerMode: browser` using the Maps/Places browser key. It loads Google's **new Routes library**, not the legacy Directions API. `Route.computeRoutes()` receives Place-ID or coordinate origin/destination, ordered `intermediates`, `DRIVING`, `TRAFFIC_UNAWARE`, and `optimizeWaypointOrder: false`; it requests only `distanceMeters` and `durationMillis`, then normalizes milliseconds to seconds.
+- Stop waiting, prices, date/pickup time, and quote consistency use the existing application logic. Browser API failure never switches to the private Routes key or an invented route. Abort/generation guards ignore obsolete callbacks; a twelve-second routing timeout prevents an indefinitely pending quote.
+- Browser configuration is generated during Actions deployment from repository secret `GOOGLE_MAPS_BROWSER_KEY`. It is public website configuration by design, protected with API/website restrictions, and is not committed. The Routes **server** key, `.env.local`, server modules, tests, previews, and version ZIPs are excluded from `dist`. Public asset symlinks are rejected; the builder only replaces its own marked output.
+- Policy links now return to the project subpath, and the privacy notice describes browser-direct routes as well as the Node proxy. Tariffs and booking submission remain the same demonstration behavior; no new dummy rates were added.
+- `.github/workflows/pages.yml` builds/publishes via GitHub Actions. Pages must use the Actions source; the previous branch-only publishing cannot generate private build configuration.
+
+### External setup still required
+
+1. The repository owner must create Actions secret **`GOOGLE_MAPS_BROWSER_KEY`** using the first Maps/Places browser key from the supplied key list. Current integration calls to manage Actions secrets return **HTTP 403, “Resource not accessible by integration”**; repository code access does not grant that capability.
+2. In Google Cloud, that browser key must authorize **Maps JavaScript API, Places API (New), and Routes API**, with billing/APIs enabled in its project. Permit website referrer **`https://dev-najmul.github.io/*`**, preserving other required referrers. The current browser Routes call returns **`PERMISSION_DENIED`: requests to `routes.googleapis.com` / `Routes.ComputeRoutes` are blocked**. No Google Cloud credential-management access was supplied, so the application cannot change that key's restrictions.
+3. Set repository **Settings → Pages → Source → GitHub Actions**. An actual attempt to update Pages from the current integration returned **HTTP 403, “Resource not accessible by integration”**. The source remains `legacy` / `main`; this is an owner-only setting in the current access scope.
+
+Live testing on the public GitHub Pages origin with the browser config supplied only to the test browser produced five actual Google place suggestions. That verifies the browser key's Places/referrer path under those test conditions; the deployed site remains separate until its Actions build publishes generated config. The Routes permission failure is a real provider response, not a mock. Do not mark the public form fully working until both prerequisites and a real deployment are verified.
+
+### Validation and deployment outcome
+
+- `npm run check` passed. `npm run test:unit` passed **48/48** checks, including five new static build safety/credential-exclusion cases. The complete Playwright run passed **43/43** cases in 2.6 minutes, including browser Routes ordering/duration/waits, denied permission, cancelled results, and a real static server mounted under `/car-pro-form/` with no API endpoints. Total: **91 passing checks**, no failures/skips. A subsequent focused static-subpath check also verified Privacy Policy navigation back to the project path.
+- A local build with the supplied browser key succeeded; the generated configuration contains only that public browser credential and browser-provider flags. The private Routes key is excluded. Generated `dist` and `maps-config.json` are ignored and not committed.
+- Repository Pages metadata still reports `build_type: legacy`, source `main`. Updating it through the integration was denied with HTTP 403. Code and the Actions deployment workflow are ready, but public publishing is blocked by owner settings; no completed Pages deployment is claimed.
+- The current Node server was restarted with the new configuration endpoint; local Node mode remains supported. The public browser key remains outside committed source, and the private Routes credential remains absent from static build output.

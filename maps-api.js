@@ -172,15 +172,15 @@ export function createMapsApiHandler({
 
   return async function mapsApiHandler(req, res) {
     const pathname = new URL(req.url, "http://localhost").pathname;
-    if (!pathname.startsWith("/api/maps/")) return false;
+    if (!pathname.startsWith("/api/maps/") && pathname !== "/maps-config.json") return false;
     try {
       validateSameOrigin(req);
-      if (pathname === "/api/maps/config") {
+      if (pathname === "/api/maps/config" || pathname === "/maps-config.json") {
         if (req.method !== "GET") {
           sendJson(res, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Use GET for map configuration." } }, { Allow: "GET" });
           return true;
         }
-        sendJson(res, 200, { browserKey: publicKey, browserConfigured: Boolean(publicKey), routesConfigured: Boolean(privateKey) });
+        sendJson(res, 200, { browserKey: publicKey, browserConfigured: Boolean(publicKey), routesConfigured: Boolean(privateKey), providerMode: "server" });
         return true;
       }
       if (pathname !== "/api/maps/route") throw new ApiError(404, "NOT_FOUND", "This map endpoint does not exist.");

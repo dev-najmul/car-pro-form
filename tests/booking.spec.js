@@ -35,7 +35,9 @@ function installBookingPlacesStub() {
 }
 
 async function mockGoogleMaps(page) {
-  await page.route('**/api/maps/config', route => route.fulfill({ json: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true } }));
+  const configuration = { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true, providerMode: 'server' };
+  await page.route('**/api/maps/config', route => route.fulfill({ json: configuration }));
+  await page.route('**/maps-config.json', route => route.fulfill({ json: configuration }));
   await page.route('https://maps.googleapis.com/maps/api/js?**', route => {
     const callback = new URL(route.request().url()).searchParams.get('callback');
     const body = `(${installBookingPlacesStub.toString()})();window[${JSON.stringify(callback)}]?.();`;

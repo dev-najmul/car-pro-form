@@ -3,8 +3,8 @@ const text = value => typeof value === 'string' ? value : value?.text || value?.
 export class MapsClient {
   constructor() { this.sessions = new Map(); }
   async config() {
-    if (!this.configuration) this.configuration = fetch('/api/maps/config', { cache: 'no-store' }).then(async response => {
-      if (!response.ok) throw new Error('Location search is temporarily unavailable. Please try again.');
+    if (!this.configuration) this.configuration = fetch(new URL('./maps-config.json', import.meta.url), { cache: 'no-store' }).then(async response => {
+      if (!response.ok) throw new Error('Location search is not configured for this website yet. Please contact TUXANO.');
       return response.json();
     }).catch(error => { this.configuration = null; throw error; });
     return this.configuration;
@@ -51,12 +51,44 @@ export class MapsClient {
     return { placeId: place.id, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
   }
   async route(request, signal) {
-    const response = await fetch('/api/maps/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal, cache: 'no-store' });
+    const config = await this.config();
+    if (config.providerMode === 'browser') return this.browserRoute(request, signal);
+    const response = await fetch(new URL('./api/maps/route', import.meta.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal, cache: 'no-store' });
     let data;
     try { data = await response.json(); } catch { throw new Error('The route service is temporarily unavailable. Please try again.'); }
     if (!response.ok) throw new Error(data.error?.message || 'The route could not be calculated. Please check your locations and try again.');
     if (!Number.isFinite(data.distanceMeters) || data.distanceMeters < 0 || !Number.isFinite(data.durationSeconds) || data.durationSeconds < 0) throw new Error('The route service returned an invalid estimate. Please try again.');
     return data;
+  }
+  async browserRoute(request, signal) {
+    if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
+    await this.ready();
+    const [{ Route }, { Place }] = await Promise.all([google.maps.importLibrary('routes'), google.maps.importLibrary('places')]);
+    if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
+    const point = value => value.placeId ? new Place({ id: value.placeId }) : { lat: value.latitude, lng: value.longitude };
+    let timer, abort;
+    try {
+      const result = await new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Route calculation took too long. Please try again.')), 12000);
+        abort = () => reject(new DOMException('Route cancelled.', 'AbortError'));
+        signal?.addEventListener('abort', abort, { once: true });
+        Promise.resolve().then(() => Route.computeRoutes({
+          origin: point(request.origin), destination: point(request.destination),
+          intermediates: (request.stops || []).map(value => ({ location: point(value), via: false })),
+          travelMode: 'DRIVING', routingPreference: 'TRAFFIC_UNAWARE', optimizeWaypointOrder: false,
+          fields: ['distanceMeters', 'durationMillis'],
+        })).then(resolve, reject);
+      });
+      if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
+      const route = result?.routes?.[0];
+      if (!route) throw new Error('No driving route was found. Check the selected locations.');
+      if (!Number.isFinite(route.distanceMeters) || route.distanceMeters < 0 || !Number.isFinite(route.durationMillis) || route.durationMillis < 0) throw new Error('The route provider returned incomplete route information.');
+      return { distanceMeters: route.distanceMeters, durationSeconds: route.durationMillis / 1000, provider: 'google', calculatedAt: new Date().toISOString() };
+    } catch (failure) {
+      if (failure.name === 'AbortError') throw failure;
+      if (/PERMISSION_DENIED|REQUEST_DENIED|API_KEY|not authorized|blocked/i.test(failure.message)) throw new Error('Route calculation is not available for this website yet. Please contact TUXANO.');
+      throw new Error(failure.message || 'The route could not be calculated. Please try again.');
+    } finally { clearTimeout(timer); if (abort) signal?.removeEventListener('abort', abort); }
   }
   discardSession(id) { this.sessions.delete(id); }
 }

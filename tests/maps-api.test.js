@@ -85,14 +85,17 @@ test("public config exposes only the browser credential and configured flags", a
   const client = await startApi(t);
   const response = await client.request("/api/maps/config");
   assert.equal(response.status, 200);
-  assert.deepEqual(response.json, { browserKey, browserConfigured: true, routesConfigured: true });
+  assert.deepEqual(response.json, { browserKey, browserConfigured: true, routesConfigured: true, providerMode: 'server' });
+  const staticConfigPath = await client.request('/maps-config.json');
+  assert.equal(staticConfigPath.status, 200);
+  assert.deepEqual(staticConfigPath.json, response.json);
   assert.equal(response.text.includes(routesKey), false);
   assert.equal(response.headers["cache-control"], "no-store");
   assert.equal(response.headers["cross-origin-resource-policy"], "same-origin");
 
   const unconfigured = await startApi(t, { browserKey: "", routesKey: "" });
   assert.deepEqual((await unconfigured.request("/api/maps/config")).json, {
-    browserKey: "", browserConfigured: false, routesConfigured: false,
+    browserKey: "", browserConfigured: false, routesConfigured: false, providerMode: 'server',
   });
   expectError(await unconfigured.route(), 503, "ROUTES_NOT_CONFIGURED");
 });

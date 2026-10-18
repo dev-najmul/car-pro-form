@@ -1,56 +1,23 @@
 import { test, expect } from '@playwright/test';
+import { installPlacesStub } from './helpers/google-places-stub.js';
 
 const contexts = new WeakMap();
 const sampleRoute = { distanceMeters: 32186.88, durationSeconds: 1800, provider: 'google', calculatedAt: '2026-10-18T00:00:00Z' };
 const pointId = query => 'test-' + encodeURIComponent(query);
 
-function installPlacesStub() {
-  const control = window.__mapsMock;
-  const wait = async (kind, key) => {
-    if (!control[kind === 'suggest' ? 'holdSuggestions' : 'holdDetails'].includes(key)) return;
-    await new Promise(resolve => control.pending.push({ kind, key, resolve }));
-  };
-  let token = 0;
-  const makePlace = (id, kind) => {
-    const query = id.startsWith('test-') ? decodeURIComponent(id.slice(5)) : id;
-    return {
-      id, displayName: window.__placeDisplayNames?.[id] || '', formattedAddress: window.__placeCanonicalLabels?.[id] || query,
-      location: { lat: () => 41, lng: () => -87 },
-      attributions: [{ provider: 'Demo Places Provider', providerURI: 'https://example.com/maps-attribution' }],
-      fetchFields: async request => { control.calls.push({ kind, query, id, fields: request.fields }); await wait('details', query); },
-    };
-  };
-  window.google = { maps: { importLibrary: async name => {
-    control.libraries.push(name);
-    return {
-      Place: class { constructor({ id }) { Object.assign(this, makePlace(id, 'restore')); } },
-      AutocompleteSessionToken: class { constructor() { this.token = ++token; } },
-      AutocompleteSuggestion: { fetchAutocompleteSuggestions: async request => {
-        const query = request.input;
-        control.calls.push({ kind: 'suggest', query, token: request.sessionToken?.token });
-        await wait('suggest', query);
-        if (control.failSuggestions.includes(query)) throw new Error('Google location search is temporarily unavailable.');
-        if (control.emptySuggestions.includes(query)) return { suggestions: [] };
-        return { suggestions: [{ placePrediction: {
-          placeId: 'test-' + encodeURIComponent(query), text: { text: query }, mainText: { text: query }, secondaryText: { text: 'Test location' },
-          toPlace: () => makePlace('test-' + encodeURIComponent(query), 'details'),
-        } }] };
-      } },
-    };
-  } } };
-}
 
 test.beforeEach(async ({ page }) => {
-  const control = { errors: [], requests: [], sdk: [], expectedStatuses: new Set(), heldRoutes: [], routeHandler: null, config: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true } };
+  const control = { errors: [], requests: [], sdk: [], expectedStatuses: new Set(), heldRoutes: [], routeHandler: null, config: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true, providerMode: 'server' } };
   contexts.set(page, control);
   await page.addInitScript(() => {
-    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], failSuggestions: [], emptySuggestions: [], release(kind, key) {
+    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], release(kind, key) {
       const matches = this.pending.filter(item => item.kind === kind && item.key === key);
       this.pending = this.pending.filter(item => !matches.includes(item));
       matches.forEach(item => item.resolve());
     } };
   });
   await page.route('**/api/maps/config', route => route.fulfill({ json: control.config }));
+  await page.route('**/maps-config.json', route => route.fulfill({ json: control.config }));
   await page.route('https://maps.googleapis.com/maps/api/js?**', route => {
     const url = new URL(route.request().url());
     control.sdk.push({ key: url.searchParams.get('key'), callback: url.searchParams.get('callback') });
@@ -404,4 +371,62 @@ test('reset discards a pending restored route and late response cannot revive th
   await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')).submitted)).toBe(false);
+});
+
+test('browser Routes SDK uses Place waypoints, millisecond durations, ordered stops, and wait pricing without a backend', async ({ page, context }) => {
+  contexts.get(page).config.providerMode = 'browser';
+  await trip(page);
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click();
+  await selectPlace(page, 'Stop 1', 'Browser Stop');
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
+  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  const request = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1).request);
+  expect(request).toMatchObject({
+    origin: { kind: 'place', placeId: pointId('Demo Pickup') },
+    destination: { kind: 'place', placeId: pointId('Demo Destination') },
+    intermediates: [{ location: { kind: 'place', placeId: pointId('Browser Stop') }, via: false }],
+    travelMode: 'DRIVING', routingPreference: 'TRAFFIC_UNAWARE', optimizeWaypointOrder: false,
+  });
+  expect(request.fields).toEqual(expect.arrayContaining(['distanceMeters', 'durationMillis']));
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 41.88, longitude: -87.63 });
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1)?.request.origin)).toEqual({ kind: 'coordinates', lat: 41.88, lng: -87.63 });
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
+  await passengers(page);
+  await total(page, 297); // $225 driving + $22.50 waiting + $49.50 gratuity.
+  expect(contexts.get(page).requests).toHaveLength(0);
+});
+
+test('browser Routes permission failure never displays a fabricated route or switches to server fallback', async ({ page }) => {
+  contexts.get(page).config.providerMode = 'browser';
+  await page.evaluate(id => { window.__mapsMock.failRoutes = [id]; }, pointId('Denied Destination'));
+  await selectPlace(page, 'Pickup location', 'Demo Pickup');
+  await selectPlace(page, 'Drop-off location', 'Denied Destination');
+  await expect(page.getByRole('alert').filter({ hasText: /Route calculation is not available for this website yet/i })).toBeVisible();
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
+  await expect(page.getByTestId('route-distance')).toHaveCount(0);
+  await dateAndTime(page);
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await expect(page).toHaveURL(/#trip$/);
+  expect(contexts.get(page).requests).toHaveLength(0);
+});
+
+test('aborted browser Routes callbacks cannot overwrite the newer selection or quote', async ({ page }) => {
+  contexts.get(page).config.providerMode = 'browser';
+  const oldId = pointId('Old Browser Destination');
+  await page.evaluate(id => {
+    window.__mapsMock.holdRoutes = [id];
+    window.__mapsMock.routeResults[id] = { distanceMeters: 160934.4, durationMillis: 7200000 };
+  }, oldId);
+  await selectPlace(page, 'Pickup location', 'Demo Pickup');
+  await selectPlace(page, 'Drop-off location', 'Old Browser Destination');
+  await pending(page, 'route', oldId);
+  await selectPlace(page, 'Drop-off location', 'New Browser Destination');
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await release(page, 'route', oldId);
+  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await dateAndTime(page); await passengers(page); await total(page, 270);
+  expect(contexts.get(page).requests).toHaveLength(0);
 });

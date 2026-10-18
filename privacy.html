@@ -9,7 +9,7 @@
   </head>
   <body class="policy-page">
     <main class="policy-content">
-      <a class="policy-back" href="/">← Return to the reservation form</a>
+      <a class="policy-back" href="./">← Return to the reservation form</a>
       <h1>Prototype Privacy Notice</h1>
       <p>This notice describes the current reservation form prototype. The form creates a demonstration summary; it does not send a real reservation, payment, or email.</p>
 
@@ -23,7 +23,7 @@
       <section>
         <h2>Location searches and Google Maps</h2>
         <p>When you type into a location search field, the search text is sent to Google through its Maps JavaScript Places service to obtain suggestions. Selecting a suggestion requests place details from Google, including its identifier, location, address, and any supplied provider attribution.</p>
-        <p>For a driving estimate, this application sends the selected pickup, destination, and ordered stops as place IDs or coordinates to its route endpoint. The server forwards those waypoints to Google Routes. Route requests do not include your contact or billing fields, special-request notes, or the pickup date and clock time. Stop waiting times are used by this application to calculate the displayed total duration and demonstration price.</p>
+        <p>For a driving estimate, this application sends the selected pickup, destination, and ordered stops as place IDs or coordinates to Google. The GitHub Pages version requests the route directly through Google Maps in your browser. When run with the Node booking server, the server forwards the route request to Google instead. Route requests do not include your contact or billing fields, special-request notes, or the pickup date and clock time. Stop waiting times are used by this application to calculate the displayed total duration and demonstration price.</p>
         <p>Google may receive technical information associated with these requests, such as your IP address and browser or request metadata. Google’s processing, storage, and use of information are governed by the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>, which is incorporated into this notice for the Google-powered features.</p>
         <p>Those features are also subject to the <a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noopener noreferrer">Google Maps/Google Earth Additional Terms of Service</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Google Terms of Service</a>.</p>
       </section>
@@ -46,7 +46,7 @@
 
       <nav aria-label="Policy navigation">
         <a href="terms.html">Prototype Terms of Use</a>
-        <a href="/">Return to the reservation form</a>
+        <a href="./">Return to the reservation form</a>
       </nav>
     </main>
   </body>
