@@ -68,7 +68,7 @@ jobs:
           PUBLISHED_PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           PREVIEW_EXPIRES_AT: ${{ steps.route-preview.outputs.preview_expires_at }}
       - name: Keep temporary Routes backend available for testing
-        if: ${{ steps.route-preview.outputs.enabled == 'true' }}
+        if: ${{ success() && !cancelled() && steps.route-preview.outputs.enabled == 'true' }}
         run: node scripts/keep-route-preview.mjs
         env:
           ROUTE_PREVIEW_STATE_PATH: ${{ steps.route-preview.outputs.state_path }}
