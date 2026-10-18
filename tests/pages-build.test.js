@@ -40,6 +40,24 @@ test('missing browser configuration fails before an existing output is modified'
   assert.equal(await readFile(join(options.outputDirectory, 'keep.txt'), 'utf8'), 'keep me');
 });
 
+test('remote preview config contains only public endpoint metadata and a future expiration', async t => {
+  const options = await fixture(t);
+  const expiry = new Date(Date.now() + 7200000).toISOString();
+  await buildPages({ ...options, routeEndpoint: 'https://preview.example/api/maps/route', previewExpiresAt: expiry });
+  const config = JSON.parse(await readFile(join(options.outputDirectory, 'maps-config.json'), 'utf8'));
+  assert.equal(config.providerMode, 'remote');
+  assert.equal(config.routeEndpoint, 'https://preview.example/api/maps/route');
+  assert.equal(config.previewExpiresAt, expiry);
+  assert.ok(!JSON.stringify(config).includes('private-server-key.fixture'));
+});
+
+test('unsafe remote endpoints and expired previews fail before publishing', async t => {
+  const options = await fixture(t);
+  for (const routeEndpoint of ['http://public.example/route', 'https://user:password@preview.example/route', 'https://preview.example/route?key=private', 'javascript:alert(1)']) await assert.rejects(buildPages({ ...options, routeEndpoint }), /HTTPS/);
+  await assert.rejects(buildPages({ ...options, routeEndpoint: 'https://preview.example/route', previewExpiresAt: '2000-01-01T00:00:00Z' }), /future/);
+  await assert.rejects(buildPages({ ...options, previewExpiresAt: new Date(Date.now() + 3600000).toISOString() }), /requires/);
+});
+
 test('source, ancestor, asset directory, and unmarked output cannot be replaced', async t => {
   const options = await fixture(t);
   for (const outputDirectory of [options.sourceDirectory, options.directory, join(options.sourceDirectory, 'assets')]) await assert.rejects(buildPages({ ...options, outputDirectory }), /source files/);

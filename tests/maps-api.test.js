@@ -72,12 +72,12 @@ function request(base, path, { method = "GET", json, raw, chunks, headers = {}, 
   });
 }
 
-function expectError(response, status, code) {
+function expectError(response, status, code, allowedOrigin = undefined) {
   assert.equal(response.status, status);
   assert.equal(response.json?.error?.code, code);
   assert.equal(typeof response.json.error.message, "string");
   assert.equal(response.text.includes(routesKey), false, "Private provider key must never reach clients");
-  assert.equal(response.headers["access-control-allow-origin"], undefined);
+  assert.equal(response.headers["access-control-allow-origin"], allowedOrigin);
   assert.equal(response.headers["cache-control"], "no-store");
 }
 
@@ -165,6 +165,200 @@ test("cross-origin and cross-site requests are rejected, without permissive CORS
   ]) expectError(await client.route(trip, { headers }), 403, "SAME_ORIGIN_REQUIRED");
   expectError(await client.request("/api/maps/config", { headers: { Origin: "https://unrelated.example" } }), 403, "SAME_ORIGIN_REQUIRED");
   assert.equal(calls, 0);
+});
+
+test("an explicitly allowed HTTPS booking origin can preflight and calculate a route without receiving the server key", async (t) => {
+  const origin = "https://booking.example";
+  let calls = 0;
+  const client = await startApi(t, {
+    allowedOrigins: ["https://BOOKING.example:443/"],
+    fetchImpl: async () => { calls++; return upstreamRoute(); },
+  });
+  const preflight = await client.request("/api/maps/route", {
+    method: "OPTIONS",
+    headers: {
+      Origin: origin,
+      "Sec-Fetch-Site": "cross-site",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.text, "");
+  assert.equal(preflight.headers["access-control-allow-origin"], origin);
+  assert.equal(preflight.headers.vary, "Origin");
+  assert.equal(preflight.headers["access-control-allow-methods"], "POST");
+  assert.equal(preflight.headers["access-control-allow-headers"], "Content-Type");
+  assert.equal(preflight.headers["access-control-max-age"], "300");
+  assert.equal(preflight.headers["access-control-allow-credentials"], undefined);
+  assert.equal(calls, 0, "Preflight must not contact Google");
+
+  const response = await client.route(trip, { headers: { Origin: origin, "Sec-Fetch-Site": "cross-site" } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers["access-control-allow-origin"], origin);
+  assert.equal(response.headers.vary, "Origin");
+  assert.equal(response.headers["access-control-allow-credentials"], undefined);
+  assert.equal(response.json.distanceMeters, 32187);
+  assert.equal(response.text.includes(routesKey), false);
+  assert.equal(calls, 1);
+});
+
+test("CORS remains closed by default, including preflight requests", async (t) => {
+  const client = await startApi(t, { allowedOrigins: [] });
+  const headers = { Origin: "https://booking.example", "Sec-Fetch-Site": "cross-site" };
+  expectError(await client.route(trip, { headers }), 403, "SAME_ORIGIN_REQUIRED");
+  expectError(await client.request("/api/maps/route", {
+    method: "OPTIONS",
+    headers: { ...headers, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+  }), 403, "SAME_ORIGIN_REQUIRED");
+});
+
+test("allowed-origin matching rejects forged, opaque, absent, and unrelated origins", async (t) => {
+  let calls = 0;
+  const client = await startApi(t, {
+    allowedOrigins: ["https://booking.example"],
+    fetchImpl: async () => { calls++; return upstreamRoute(); },
+  });
+  for (const Origin of [
+    "https://booking.example.evil.example", "https://booking.example/forged-path",
+    "https://booking.example/", "https://booking.example:443", "https://BOOKING.example",
+    "http://booking.example", "https://unrelated.example", "null", "https://user@booking.example",
+  ]) {
+    expectError(await client.route(trip, { headers: { Origin, "Sec-Fetch-Site": "cross-site" } }), 403, "SAME_ORIGIN_REQUIRED");
+  }
+  expectError(await client.route(trip, { headers: { "Sec-Fetch-Site": "cross-site" } }), 403, "SAME_ORIGIN_REQUIRED");
+  assert.equal(calls, 0);
+});
+
+test("preflight allows only JSON POST and never broadens CORS to config or other API endpoints", async (t) => {
+  const origin = "https://booking.example";
+  let calls = 0;
+  const client = await startApi(t, {
+    allowedOrigins: [origin],
+    fetchImpl: async () => { calls++; return upstreamRoute(); },
+  });
+  for (const requested of [
+    { "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "content-type" },
+    { "Access-Control-Request-Method": "DELETE" },
+    { "Access-Control-Request-Headers": "content-type" },
+    { "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type, authorization" },
+    { "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-goog-api-key" },
+  ]) {
+    const response = await client.request("/api/maps/route", {
+      method: "OPTIONS", headers: { Origin: origin, "Sec-Fetch-Site": "cross-site", ...requested },
+    });
+    expectError(response, 403, "PREFLIGHT_NOT_ALLOWED", origin);
+    assert.equal(response.headers["access-control-allow-methods"], undefined);
+    assert.equal(response.headers["access-control-allow-headers"], undefined);
+  }
+  for (const path of ["/api/maps/config", "/maps-config.json", "/api/maps/missing", "/api/maps/route"]) {
+    expectError(await client.request(path, { headers: { Origin: origin, "Sec-Fetch-Site": "cross-site" } }), 403, "SAME_ORIGIN_REQUIRED");
+  }
+  assert.equal(calls, 0);
+});
+
+test("allowed booking origins can read sanitized JSON validation and provider errors", async (t) => {
+  const origin = "https://booking.example";
+  const client = await startApi(t, {
+    allowedOrigins: [origin],
+    fetchImpl: async () => Response.json({ error: { message: routesKey } }, { status: 403 }),
+  });
+  const headers = { Origin: origin, "Sec-Fetch-Site": "cross-site" };
+  expectError(await client.route({}, { headers }), 400, "INVALID_ROUTE", origin);
+  expectError(await client.request("/api/maps/route", { method: "POST", raw: "{broken", headers }), 400, "INVALID_JSON", origin);
+  const providerFailure = await client.route(trip, { headers });
+  expectError(providerFailure, 502, "ROUTE_PROVIDER_ERROR", origin);
+  assert.equal(providerFailure.headers.vary, "Origin");
+  assert.equal(providerFailure.headers["access-control-allow-credentials"], undefined);
+
+  const unconfigured = await startApi(t, { allowedOrigins: [origin], routesKey: "" });
+  expectError(await unconfigured.route(trip, { headers }), 503, "ROUTES_NOT_CONFIGURED", origin);
+});
+
+test("allowed-origin routes still respect the per-client rate limit", async (t) => {
+  const origin = "https://booking.example";
+  let calls = 0;
+  const client = await startApi(t, {
+    allowedOrigins: [origin],
+    fetchImpl: async () => { calls++; return upstreamRoute(); },
+  });
+  const headers = { Origin: origin, "Sec-Fetch-Site": "cross-site" };
+  for (let index = 0; index < 30; index++) assert.equal((await client.route(trip, { headers })).status, 200);
+  const response = await client.route(trip, { headers });
+  expectError(response, 429, "RATE_LIMITED", origin);
+  assert.equal(response.headers["retry-after"], "60");
+  assert.equal(calls, 30);
+});
+
+test("allowed origins support explicit loopback development and reject unsafe configuration", async (t) => {
+  const origin = "http://localhost:4173";
+  const client = await startApi(t, {
+    allowedOrigins: ` https://booking.example/ , ${origin} ,`,
+    fetchImpl: async () => upstreamRoute(),
+  });
+  const response = await client.route(trip, { headers: { Origin: origin, "Sec-Fetch-Site": "same-site" } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers["access-control-allow-origin"], origin);
+  for (const value of [
+    ["*"], ["https://*.example"], ["http://booking.example"], ["ftp://booking.example"],
+    ["https://user:secret@booking.example"], ["https://booking.example/path"],
+    ["https://booking.example?query=yes"], ["https://booking.example#fragment"],
+    ["null"], [null], {},
+  ]) assert.throws(() => createMapsApiHandler({ allowedOrigins: value }), TypeError);
+});
+
+test("allowed origins can come from the server environment without adding a default public origin", async (t) => {
+  const previous = process.env.ALLOWED_WEB_ORIGINS;
+  let clientPromise;
+  try {
+    process.env.ALLOWED_WEB_ORIGINS = "https://first.example,https://second.example/";
+    clientPromise = startApi(t, { fetchImpl: async () => upstreamRoute() });
+  } finally {
+    if (previous === undefined) delete process.env.ALLOWED_WEB_ORIGINS;
+    else process.env.ALLOWED_WEB_ORIGINS = previous;
+  }
+  const client = await clientPromise;
+  for (const Origin of ["https://first.example", "https://second.example"]) {
+    const response = await client.route(trip, { headers: { Origin, "Sec-Fetch-Site": "cross-site" } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["access-control-allow-origin"], Origin);
+  }
+  expectError(await client.route(trip, { headers: { Origin: "https://third.example", "Sec-Fetch-Site": "cross-site" } }), 403, "SAME_ORIGIN_REQUIRED");
+});
+
+test("an optional temporary-preview budget caps Google requests without counting preflight or invalid input", async (t) => {
+  const origin = "https://booking.example";
+  let calls = 0;
+  const client = await startApi(t, {
+    allowedOrigins: [origin], previewRouteRequestLimit: 2,
+    fetchImpl: async () => { calls++; return upstreamRoute(); },
+  });
+  const headers = { Origin: origin, "Sec-Fetch-Site": "cross-site" };
+  expectError(await client.route({}, { headers }), 400, "INVALID_ROUTE", origin);
+  const preflight = await client.request("/api/maps/route", {
+    method: "OPTIONS", headers: { ...headers, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal((await client.route(trip, { headers })).status, 200);
+  assert.equal((await client.route(trip, { headers })).status, 200);
+  const limited = await client.route(trip, { headers });
+  expectError(limited, 429, "PREVIEW_QUOTA_REACHED", origin);
+  assert.equal(limited.headers["retry-after"], undefined, "A lifetime budget must not promise a timed reset");
+  assert.equal(calls, 2);
+});
+
+test("preview budgets count provider failures and reject invalid configured limits", async (t) => {
+  let calls = 0;
+  const client = await startApi(t, {
+    previewRouteRequestLimit: 1,
+    fetchImpl: async () => { calls++; throw new Error("Temporary fixture failure"); },
+  });
+  expectError(await client.route(), 502, "ROUTE_PROVIDER_ERROR");
+  expectError(await client.route(), 429, "PREVIEW_QUOTA_REACHED");
+  assert.equal(calls, 1);
+  for (const previewRouteRequestLimit of [0, -1, 1.5, NaN, "200"]) {
+    assert.throws(() => createMapsApiHandler({ previewRouteRequestLimit }), TypeError);
+  }
 });
 
 test("HTTP methods, unknown API paths, and unrelated-handler fallthrough are explicit", async (t) => {

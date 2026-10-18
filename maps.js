@@ -5,7 +5,19 @@ export class MapsClient {
   async config() {
     if (!this.configuration) this.configuration = fetch(new URL('./maps-config.json', import.meta.url), { cache: 'no-store' }).then(async response => {
       if (!response.ok) throw new Error('Location search is not configured for this website yet. Please contact TUXANO.');
-      return response.json();
+      const config = await response.json();
+      if (config.providerMode === 'remote') {
+        let url;
+        try { url = new URL(config.routeEndpoint); } catch { throw new Error('The test route service is not configured correctly.'); }
+        const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+        if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) throw new Error('The test route service is not configured correctly.');
+        if (config.previewExpiresAt) {
+          const expiry = new Date(config.previewExpiresAt).getTime();
+          if (!Number.isFinite(expiry)) throw new Error('The test route service expiration is invalid.');
+          this.previewExpiresAt = new Date(expiry).toISOString();
+        }
+      }
+      return config;
     }).catch(error => { this.configuration = null; throw error; });
     return this.configuration;
   }
@@ -53,7 +65,19 @@ export class MapsClient {
   async route(request, signal) {
     const config = await this.config();
     if (config.providerMode === 'browser') return this.browserRoute(request, signal);
-    const response = await fetch(new URL('./api/maps/route', import.meta.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal, cache: 'no-store' });
+    if (config.providerMode === 'remote' && config.previewExpiresAt && Date.now() >= new Date(config.previewExpiresAt).getTime()) throw new Error('This temporary test session has ended. Please restart the test session before calculating a new route.');
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+    let response;
+    try {
+      response = await fetch(config.providerMode === 'remote' ? config.routeEndpoint : new URL('./api/maps/route', import.meta.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal: controller.signal, cache: 'no-store' });
+    } catch (failure) {
+      if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
+      throw new Error(timedOut ? 'Route calculation took too long. Please try again.' : 'The test route service is unavailable. Please check that the test session is still running.');
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     let data;
     try { data = await response.json(); } catch { throw new Error('The route service is temporarily unavailable. Please try again.'); }
     if (!response.ok) throw new Error(data.error?.message || 'The route could not be calculated. Please check your locations and try again.');

@@ -42,6 +42,55 @@ function validateSameOrigin(req) {
   }
 }
 
+function normalizeAllowedOrigins(values) {
+  const entries = typeof values === "string" ? values.split(",") : values;
+  if (!Array.isArray(entries)) throw new TypeError("Allowed web origins must be a list or a comma-separated string.");
+  const origins = new Set();
+  for (const value of entries) {
+    if (typeof value !== "string") throw new TypeError("Each allowed web origin must be an HTTPS origin.");
+    const text = value.trim();
+    if (!text) continue;
+    let parsed;
+    try { parsed = new URL(text); } catch { throw new TypeError("Each allowed web origin must be an HTTPS origin."); }
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+    if (
+      (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) ||
+      parsed.hostname.includes("*") || parsed.username || parsed.password ||
+      parsed.pathname !== "/" || parsed.search || parsed.hash
+    ) throw new TypeError("Allowed web origins must use HTTPS without credentials, paths, or query strings.");
+    origins.add(parsed.origin);
+  }
+  return origins;
+}
+
+function allowedRequestOrigin(req, allowedOrigins) {
+  const origin = req.headers.origin;
+  if (typeof origin !== "string" || !allowedOrigins.has(origin)) return null;
+  return origin;
+}
+
+function corsHeaders(origin) {
+  return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+}
+
+function sendPreflight(req, res, origin) {
+  const requestedHeaders = String(req.headers["access-control-request-headers"] || "")
+    .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (
+    req.headers["access-control-request-method"] !== "POST" ||
+    requestedHeaders.some((header) => header !== "content-type")
+  ) throw new ApiError(403, "PREFLIGHT_NOT_ALLOWED", "Only JSON route requests from the booking website are allowed.");
+  res.writeHead(204, {
+    ...corsHeaders(origin),
+    "Access-Control-Allow-Methods": "POST",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "300",
+    "Cache-Control": "no-store",
+    "Content-Length": "0",
+  });
+  res.end();
+}
+
 async function readJsonBody(req) {
   if (!/^application\/json(?:\s*;|\s*$)/i.test(req.headers["content-type"] || "")) {
     req.resume();
@@ -148,11 +197,18 @@ export function createMapsApiHandler({
   fetchImpl = globalThis.fetch,
   browserKey = process.env.GOOGLE_MAPS_BROWSER_KEY || "",
   routesKey = process.env.GOOGLE_ROUTES_API_KEY || "",
+  allowedOrigins = process.env.ALLOWED_WEB_ORIGINS || [],
+  previewRouteRequestLimit = process.env.PREVIEW_ROUTE_REQUEST_LIMIT ? Number(process.env.PREVIEW_ROUTE_REQUEST_LIMIT) : Infinity,
   timeoutMs = 12_000,
   now = Date.now,
 } = {}) {
   const publicKey = typeof browserKey === "string" ? browserKey.trim() : "";
   const privateKey = typeof routesKey === "string" ? routesKey.trim() : "";
+  const permittedOrigins = normalizeAllowedOrigins(allowedOrigins);
+  if (previewRouteRequestLimit !== Infinity && (!Number.isSafeInteger(previewRouteRequestLimit) || previewRouteRequestLimit < 1)) {
+    throw new TypeError("The preview route request limit must be a positive integer.");
+  }
+  let providerRequests = 0;
   const clients = new Map();
 
   function checkRate(req, timestamp) {
@@ -173,8 +229,18 @@ export function createMapsApiHandler({
   return async function mapsApiHandler(req, res) {
     const pathname = new URL(req.url, "http://localhost").pathname;
     if (!pathname.startsWith("/api/maps/") && pathname !== "/maps-config.json") return false;
+    let responseHeaders = {};
     try {
-      validateSameOrigin(req);
+      const crossOrigin = pathname === "/api/maps/route" ? allowedRequestOrigin(req, permittedOrigins) : null;
+      if (crossOrigin && ["POST", "OPTIONS"].includes(req.method)) {
+        responseHeaders = corsHeaders(crossOrigin);
+        if (req.method === "OPTIONS") {
+          sendPreflight(req, res, crossOrigin);
+          return true;
+        }
+      } else {
+        validateSameOrigin(req);
+      }
       if (pathname === "/api/maps/config" || pathname === "/maps-config.json") {
         if (req.method !== "GET") {
           sendJson(res, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Use GET for map configuration." } }, { Allow: "GET" });
@@ -191,6 +257,10 @@ export function createMapsApiHandler({
       checkRate(req, now());
       const payload = canonicalRoute(await readJsonBody(req));
       if (!privateKey) throw new ApiError(503, "ROUTES_NOT_CONFIGURED", "Route calculation is not configured yet.");
+      if (providerRequests >= previewRouteRequestLimit) {
+        throw new ApiError(429, "PREVIEW_QUOTA_REACHED", "This temporary preview has reached its route limit. Restart the preview to continue.");
+      }
+      providerRequests += 1;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       timer.unref?.();
@@ -227,10 +297,13 @@ export function createMapsApiHandler({
       } finally {
         clearTimeout(timer);
       }
-      sendJson(res, 200, result);
+      sendJson(res, 200, result, responseHeaders);
     } catch (error) {
       const safe = error instanceof ApiError ? error : new ApiError(500, "INTERNAL_ERROR", "The route request could not be completed.");
-      sendJson(res, safe.status, { error: { code: safe.code, message: safe.message } }, safe.status === 429 ? { "Retry-After": "60" } : {});
+      sendJson(res, safe.status, { error: { code: safe.code, message: safe.message } }, {
+        ...responseHeaders,
+        ...(safe.code === "RATE_LIMITED" ? { "Retry-After": "60" } : {}),
+      });
     }
     return true;
   };

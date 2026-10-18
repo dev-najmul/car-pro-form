@@ -10,10 +10,23 @@ const markerValue = 'car-pro-form static Pages build v1\n';
 const within = (base, path) => path === base || path.startsWith(base + sep);
 
 /** Build only the public site. The Routes server credential is never read. */
-export async function buildPages({ sourceDirectory = projectRoot, outputDirectory, browserKey = process.env.GOOGLE_MAPS_BROWSER_KEY } = {}) {
+export async function buildPages({ sourceDirectory = projectRoot, outputDirectory, browserKey = process.env.GOOGLE_MAPS_BROWSER_KEY, routeEndpoint = process.env.ROUTE_API_ENDPOINT, previewExpiresAt = process.env.PREVIEW_EXPIRES_AT } = {}) {
   if (typeof browserKey !== 'string' || !browserKey.trim() || /[\u0000-\u001f\u007f]/.test(browserKey)) {
     throw new Error('Set the GitHub Actions secret GOOGLE_MAPS_BROWSER_KEY before building GitHub Pages.');
   }
+  const config = { browserKey: browserKey.trim(), browserConfigured: true, routesConfigured: true, providerMode: 'browser' };
+  if (routeEndpoint) {
+    let endpoint;
+    try { endpoint = new URL(routeEndpoint); } catch { throw new Error('The route backend URL is invalid.'); }
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+    if ((endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && loopback)) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error('Use an HTTPS route backend URL without credentials or query parameters.');
+    config.providerMode = 'remote'; config.routeEndpoint = endpoint.href;
+    if (previewExpiresAt) {
+      const expires = new Date(previewExpiresAt);
+      if (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now()) throw new Error('The temporary route backend expiration must be in the future.');
+      config.previewExpiresAt = expires.toISOString();
+    }
+  } else if (previewExpiresAt) throw new Error('A temporary route backend expiration requires a route backend URL.');
   const source = await realpath(resolve(sourceDirectory));
   const output = resolve(outputDirectory || resolve(source, 'dist'));
   if (within(output, source) || within(resolve(source, 'assets'), output) || publicFiles.some(file => output === resolve(source, file))) {
@@ -52,7 +65,7 @@ export async function buildPages({ sourceDirectory = projectRoot, outputDirector
     const assets = resolve(source, 'assets');
     if (!(await lstat(assets)).isDirectory() || await realpath(assets) !== assets) throw new Error('The assets directory must not be a symbolic link.');
     await copyAssets(assets, resolve(staging, 'assets'));
-    await writeFile(resolve(staging, 'maps-config.json'), JSON.stringify({ browserKey: browserKey.trim(), browserConfigured: true, routesConfigured: true, providerMode: 'browser' }) + '\n');
+    await writeFile(resolve(staging, 'maps-config.json'), JSON.stringify(config) + '\n');
     await writeFile(resolve(staging, '.nojekyll'), '');
     await writeFile(resolve(staging, marker), markerValue);
     await rm(output, { recursive: true, force: true });

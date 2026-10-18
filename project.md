@@ -1,4 +1,4 @@
-**Current Pages review status (19 October 2026):** version 1.1.1 is deployed and actual public address suggestions work. Its 91 checks passed. Google authorization for browser Routes remains pending; see [Section 12](#12-github-pages-hosting-fix--version-111).
+**Current prototype direction (19 October 2026):** version 1.2.0 uses the supplied server key in a temporary test backend, matching the later WordPress architecture. The client does not need to change Google Cloud settings. See [Section 13](#13-temporary-server-routes-preview--version-120).
 
 # Car Pro Form — Project Specification
 
@@ -1475,3 +1475,30 @@ The initial public-origin test supplied configuration only to the test browser. 
 - A local build with the supplied browser key succeeded; the generated configuration contains only that public browser credential and browser-provider flags. The private Routes key is excluded. Generated `dist` and `maps-config.json` are ignored and not committed.
 - **Public deployment verified, 19 October 2026 (Asia/Dhaka):** the Deploy GitHub Pages workflow [run 39154806024](https://github.com/dev-najmul/car-pro-form/actions/runs/39154806024) completed successfully. The actual public home page and `/car-pro-form/maps-config.json` both returned HTTP 200; config reports `providerMode: browser`. Address suggestions now work on the owner’s URL. Browser Routes remains blocked by Google API authorization.
 - The current Node server was restarted with the new configuration endpoint; local Node mode remains supported. The public browser key remains outside committed source, and the private Routes credential remains absent from static build output.
+
+
+## 13. Temporary server Routes preview — version 1.2.0
+
+### Owner instruction and approach
+
+The owner clarified that GitHub is only a prototype test environment and the final product will be a WordPress plugin. Use the two keys already supplied and do not request more information or Google Cloud changes from the client. The server key was tested again against Google Routes and returned HTTP 200 (30,855 meters / 2,492 seconds with one intermediate stop); its existing authorization is usable.
+
+A temporary Node backend runs privately on a standard GitHub Actions runner and receives key #2 through repository secret `GOOGLE_ROUTES_API_KEY`. Key #1 remains `GOOGLE_MAPS_BROWSER_KEY` for public Places/Maps. The owner confirmed adding both secrets. The integration's attempted secret write returned HTTP 403, so no credentials were committed or placed in public configuration to work around that permission.
+
+The account-free Cloudflare Quick Tunnel supplies public HTTPS ingress to the test backend. Google Routes receives key #2 only from the backend's `X-Goog-Api-Key` header. Cloudflared is pinned to official release **2026.10.1**, SHA-256 **`3bfc539f45d2620c71debb7a86be0efa737ed5ccbad9eb85c787116900e5c586`**, verified before execution with TLS verification retained. The tunnel process does not inherit either Google key.
+
+### Data flow and lifetime
+
+- Pages serves the existing form and uses key #1 for actual Google Places suggestions/details. The public config adds `providerMode: remote`, `routeEndpoint`, and `previewExpiresAt`; it never contains key #2.
+- The browser sends only selected ordered waypoints to the test backend, which forwards to Google with key #2. CORS permits exactly `https://dev-najmul.github.io`; preflight permits only JSON POST. Unlisted origins and unrelated endpoints stay closed. Sanitized allowed-origin errors remain readable by the form.
+- Wait times, distance conversions, demo tariffs, extras, gratuity, and local thank-you behavior are unchanged. No route is fabricated or retried with a different key when the test service fails.
+- The backend has a **two-hour** lifetime, **200 provider-call** total budget, and existing **30 requests/minute** limit. Invalid requests/preflights do not consume the provider budget; provider failures do. Session expiry is public operational metadata, not a secret, and appears in the form in the browser's local time.
+- Local and public tunnel readiness checks must succeed before Pages is published. Readiness makes no Google route call. The publishing job then keeps the owned server/tunnel processes alive until expiry, with PID/path checks and cleanup; GitHub cancellation also ends the runner processes.
+- The deployment remains **in progress while the test server is running**, even after the Pages publishing step succeeds. Restart with **Actions → Deploy GitHub Pages → Run workflow**, then refresh the form for the new endpoint. A code push restarts the session; Markdown-only result commits do not cancel the running backend.
+- This is temporary prototype infrastructure. WordPress conversion is still deferred; the eventual plugin will perform the same server-side Routes request from the WordPress host. No client account access or additional API key was introduced.
+
+### Verification
+
+`npm run check` passed. The full unit suite passed **71/71** tests and Playwright passed **45/45** browser tests (116 total; no failures or skips). New coverage includes exact-origin CORS/preflight, provider-call budgets, verified binary download, tunnel URL/state/readiness, public build credential exclusion, an actual separate HTTP test backend with real CORS, and expired sessions. Deterministic provider fixtures remain separate from live Google verification.
+
+Actual public preview outcomes will be recorded after deployment. Earlier browser-only Google authorization requirements in Section 12 are historical; the selected server-key approach does not require that change.

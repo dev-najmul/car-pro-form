@@ -3,6 +3,7 @@ name: Deploy GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
 
 permissions:
@@ -13,11 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 140
     permissions:
       contents: read
-      pages: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,25 +33,47 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run test:unit
+      - name: Start optional two-hour Routes preview
+        id: route-preview
+        run: node scripts/start-route-preview.mjs
+        env:
+          # The server credential is available only to this backend step.
+          GOOGLE_ROUTES_API_KEY: ${{ secrets.GOOGLE_ROUTES_API_KEY }}
       - name: Build static site with the browser Maps key
         run: npm run build:pages
         env:
           GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.GOOGLE_MAPS_BROWSER_KEY }}
+          ROUTE_API_ENDPOINT: ${{ steps.route-preview.outputs.route_endpoint }}
+          PREVIEW_EXPIRES_AT: ${{ steps.route-preview.outputs.preview_expires_at }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Publish static site
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Describe published preview
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+          const lines = [
+            `Published site: ${process.env.PUBLISHED_PAGE_URL}`,
+            process.env.PREVIEW_EXPIRES_AT
+              ? `Temporary Routes backend expires at ${process.env.PREVIEW_EXPIRES_AT} (UTC). The keepalive step remains in progress during the two-hour test window; this is expected. Re-run this workflow to start a new window.`
+              : 'Browser routing mode is active. Add the GOOGLE_ROUTES_API_KEY repository secret to enable the temporary server-backed Routes preview.'
+          ];
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, lines.join('\n\n') + '\n');
+          NODE
+        env:
+          PUBLISHED_PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PREVIEW_EXPIRES_AT: ${{ steps.route-preview.outputs.preview_expires_at }}
+      - name: Keep temporary Routes backend available for testing
+        if: ${{ steps.route-preview.outputs.enabled == 'true' }}
+        run: node scripts/keep-route-preview.mjs
+        env:
+          ROUTE_PREVIEW_STATE_PATH: ${{ steps.route-preview.outputs.state_path }}
+      - name: Stop temporary Routes backend after a failed deployment
+        if: ${{ failure() && steps.route-preview.outputs.enabled == 'true' }}
+        run: node --input-type=module -e 'import { readPreviewState, stopPreviewProcesses } from "./scripts/start-route-preview.mjs"; await stopPreviewProcesses(await readPreviewState(process.env.ROUTE_PREVIEW_STATE_PATH));'
+        env:
+          ROUTE_PREVIEW_STATE_PATH: ${{ steps.route-preview.outputs.state_path }}
