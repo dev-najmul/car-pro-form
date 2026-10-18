@@ -14,7 +14,39 @@ const fixture = {
 
 const errors = new WeakMap();
 
+function installBookingPlacesStub() {
+  class Place {
+    constructor({ id }) {
+      this.id = id;
+      this.formattedAddress = id.startsWith('test-') ? decodeURIComponent(id.slice(5)) : id;
+      this.location = { lat: () => 41, lng: () => -87 };
+      this.attributions = [];
+    }
+    async fetchFields() {}
+  }
+  window.google = { maps: { importLibrary: async () => ({
+    Place,
+    AutocompleteSessionToken: class {},
+    AutocompleteSuggestion: { fetchAutocompleteSuggestions: async ({ input }) => ({ suggestions: [{ placePrediction: {
+      placeId: 'test-' + encodeURIComponent(input), text: { text: input }, mainText: { text: input }, secondaryText: { text: 'Test location' },
+      toPlace: () => new Place({ id: 'test-' + encodeURIComponent(input) }),
+    } }] }) },
+  }) } };
+}
+
+async function mockGoogleMaps(page) {
+  await page.route('**/api/maps/config', route => route.fulfill({ json: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true } }));
+  await page.route('https://maps.googleapis.com/maps/api/js?**', route => {
+    const callback = new URL(route.request().url()).searchParams.get('callback');
+    const body = `(${installBookingPlacesStub.toString()})();window[${JSON.stringify(callback)}]?.();`;
+    return route.fulfill({ contentType: 'text/javascript', body });
+  });
+  await page.route('https://maps.gstatic.com/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aB1sAAAAASUVORK5CYII=', 'base64') }));
+  await page.route('**/api/maps/route', route => route.fulfill({ json: { distanceMeters: 32186.88, durationSeconds: 1800, provider: 'google', calculatedAt: '2026-10-18T00:00:00Z' } }));
+}
+
 test.beforeEach(async ({ page }) => {
+  await mockGoogleMaps(page);
   const unexpected = [];
   errors.set(page, unexpected);
   page.on("pageerror", (error) => unexpected.push(error.message));
@@ -44,14 +76,17 @@ async function route(page, name) {
 }
 
 async function fillTrip(page) {
-  await page
-    .getByLabel("Pickup location", { exact: true })
-    .fill(fixture.pickup);
-  await page
-    .getByLabel("Drop-off location", { exact: true })
-    .fill(fixture.destination);
+  await selectLocation(page, 'Pickup location', fixture.pickup);
+  await selectLocation(page, 'Drop-off location', fixture.destination);
   await page.getByLabel("Date", { exact: true }).fill(fixture.date);
-  await page.getByLabel("Time", { exact: true }).fill(fixture.time);
+  await page.getByLabel("Pickup time", { exact: true }).fill(fixture.time);
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+}
+
+async function selectLocation(page, label, value) {
+  await page.getByLabel(label, { exact: true }).fill(value);
+  await page.getByRole('option', { name: value, exact: true }).click();
+  await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
 }
 
 async function reachVehicles(page) {
@@ -211,7 +246,7 @@ test("empty trip is blocked and entered route/date/time survive Back and reload"
   await expect(page.getByLabel("Date", { exact: true })).toHaveValue(
     fixture.date,
   );
-  await expect(page.getByLabel("Time", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Pickup time", { exact: true })).toHaveValue(
     fixture.time,
   );
 });
@@ -221,11 +256,12 @@ test("stops and Hourly service can be edited without losing trip values", async 
 }) => {
   await fillTrip(page);
   await page.getByRole("button", { name: /Add stop/i }).click();
-  await page.getByLabel("Stop 1", { exact: true }).fill(fixture.stop);
+  await selectLocation(page, 'Stop 1', fixture.stop);
   await page.getByRole("button", { name: /Remove stop 1/i }).click();
   await expect(page.getByLabel("Stop 1", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /Add stop/i }).click();
-  await page.getByLabel("Stop 1", { exact: true }).fill(fixture.stop);
+  await selectLocation(page, 'Stop 1', fixture.stop);
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('0');
   await page.getByRole("button", { name: "HOURLY", exact: true }).click();
   await expect(page.getByLabel("Hours", { exact: true })).toBeVisible();
   await page.getByLabel("Hours", { exact: true }).selectOption("4");
@@ -245,8 +281,8 @@ test("stops and Hourly service can be edited without losing trip values", async 
     .click();
   await page.getByRole("button", { name: /continue to passengers/i }).click();
   await route(page, "passengers");
-  // Documented demo rate: 4 × $115 transportation + 20% gratuity ($92).
-  await expectTotal(page, 552);
+  // Four hours × $115 + 20 miles × $3 = $520; 20% gratuity = $104.
+  await expectTotal(page, 624);
   await expect(page.getByText("4 hours", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /continue to contact/i }).click();
   await fillContact(page);
@@ -254,7 +290,7 @@ test("stops and Hourly service can be edited without losing trip values", async 
   await route(page, "review");
   await expect(page.locator("body")).toContainText(fixture.stop);
   await expect(page.locator("body")).toContainText("Hourly (4 hours)");
-  await expectTotal(page, 552);
+  await expectTotal(page, 624);
 });
 
 test("all six vehicle prices are used and only one choice is selected", async ({
@@ -505,9 +541,8 @@ test("review data, price, and trip edits use entered values rather than fixtures
   }
   await expectTotal(page, 495);
   await editReviewSection(page, "1. TRIP DETAILS");
-  await page
-    .getByLabel("Pickup location", { exact: true })
-    .fill("Updated downtown pickup");
+  await selectLocation(page, 'Pickup location', 'Updated downtown pickup');
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();
@@ -555,9 +590,8 @@ test("consent is required and successful static submission preserves details and
     .click();
   await route(page, "trip");
   await expect(page.getByRole("alert")).toBeVisible();
-  await page
-    .getByLabel("Pickup location", { exact: true })
-    .fill(fixture.pickup);
+  await selectLocation(page, 'Pickup location', fixture.pickup);
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();
@@ -601,7 +635,7 @@ test("consent is required and successful static submission preserves details and
   await expectTotal(page, 495);
   const writes = [];
   page.on("request", (request) => {
-    if (!["GET", "HEAD"].includes(request.method())) writes.push(request.url());
+    if (!["GET", "HEAD"].includes(request.method()) && !request.url().endsWith('/api/maps/route')) writes.push(request.url());
   });
   await submit(page);
   for (const value of [
@@ -640,7 +674,8 @@ test("entered HTML is displayed as text without executing in review or confirmat
   const dangerous = '<img src=x onerror="window.__unsafe=1">';
   await reachReview(page);
   await editReviewSection(page, "1. TRIP DETAILS");
-  await page.getByLabel("Pickup location", { exact: true }).fill(dangerous);
+  await selectLocation(page, 'Pickup location', dangerous);
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();

@@ -7,6 +7,7 @@ const executablePath =
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.js",
   fullyParallel: false,
   workers: 1,
   retries: 0,

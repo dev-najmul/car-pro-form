@@ -3807,3 +3807,93 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Live location search and journey estimates follow the original form palette. */
+.location-input { min-width: 0; }
+.places-dropdown {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 10px 28px #0b122026;
+}
+.places-dropdown [role="listbox"] {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.place-option {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid #eceef3;
+  background: #fff;
+  text-align: left;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.place-option strong, .place-option span { display: block; }
+.place-option strong { font-size: 14px; font-weight: 600; }
+.place-option span { font-size: 12px; color: var(--muted); }
+.place-option:hover, .place-option[aria-selected="true"] { background: #eef2fa; }
+.google-attribution { padding: 10px 16px; text-align: right; background: #fff; }
+.google-maps-attribution { display: inline-block; color: #5e5e5e; font: 400 13px/20px Arial, sans-serif; white-space: nowrap; }
+.maps-policies { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.maps-policies a { text-underline-offset: 3px; }
+.policy-page { background: #f4f5f7; padding: 40px 20px; }
+.policy-page main { max-width: 780px; margin: auto; padding: 32px; background: #fff; border-radius: 8px; }
+.policy-page h1 { font: 600 40px/1.2 "Cormorant Garamond", serif; margin-bottom: 16px; }
+.policy-page h2 { font-size: 20px; margin: 24px 0 12px; }
+.policy-page p, .policy-page ul { margin: 12px 0; line-height: 1.8; }
+.policy-page ul { padding-left: 20px; }
+.policy-page a { text-decoration: underline; text-underline-offset: 3px; }
+.places-message { margin: 0; padding: 14px 16px; font-size: 13px; line-height: 1.6; }
+.stop-wait-label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.stop-wait-label select { width: 180px; height: 48px; padding: 8px 12px; }
+.stop-wait-note { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.route-live { margin-top: 24px; }
+.travel-time { background: #f4f6fa; cursor: default; }
+.route-status { margin-top: 10px; font-size: 13px; line-height: 1.65; color: var(--muted); overflow-wrap: anywhere; }
+.route-error { color: #9b2525; }
+.route-error .text-link { display: inline-block; margin-left: 8px; font-weight: 600; }
+.route-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #e0e5ed;
+  border-radius: 4px;
+  background: #f7f8fb;
+}
+.route-metrics > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.route-metrics span { font-size: 12px; color: var(--muted); }
+.route-metrics strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.route-provider { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.place-providers { margin-top: 8px; font-size: 11px; overflow-wrap: anywhere; }
+.summary-route-estimate { margin-top: 16px; }
+.summary-route-estimate .route-metrics { padding: 12px; gap: 12px; }
+.summary-route-estimate .route-metrics strong { font-size: 12px; }
+.vehicle-price .waiting-price { display: block; margin-top: 8px; font: 12px/1.6 "Plus Jakarta Sans", sans-serif; color: var(--muted); }
+.check-price { margin-top: 24px; }
+@media (max-width: 639px) {
+  .place-option { padding: 10px 12px; }
+  .places-dropdown [role="listbox"] { max-height: 260px; }
+  .stop-wait-label { justify-content: space-between; gap: 8px; font-size: 12px; }
+  .stop-wait-label select { width: 144px; font-size: 14px; }
+  .route-live { margin-top: 20px; }
+  .route-metrics { padding: 12px; gap: 12px; }
+  .route-metrics strong { font-size: 12px; }
+  .route-status { font-size: 12px; }
+}

@@ -1,7 +1,18 @@
-/* Static frontend: all quotes and requests are local demonstration data. */
+import { MapsClient, mountAutocomplete } from "./maps.js";
+import { quoteTransportation, formatDuration } from "./pricing.js";
+/* Google provides route metrics. Prices and booking submission remain a demo. */
 (() => {
   "use strict";
   const STORAGE = "tuxano-booking-v1";
+  let DEMO_MODE = new URLSearchParams(location.search).get("demo") === "1";
+  const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+  const maps = new MapsClient();
+  let currentRoute = null, routeStatus = "idle", routeMessage = "", routeGeneration = 0, routeController = null, routePromise = null;
+  let autocompleteCleanups = [];
+  let advancing = false, locationGeneration = 0, navigationGeneration = 0;
+  let restoringPlaces = false;
+  const newStopId = () => "stop-" + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+  const makeStop = (text = "") => ({ id: newStopId(), text, query: text, place: null, waitMinutes: 5 });
   const routes = [
     "trip",
     "vehicles",
@@ -22,8 +33,6 @@
       id: "premium",
       name: "PREMIUM SUV",
       display: "Premium SUV",
-      price: 195,
-      hourly: 95,
       capacity: 6,
       image: "premium-suv.png",
       models: [
@@ -42,8 +51,6 @@
       id: "luxury",
       name: "LUXURY SUV",
       display: "Luxury SUV",
-      price: 225,
-      hourly: 115,
       capacity: 6,
       image: "luxury-suv.png",
       models: [
@@ -62,8 +69,6 @@
       id: "executive",
       name: "EXECUTIVE SUV",
       display: "Executive SUV",
-      price: 265,
-      hourly: 135,
       capacity: 6,
       image: "executive-suv.png",
       models: [
@@ -82,8 +87,6 @@
       id: "ghost",
       name: "ROLLS-ROYCE GHOST",
       display: "Rolls-Royce Ghost",
-      price: 1250,
-      hourly: 500,
       capacity: 3,
       image: "rolls-royce-ghost.png",
       models: ["Executive transportation", "Private events", "Fine dining"],
@@ -98,8 +101,6 @@
       id: "cullinan",
       name: "ROLLS-ROYCE CULLINAN",
       display: "Rolls-Royce Cullinan",
-      price: 1850,
-      hourly: 750,
       capacity: 3,
       image: "rolls-royce-cullinan.png",
       models: ["VIP transportation", "Private aviation", "VIP Travel"],
@@ -114,8 +115,6 @@
       id: "phantom",
       name: "ROLLS-ROYCE PHANTOM",
       display: "Rolls-Royce Phantom",
-      price: 3250,
-      hourly: 1250,
       capacity: 3,
       image: "rolls-royce-phantom.png",
       models: ["Weddings", "Red Carpet Events", "Flagship Occasions"],
@@ -184,12 +183,12 @@
         })[c],
     );
   const money = (value) =>
-    "$" +
+    value === null || !Number.isFinite(Number(value)) ? "—" : "$" +
     Number(value).toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  const whole = (value) => "$" + Number(value).toLocaleString("en-US");
+  const whole = (value) => value === null || !Number.isFinite(Number(value)) ? "—" : "$" + Number(value).toLocaleString("en-US");
   const defaults = () => ({
     trip: {
       service: "transfer",
@@ -199,6 +198,7 @@
       time: "",
       hours: 3,
       stops: [],
+      pickupPlace: null, dropoffPlace: null, pickupQuery: "", dropoffQuery: "",
     },
     vehicle: "",
     passengers: 1,
@@ -292,9 +292,29 @@
         }
       } else if (typeof saved[key] === typeof value) clean[key] = saved[key];
     }
-    clean.trip.stops = Array.isArray(saved.trip?.stops)
-      ? saved.trip.stops.filter((stop) => typeof stop === "string").slice(0, 5)
-      : [];
+    const safePlace = (point, fallback) => {
+      if (!point || typeof point !== "object" || Array.isArray(point)) return null;
+      const text = typeof point.text === "string" ? point.text.slice(0, 1024) : fallback;
+      if (typeof point.placeId === "string" && point.placeId.length > 0 && point.placeId.length <= 512) return { placeId: point.placeId, text };
+      if (Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90 && Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180) return { latitude: point.latitude, longitude: point.longitude, text };
+      return null;
+    };
+    clean.trip.pickupQuery = typeof saved.trip?.pickupQuery === "string" ? saved.trip.pickupQuery : clean.trip.pickup;
+    clean.trip.dropoffQuery = typeof saved.trip?.dropoffQuery === "string" ? saved.trip.dropoffQuery : clean.trip.dropoff;
+    clean.trip.pickupPlace = safePlace(saved.trip?.pickupPlace, clean.trip.pickup);
+    clean.trip.dropoffPlace = safePlace(saved.trip?.dropoffPlace, clean.trip.dropoff);
+    const seen = new Set();
+    clean.trip.stops = Array.isArray(saved.trip?.stops) ? saved.trip.stops.slice(0, 5).map(stop => {
+      if (typeof stop === "string") return makeStop(stop);
+      if (!stop || typeof stop !== "object") return makeStop();
+      const result = makeStop(typeof stop.text === "string" ? stop.text.slice(0, 1024) : "");
+      if (typeof stop.id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(stop.id) && !seen.has(stop.id)) result.id = stop.id;
+      seen.add(result.id);
+      result.query = typeof stop.query === "string" ? stop.query.slice(0, 1024) : result.text;
+      result.place = safePlace(stop.place, result.text);
+      result.waitMinutes = WAIT_OPTIONS.includes(stop.waitMinutes) ? stop.waitMinutes : 5;
+      return result;
+    }) : [];
     clean.trip.service = ["transfer", "hourly"].includes(clean.trip.service)
       ? clean.trip.service
       : "transfer";
@@ -345,7 +365,19 @@
     state = fixture();
   const save = () => {
     try {
-      sessionStorage.setItem(STORAGE, JSON.stringify(state));
+      const snapshot = structuredClone(state);
+      // Keep only place IDs and the user's own queries across reload. Google
+      // formatted addresses, provider attributions, and route metrics stay in memory.
+      const persistPlace = (point, query) => point?.placeId ? { placeId: point.placeId, text: query } : point ? { latitude: point.latitude, longitude: point.longitude, text: query } : null;
+      if (!DEMO_MODE) {
+        for (const key of ["pickup", "dropoff"]) {
+          const query = state.trip[key + "Query"] || "";
+          snapshot.trip[key] = query;
+          snapshot.trip[key + "Place"] = persistPlace(state.trip[key + "Place"], query);
+        }
+        snapshot.trip.stops = state.trip.stops.map(stop => ({ id: stop.id, text: stop.query, query: stop.query, waitMinutes: stop.waitMinutes, place: persistPlace(stop.place, stop.query) }));
+      }
+      sessionStorage.setItem(STORAGE, JSON.stringify(snapshot));
     } catch {
       /* Continue if storage is unavailable. */
     }
@@ -365,8 +397,8 @@
     vehicles.find((v) => v.id === state.vehicle) || vehicles[1];
   const costs = () => {
     const v = selected();
-    const transportation =
-      state.trip.service === "hourly" ? v.hourly * state.trip.hours : v.price;
+    const fare = transportQuote(v);
+    const transportation = fare?.transportation ?? null;
     const car = state.child ? state.carSeats : 0,
       booster = state.child ? state.boosterSeats : 0;
     const carCost = car ? 75 + (car - 1) * 50 : 0;
@@ -380,7 +412,7 @@
       : state.gratuity === "custom"
         ? Number(state.custom || 0)
         : Number(state.gratuity);
-    const tip = Math.round(transportation * percent) / 100;
+    const tip = transportation === null ? null : Math.round(transportation * percent) / 100;
     const meet = state.meet ? 50 : 0;
     return {
       transportation,
@@ -390,7 +422,8 @@
       meet,
       percent,
       tip,
-      total: transportation + carCost + boosterCost + meet + tip,
+      total: transportation === null ? null : Math.round((transportation + carCost + boosterCost + meet + tip) * 100) / 100,
+      fare,
     };
   };
   const dateLabel = (long = false) =>
@@ -450,40 +483,125 @@
     return `<div class="price-lines"><div><span>Transportation${compact ? `<span class="desktop-copy"> (${e(selected().display)})</span>` : ""}</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>Child Seats${compact ? ` <span class="seat-detail">(${seatText()})</span>` : `<small>${seatText()}</small>`}</span><strong>${money(c.seats)}</strong></div><div><span>${compact ? '<span class="desktop-copy">Chauffeur </span>' : ""}Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div>`;
   };
   const summary = () =>
-    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle"><img src="assets/${state.vehicle === "luxury" ? "navigator-summary.png" : selected().image}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
+    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle"><img src="assets/${state.vehicle === "luxury" ? "navigator-summary.png" : selected().image}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
   const nextSteps = () =>
     `<aside class="next-card"><h3><span class="round-icon">${icon("circlecheck")}</span>WHAT HAPPENS NEXT</h3><ol><li>We review availability and trip details.</li><li>You’ll receive an email with confirmation details and any payment instructions.</li><li>Once confirmed, your reservation is secured.</li></ol><p>Reservation requests are typically reviewed within 2–4 business hours.</p></aside>`;
   const header = () =>
     `<header class="page-header"><h1>RESERVATION REQUEST</h1><p>Complete the form below to request your executive transportation.</p><nav class="progress" aria-label="Reservation steps"><ol>${labels.map((label, i) => `<li class="${step === i ? "active" : ""}"><button type="button" data-go="${i}" aria-label="Step ${i + 1}: ${label}" ${i > state.completed ? "disabled" : ""} ${step === i ? 'aria-current="step"' : ""}><span class="step-circle">${i + 1}</span><span class="step-label">${label}</span></button></li>`).join("")}</ol></nav></header>`;
 
-  // Step 1: trip details and locally editable route stops.
+  const selectedPoint = (point, value) => Boolean(point && point.text === value && (point.placeId || Number.isFinite(point.latitude) && Number.isFinite(point.longitude)));
+  const routeRequest = () => {
+    if (restoringPlaces) return null;
+    const trip = state.trip;
+    if (!selectedPoint(trip.pickupPlace, trip.pickup) || !selectedPoint(trip.dropoffPlace, trip.dropoff) || trip.stops.some(stop => !selectedPoint(stop.place, stop.text))) return null;
+    const waypoint = point => point.placeId ? { placeId: point.placeId } : { latitude: point.latitude, longitude: point.longitude };
+    return { origin: waypoint(trip.pickupPlace), destination: waypoint(trip.dropoffPlace), stops: trip.stops.map(stop => waypoint(stop.place)) };
+  };
+  const routeSignature = () => { const request = routeRequest(); return request ? JSON.stringify(request) : ""; };
+  const waitingMinutes = () => state.trip.stops.reduce((sum, stop) => sum + stop.waitMinutes, 0);
+  const usableRoute = () => currentRoute && currentRoute.signature === routeSignature() ? currentRoute : null;
+  function transportQuote(vehicle = selected()) {
+    const route = usableRoute();
+    if (!route) return null;
+    return quoteTransportation(vehicle.id, route, waitingMinutes(), state.trip.service, state.trip.hours);
+  }
+  const stopDescription = () => state.trip.stops.map(stop => `${stop.text} (${stop.waitMinutes} min stop)`).join(" → ");
+  function routeDetails(full = false) {
+    const route = usableRoute();
+    const travel = route ? formatDuration(route.durationSeconds + waitingMinutes() * 60) : "";
+    const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : "Select pickup, drop-off, and any stops from the location suggestions.";
+    const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId);
+    return `${full ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : ""}" role="${routeStatus === "error" ? "alert" : "status"}">${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Driving estimate. Traffic is not included.</span>' : ''}</div>${providerAttributions()}` : ''}${full ? '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
+  }
+  function providerAttributions() {
+    const points = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)];
+    const entries = points.flatMap(point => point?.attributions || []);
+    return entries.length ? `<div class="place-providers">${entries.map(a => { let url; try { url = new URL(a.uri); } catch { return e(a.displayName); } return url.protocol === "https:" ? `<a href="${e(url.href)}" target="_blank" rel="noopener noreferrer">${e(a.displayName)}</a>` : e(a.displayName); }).join(" · ")}</div>` : "";
+  }
+  function refreshRoutePanel() {
+    const box = app.querySelector(".route-live");
+    if (box) box.innerHTML = routeDetails(true);
+  }
+  function invalidateRoute() {
+    ++routeGeneration; routeController?.abort(); routeController = null; routePromise = null; currentRoute = null; routeStatus = "idle"; routeMessage = "";
+    refreshRoutePanel();
+  }
+  async function calculateRoute() {
+    const request = routeRequest(), signature = routeSignature();
+    if (!request) { routeStatus = "idle"; refreshRoutePanel(); return false; }
+    if (usableRoute()) return true;
+    if (routePromise && routeStatus === "loading") return routePromise;
+    const generation = ++routeGeneration;
+    routeController?.abort(); routeController = new AbortController();
+    routeStatus = "loading"; routeMessage = ""; refreshRoutePanel();
+    routePromise = (async () => {
+      try {
+        const result = DEMO_MODE ? { distanceMeters: 32186.88, durationSeconds: 1800, provider: "demo" } : await maps.route(request, routeController.signal);
+        if (generation !== routeGeneration || signature !== routeSignature()) return false;
+        currentRoute = { ...result, signature }; routeStatus = "ready"; routeMessage = "";
+        if (step === 0) refreshRoutePanel(); else render();
+        return true;
+      } catch (failure) {
+        if (generation !== routeGeneration || failure.name === "AbortError") return false;
+        currentRoute = null; routeStatus = "error"; routeMessage = failure.message || "The driving route could not be calculated. Please try again.";
+        if (step === 0) refreshRoutePanel(); else render();
+        return false;
+      } finally { if (generation === routeGeneration) routePromise = null; }
+    })();
+    return routePromise;
+  }
+  function mountPlaces() {
+    app.querySelectorAll("[data-place-field]").forEach(input => {
+      const fieldId = input.dataset.placeField;
+      autocompleteCleanups.push(mountAutocomplete(input, { client: maps, fieldId, onSelect: place => {
+        dirty(); invalidateRoute();
+        if (fieldId.startsWith("stop:")) {
+          const stop = state.trip.stops.find(item => item.id === fieldId.slice(5));
+          if (!stop) return;
+          stop.text = place.text; stop.place = place;
+        } else { if (fieldId === "pickup") ++locationGeneration; state.trip[fieldId] = place.text; state.trip[fieldId + "Place"] = place; }
+        input.value = place.text;
+        save(); refreshRoutePanel(); calculateRoute();
+      }, onError: message => announce(message) }));
+    });
+  }
+  async function restoreLocations() {
+    const originalState = state;
+    const points = [
+      ...["pickup", "dropoff"].map(key => ({ point: state.trip[key + "Place"], current: () => state.trip[key + "Place"], apply: place => { state.trip[key + "Place"] = place; if (place) state.trip[key] = place.text; } })),
+      ...state.trip.stops.map(stop => ({ point: stop.place, current: () => state.trip.stops.find(item => item.id === stop.id)?.place, apply: place => { stop.place = place; if (place) stop.text = place.text; } })),
+    ].filter(item => item.point?.placeId);
+    if (!points.length) { calculateRoute(); return; }
+    restoringPlaces = true; refreshRoutePanel();
+    let failed = false;
+    await Promise.all(points.map(async item => {
+      try {
+        const place = await maps.restore(item.point.placeId);
+        if (state === originalState && item.current() === item.point) item.apply(place);
+      } catch {
+        if (state === originalState && item.current() === item.point) { item.apply(null); failed = true; }
+      }
+    }));
+    if (state !== originalState) return;
+    restoringPlaces = false;
+    if (failed) {
+      dirty(); state.completed = 0; save();
+      if (step !== 0) go(0); else render();
+      error("Your saved locations could not be restored. Please select them again from the Google Maps suggestions.");
+    } else { save(); render(); calculateRoute(); }
+  }
+  // Step 1: selected Google places, ordered stopovers, separate pickup clock time,
+  // and an automatic driving + waiting duration.
   function tripPage() {
-    const locationInput = (path, label, placeholder, target = false) =>
-      `<div class="location-input">${icon("pin")}${field(path, label, placeholder, { required: path.endsWith("pickup") || state.trip.service === "transfer", list: "locations" })}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location">${icon("target")}</button>` : ""}</div>`;
-    const picker = (path, label, symbol, value) =>
-      `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type: label.toLowerCase(), required: true })}</span></label>`;
-    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("trip.pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark</p></div><div class="stop-list">${state.trip.stops.map((stop, i) => `<div class="stop-field"><label class="label">STOP ${i + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input class="input" data-stop="${i}" aria-label="Stop ${i + 1}" placeholder="Enter stop location" value="${e(stop)}" required list="locations"></div><button type="button" class="remove-stop" data-remove-stop="${i}" aria-label="Remove stop ${i + 1}">×</button></div></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= 5 ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION${state.trip.service === "hourly" ? " (OPTIONAL)" : ""}</label>${locationInput("trip.dropoff", "Drop-off location", "Enter drop-off location")}</div>${
-      state.trip.service === "hourly"
-        ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from(
-            { length: 11 },
-            (_, i) => i + 2,
-          )
-            .map(
-              (h) =>
-                `<option value="${h}" ${h === state.trip.hours ? "selected" : ""}>${h} hours</option>`,
-            )
-            .join(
-              "",
-            )}</select><p class="helper">Two-hour minimum. Your chauffeur stays with you throughout your booking.</p></div>`
-        : ""
-    }<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel())}${picker("trip.time", "Time", "clock", timeLabel())}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button><datalist id="locations"><option value="Carol Stream, IL"><option value="O’Hare International Airport (ORD)"><option value="Midway International Airport (MDW)"><option value="Downtown Chicago, IL"></datalist></form>`;
+    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location">${icon("target")}</button>` : ""}</div>`;
+    const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
+    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div><label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= 5 ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:11}, (_,i) => i + 2).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div><div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
   // Step 2: all six vehicle classes, using the original supplied pictures.
   function vehicleCard(v) {
-    const quote =
-      state.trip.service === "hourly" ? v.hourly * state.trip.hours : v.price;
-    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${v.id}"><img class="vehicle-photo" src="assets/${v.image}" alt="${e(v.display)} outside a luxury hotel"><h3>${v.name}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${v.capacity} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${m}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${f}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>USD</small></strong></div><button class="btn primary" type="button" data-select="${v.id}" aria-label="Select ${v.display}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? `${icon("check")} SELECTED` : "SELECT"}</button></article>`;
+    const quote = transportQuote(v)?.transportation ?? null;
+    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${v.id}"><img class="vehicle-photo" src="assets/${v.image}" alt="${e(v.display)} outside a luxury hotel"><h3>${v.name}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${v.capacity} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${m}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${f}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>USD</small></strong>${waitingMinutes() ? `<small class="waiting-price">Includes ${waitingMinutes()} min waiting (${money(transportQuote(v)?.waitingCharge ?? null)})</small>` : ""}</div><button class="btn primary" type="button" data-select="${v.id}" aria-label="Select ${v.display}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? `${icon("check")} SELECTED` : "SELECT"}</button></article>`;
   }
   function vehiclesPage() {
     return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("arrow", "route-arrow")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}${dateLabel()}</p><p>${icon("clock")}${timeLabel()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div><section class="collection"><h2>SUV COLLECTION</h2><p>Spacious, comfortable, and perfect for everyday executive travel,</p><div class="vehicle-grid">${vehicles.slice(0, 3).map(vehicleCard).join("")}</div></section><section class="collection"><h2>ROLLS-ROYCE COLLECTION</h2><p>The ultimate in luxury, prestige, and refinement.</p><div class="vehicle-grid">${vehicles.slice(3).map(vehicleCard).join("")}</div></section><div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO PASSENGERS AND EXTRAS")}</div>`;
@@ -610,7 +728,7 @@
       .filter(Boolean)
       .join(", ");
   function reviewPage() {
-    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", state.trip.stops.join(" → ")]] : []), ["Date & Time:", fullDate()], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle"><img src="assets/${vehicleImage()}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${selected().capacity} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
+    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", stopDescription()]] : []), ["Date & Time:", fullDate()], ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"], ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle"><img src="assets/${vehicleImage()}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${selected().capacity} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
       [
         ["Passengers:", state.passengers],
         ["Luggage:", state.luggage],
@@ -660,7 +778,9 @@
         ],
         ["Pick-up Location:", state.trip.pickup],
         ["Drop-off Location:", state.trip.dropoff || "As directed"],
-        ["Stops:", state.trip.stops.join(" → ") || "None"],
+        ["Stops:", stopDescription() || "None"],
+      ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"],
+      ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"],
       ],
     )}</section><section class="thank-section">${thankHeading("VEHICLE SELECTED", "car")}<div class="thank-vehicle"><img src="assets/${vehicleImage()}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${selected().capacity} Bags</span></div></div></div></section><section class="thank-section extras-thank">${thankHeading("PASSENGERS & EXTRAS", "people")}${rows(
       [
@@ -707,6 +827,7 @@
       "tip",
       "select",
       "go",
+      "stop",
     ];
     const focusAttributes =
       active && app.contains(active)
@@ -715,6 +836,7 @@
             .map((key) => `[data-${key}="${CSS.escape(active.dataset[key])}"]`)
             .join("")
         : "";
+    autocompleteCleanups.forEach(cleanup => cleanup()); autocompleteCleanups = [];
     document.body.className =
       step === 5 ? "thank-page" : `form-page step-${step + 1}`;
     document.title =
@@ -729,6 +851,7 @@
       .querySelectorAll('input[data-field="trip.pickup"]')
       .forEach((input) => (input.id = "pickup"));
     updateValidity();
+    mountPlaces();
     if (focusAttributes) {
       const replacement = app.querySelector(focusAttributes);
       if (replacement && !replacement.disabled)
@@ -745,6 +868,7 @@
     if (index === 5 && !state.submitted) return;
     if (index < 5 && index > state.completed) return;
     if (index === step) return;
+    ++navigationGeneration;
     step = index;
     history[replace ? "replaceState" : "pushState"](
       null,
@@ -785,9 +909,11 @@
     });
   }
   function validate() {
+    if (restoringPlaces) { error("Please wait while your selected locations are restored."); return false; }
     updateValidity();
     const form = app.querySelector("form");
     if (form && !form.reportValidity()) return false;
+    if (step === 0 && !routeRequest()) { error("Choose pickup, drop-off, and every stop from the Google Maps suggestions."); return false; }
     if (step === 1 && !state.vehicle) {
       error("Please select a vehicle to continue.");
       return false;
@@ -816,10 +942,10 @@
     const text = (value) => typeof value === "string" && Boolean(value.trim());
     if (
       !text(state.trip.pickup) ||
-      (state.trip.service === "transfer" && !text(state.trip.dropoff)) ||
+      !text(state.trip.dropoff) ||
       !state.trip.date ||
       !state.trip.time ||
-      state.trip.stops.some((stop) => !text(stop))
+      state.trip.stops.some((stop) => !text(stop.text))
     )
       return {
         index: 0,
@@ -833,6 +959,7 @@
         state.trip.hours > 12)
     )
       return { index: 0, message: "Please choose between 2 and 12 hours." };
+    if (!routeRequest()) return { index: 0, message: "Select your pickup, drop-off, and every stop from the location suggestions." };
     if (!vehicles.some((vehicle) => vehicle.id === state.vehicle))
       return {
         index: 1,
@@ -896,31 +1023,40 @@
       };
     return null;
   }
-  function advance() {
-    if (!validate()) return;
-    if (step === 4) {
-      const issue = validateRetainedState();
-      if (issue) {
-        state.consent = false;
-        state.submitted = false;
-        save();
-        go(issue.index);
-        error(issue.message);
+  async function advance() {
+    if (advancing || !validate()) return;
+    advancing = true;
+    const startingStep = step;
+    const startingNavigation = navigationGeneration;
+    try {
+      const retainedIssue = step === 4 ? validateRetainedState() : null;
+      if (retainedIssue) {
+        state.consent = false; dirty(); save();
+        go(retainedIssue.index); error(retainedIssue.message); return;
+      }
+      if (!await calculateRoute()) {
+        if (step === startingStep) error(routeMessage || "Wait for your driving route to be calculated before continuing.");
         return;
       }
-      state.submitted = true;
-      state.requestId =
-        "TUX-REQUEST-" +
-        (globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() ||
-          Date.now().toString(36).toUpperCase());
+      if (step !== startingStep || navigationGeneration !== startingNavigation || !validate()) return;
+      if (step === 4) {
+        const issue = validateRetainedState();
+        if (issue) {
+          state.consent = false; dirty(); save();
+          go(issue.index); error(issue.message); return;
+        }
+        state.submitted = true;
+        state.requestId =
+          "TUX-REQUEST-" +
+          (globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() ||
+            Date.now().toString(36).toUpperCase());
+        save(); go(5); return;
+      }
+      state.completed = Math.max(state.completed, step + 1);
+      state.submitted = false;
       save();
-      go(5);
-      return;
-    }
-    state.completed = Math.max(state.completed, step + 1);
-    state.submitted = false;
-    save();
-    go(step + 1);
+      go(step + 1);
+    } finally { advancing = false; }
   }
   function syncPassenger() {
     if (!state.same) return;
@@ -945,8 +1081,10 @@
     const input = event.target;
     if (input.dataset.stop !== undefined) {
       dirty();
-      state.trip.stops[Number(input.dataset.stop)] = input.value;
-      save();
+      const stop = state.trip.stops.find(item => item.id === input.dataset.stop);
+      if (!stop) return;
+      stop.text = input.value; stop.query = input.value; stop.place = null;
+      invalidateRoute(); save();
       return;
     }
     const path = input.dataset.field;
@@ -959,6 +1097,10 @@
         ? Math.max(0, Math.min(100, Number(input.value) || 0))
         : input.value,
     );
+    if (["trip.pickup", "trip.dropoff"].includes(path)) {
+      if (path === "trip.pickup") ++locationGeneration;
+      const key = path.slice(5); state.trip[key + "Place"] = null; state.trip[key + "Query"] = input.value; invalidateRoute();
+    }
     if (path.startsWith("passenger.") && state.same) {
       state.same = false;
       app.querySelector('[data-field="same"]').checked = false;
@@ -976,6 +1118,11 @@
   app.addEventListener("change", (event) => {
     const input = event.target,
       path = input.dataset.field;
+    if (input.dataset.stopWait) {
+      const stop = state.trip.stops.find(item => item.id === input.dataset.stopWait);
+      if (stop && WAIT_OPTIONS.includes(Number(input.value))) { dirty(); stop.waitMinutes = Number(input.value); save(); refreshRoutePanel(); }
+      return;
+    }
     if (!path) return;
     dirty();
     if (input.type === "checkbox") {
@@ -1054,9 +1201,11 @@
       return;
     }
     if (button.dataset.removeStop !== undefined) {
-      state.trip.stops.splice(Number(button.dataset.removeStop), 1);
-      save();
-      render();
+      const index = state.trip.stops.findIndex(item => item.id === button.dataset.removeStop);
+      if (index < 0) return;
+      maps.discardSession("stop:" + state.trip.stops[index].id);
+      state.trip.stops.splice(index, 1); invalidateRoute();
+      save(); render(); calculateRoute();
       return;
     }
     if (button.dataset.policy) {
@@ -1083,16 +1232,21 @@
         break;
       case "add-stop":
         if (state.trip.stops.length < 5) {
-          state.trip.stops.push("");
+          state.trip.stops.push(makeStop()); invalidateRoute();
           save();
           render();
           app
-            .querySelector(`[data-stop="${state.trip.stops.length - 1}"]`)
+            .querySelector(`[data-stop="${state.trip.stops.at(-1).id}"]`)
             .focus();
         }
         break;
+      case "retry-route":
+        invalidateRoute(); calculateRoute(); break;
       case "reset":
-        state = defaults();
+        ++locationGeneration;
+        restoringPlaces = false;
+        DEMO_MODE = false;
+        invalidateRoute(); state = defaults();
         save();
         step = -1;
         history.replaceState(null, "", location.pathname);
@@ -1106,17 +1260,24 @@
           return;
         }
         button.disabled = true;
+        const locating = ++locationGeneration;
+        const pickupBefore = state.trip.pickup;
         navigator.geolocation.getCurrentPosition(
           (position) => {
+            if (locating !== locationGeneration || step !== 0 || state.trip.pickup !== pickupBefore) return;
             dirty();
+            invalidateRoute();
             state.trip.pickup = `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+            state.trip.pickupQuery = state.trip.pickup;
+            state.trip.pickupPlace = { text: state.trip.pickup, latitude: position.coords.latitude, longitude: position.coords.longitude };
             save();
-            render();
+            render(); calculateRoute();
             announce(
               "Coordinates added. You may replace them with an address.",
             );
           },
           () => {
+            if (locating !== locationGeneration || step !== 0) return;
             button.disabled = false;
             error(
               "We could not access your location. Please enter your pickup location.",
@@ -1132,6 +1293,7 @@
     const allowed =
       index === 5 ? state.submitted : index >= 0 && index <= state.completed;
     if (allowed) {
+      ++navigationGeneration;
       step = index;
       render();
       window.scrollTo(0, 0);
@@ -1139,6 +1301,12 @@
       history.replaceState(null, "", "#" + routes[step]);
     }
   });
+  if (DEMO_MODE) {
+    state.trip.pickupQuery = state.trip.pickup; state.trip.dropoffQuery = state.trip.dropoff;
+    state.trip.pickupPlace = { placeId: "demo-pickup", text: state.trip.pickup };
+    state.trip.dropoffPlace = { placeId: "demo-dropoff", text: state.trip.dropoff };
+    currentRoute = { distanceMeters: 32186.88, durationSeconds: 1800, provider: "demo", signature: routeSignature() }; routeStatus = "ready";
+  }
   const initial = routes.indexOf(location.hash.slice(1));
   const initialIssue = validateRetainedState();
   if (initialIssue)
@@ -1154,4 +1322,5 @@
   history.replaceState(null, "", "#" + routes[step]);
   save();
   render();
+  if (!DEMO_MODE) restoreLocations();
 })();

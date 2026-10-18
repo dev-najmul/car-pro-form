@@ -1,12 +1,29 @@
 # Car Pro Form — Project Specification
 
+## 2026-10-18 — Google Maps integration scope
+
+The owner requested continuing the static prototype before its eventual WordPress conversion. This update adds real Google Places (New) location selection and Google Routes driving estimates; it does not implement booking submission or convert the form into a WordPress plugin.
+
+- **Confirmed by the owner:** keep a separate **Pickup time** clock input. Add a read-only, automatic **Travel time**, equal to Google's driving duration plus the selected waiting minutes at every intermediate stop. Duration is not a pickup clock time.
+- Pickup, drop-off, and every added stop receive Google Places suggestions. Text must resolve to a selected canonical place; editing it clears the old place/route/quote. Ordered stops have stable identifiers and a wait-duration selector (0, 5, 10, 15, 20, 30, 45, 60, 90, 120 minutes; initial 5).
+- Google Routes supplies the complete driving route through all stops, its road distance in meters, and driving duration in seconds. Display both km and miles. Wait duration is added locally exactly once. Stop detours are already included in Google's distance/driving time.
+- Replace fixed normal-mode transfer quotes with documented, configurable **demo** base/mileage/driving-time rates and an explicit per-minute stop-wait charge. Keep true Google route metrics distinct from invented tariffs. The existing `?demo=1` fixture remains explicitly offline sample data for reference review.
+- Use the browser-restricted Maps/Places key only for the browser SDK. Keep the separate Routes key in local environment configuration and call Routes through a small same-origin Node proxy. Keys must not be committed, included in ZIPs, printed, or written into this document. The frontend remains HTML/CSS/JavaScript; the proxy is needed for API calls, not booking storage.
+- Recalculate/invalidate on selected-location, stop-order/wait, service, and relevant input changes. Ignore stale autocomplete/details/route responses after typing, removing a stop, or starting a new request. Do not replace unavailable Google responses with fabricated live routes or old prices.
+- Pass route distance, driving/wait/total durations, and new quotes through vehicle cards, summaries, Review, and thank-you. Keep existing extras/gratuity behavior, with gratuity based on transportation only.
+- Test provider contracts with deterministic mocks, pricing with independent arithmetic, errors and request races, navigation/refresh, and desktop/mobile layouts. Separately test actual Google access with the supplied credentials and report observed live results honestly.
+- **Pre-change backup:** `releases/car-pro-form-static-v1.0.0-before-maps.zip`; source commit `9bd33e5`; 47 tracked files; SHA-256 `dd56418cca67d8bb16394e10998307d935d753ad6e40b762c453fc88765b25fe`. Created and integrity checked before any integration changes or private configuration.
+- **Initial live-test blocker, subsequently resolved:** the cloud network proxy initially returned `403 Forbidden` for Google domains before Google API/key validation. Required domains were saved in the environment draft. After the runtime network changed, connectivity was rechecked and an actual Google Routes request through the running application proxy succeeded on 18 October 2026. Browser Places validation and final check results are recorded in Section 11.8; an earlier blocked request is not evidence that a key is invalid.
+
+Sections 1–9 preserve the original screenshot inventory. Section 10 is the **historical v1.0.0 static baseline**; its fixed normal-mode prices, local address suggestions, optional Hourly drop-off, Node 20 requirement, and no-provider statements are superseded by the current **version 1.1.0 integration record in Section 11**.
+
 Repository: `dev-najmul/car-pro-form`
 
 Reference archive: `Car booking img.zip`
 
 Documentation date: 14 October 2026
 
-Current milestone: **static desktop/mobile implementation complete; browser verification and implementation records are included below.**
+Current milestone: **version 1.1.0 Maps integration implemented; real Routes access verified; live browser Places checks and final integration verification are tracked in Section 11.8.**
 
 Quick page navigation:
 
@@ -1197,7 +1214,9 @@ These were open questions in the original specification. The owner subsequently 
 
 **Current checkpoint:** the owner has authorized implementation. Review the completed website and browser previews, then request any changes.
 
-## 10. Completed implementation and decision log
+## 10. Historical static implementation and decision log — version 1.0.0
+
+**Historical record, completed 14 October 2026.** The behavior and checks in this section describe the saved pre-Maps version, not the current provider integration. Section 11 supersedes changed behavior while preserving this baseline for comparison.
 
 The owner authorized completing the remaining process and choosing sensible defaults. The application is implemented in `index.html`, `styles.css`, and `app.js`, with an optional `server.js` development server. It has no runtime package dependency or build step. Node.js 20+ and the pinned Playwright development dependency are used for local checks.
 
@@ -1277,3 +1296,149 @@ Verified in the current cloud machine on 14 October 2026:
 The final GitHub commit contains the application, assets, docs, previews, and tests. The owner review below remains separate from automated verification.
 
 - [ ] Owner checks the completed website and requests any final modifications.
+
+## 11. Google Maps integration record — version 1.1.0
+
+Implementation date: **18 October 2026**. This is the current behavior. The supplied screenshot inventories and Section 10 remain historical evidence; changed controls and business assumptions below intentionally extend that static design.
+
+### 11.1 Current trip workflow
+
+- Normal mode uses **Google Places (New)** programmatic suggestions for pickup, drop-off, and each stop. Search begins after two characters with a 300 ms debounce and displays up to five results. The browser SDK uses English and US regional bias; this is not a hard country restriction.
+- Typed addresses must resolve to a selected Google place before route calculation/continuation. Editing the text clears the old place and route/price. The current-location button is a separate permission-based browser geolocation input; its coordinates can serve as pickup without reverse geocoding.
+- At most **five intermediate stops**, in entered order. Each has a stable local ID, location selector, remove button, and wait selector. Wait options are **0, 5, 10, 15, 20, 30, 45, 60, 90, 120 minutes**, initially **5 minutes**. Total supported waiting is at most 600 minutes. Removing/re-adding a stop creates a new identity; outstanding requests cannot apply to the replacement.
+- **Pickup time** is the user's selected clock time. Read-only **Travel time** is automatic journey duration, not another clock input. It adds Google driving seconds and all selected waiting seconds exactly once. No arrival clock time or availability lookup is inferred.
+- Google Routes calculates the actual road path through pickup, every ordered stop, and drop-off. Stop detours are already in its distance and driving duration; they are not added again locally. `TRAFFIC_UNAWARE` is the chosen baseline, so the UI explicitly says traffic is not included.
+- The journey display separates distance in km/miles, driving duration, stop waiting, and total duration. Display distances use one decimal; calculations retain the original meters/seconds. Display durations round upward to whole minutes, formatting hours/minutes as needed.
+- **Hourly also requires drop-off and a valid route** for an estimate. The booked-hours selector remains 2–12 hours, initially 3. The previous optional drop-off/hourly-only fixed multiplication is superseded.
+- Location edits and stop add/remove clear route validity. Wait, service, hours, vehicle, and extras feed the applicable current calculation. Per-field generation guards and route request generations/abort signals reject stale responses after typing, navigation, removal, or reset. Errors show a retry path; an unavailable Google request never becomes a fabricated normal-mode route or an old quote.
+- Route details and derived amounts are reflected in the vehicle cards, sidebar summaries, Review, and thank-you. The form remains locally submitted; route/API access does not create a transportation reservation.
+
+### 11.2 Configurable demonstration tariff table
+
+Google supplies road distance and driving time, **not fares**. The following USD values are invented prototype business rules in `pricing.js`, exposed here for review. They must be replaced/approved by the operator before real quoting.
+
+| Vehicle ID / class | Transfer base | Per mile | Per driving minute | Transfer minimum | Per stop-wait minute | Per booked hour |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `premium` — Premium SUV | $65 | $2 | $3 | $100 | $1 | $95 |
+| `luxury` — Luxury SUV | $75 | $3 | $3 | $125 | $1.50 | $115 |
+| `executive` — Executive SUV | $105 | $3.50 | $3 | $150 | $2 | $135 |
+| `ghost` — Rolls-Royce Ghost | $500 | $15 | $15 | $600 | $5 | $500 |
+| `cullinan` — Rolls-Royce Cullinan | $700 | $20 | $25 | $900 | $7.50 | $750 |
+| `phantom` — Rolls-Royce Phantom | $1,000 | $30 | $55 | $1,500 | $10 | $1,250 |
+
+Define `d = route.distanceMeters`, `s = route.durationSeconds`, `w = sum of stop.waitMinutes`, and `h = selected booked hours`:
+
+```text
+miles          = d / 1609.344
+kilometers     = d / 1000
+drivingMinutes = s / 60
+
+Transfer drivingCharge = max(minimum,
+                             base + miles × perMile
+                                  + drivingMinutes × perDrivingMinute)
+Hourly drivingCharge   = max(h, drivingMinutes / 60) × hourlyRate
+                         + miles × perMile
+waitingCharge          = w × perWaitingMinute
+transportation         = drivingCharge + waitingCharge
+totalDurationSeconds   = s + w × 60
+```
+
+The transfer minimum applies **before** adding waiting. Hourly uses the larger of booked hours and actual driving hours, then adds mileage and waiting; it does not use the transfer base/minimum/per-driving-minute charge. Waiting remains separately charged even when it fits inside booked hours. These are explicit added assumptions, not Google behavior or an original screenshot tariff.
+
+`drivingCharge`, `waitingCharge`, and final transportation are rounded to cents using the pricing module's `Math.round((value + Number.EPSILON) * 100) / 100`; transportation is rounded from the full-precision driving-plus-waiting sum. Invalid vehicle/service/route values or unsupported waits/hours are rejected.
+
+### 11.3 Extras, gratuity, and arithmetic examples
+
+Existing extras remain:
+
+- Meet & Greet: $50 when selected, otherwise $0.
+- For combined car/booster seat count `n`: $0 if `n = 0`; otherwise `$75 + (n − 1) × $50`. Allocate the first-seat $75 to car seats if any are selected, otherwise booster seats. Seat/capacity validation remains in place.
+- Gratuity: 10/15/20/25% presets, initially 20%; custom 0–100%; tipping in person sets the calculated percentage to zero. `gratuity = Math.round(transportation × percentage) / 100`. Its basis is **transportation including stop waiting**, excluding Meet & Greet and child seats.
+- `estimatedTotal = roundToCents(transportation + Meet & Greet + childSeats + gratuity)`.
+
+Worked prototype examples:
+
+| Journey / selected options | Calculation | Result |
+| --- | --- | --- |
+| Luxury, 20 miles / 30 driving minutes / no waiting | `max(125, 75 + 20×3 + 30×3)` | Transportation **$225.00** |
+| Same route, two stops waiting 5 + 10 minutes | Driving $225 + `15×$1.50` wait; total journey `30+15` minutes | Transportation **$247.50**, travel **45 min** |
+| Same 15-minute-wait route, Meet & Greet, 2 car seats + 1 booster, 20% gratuity | `$247.50 + $50 + $175 + $49.50` | Estimate **$522.00** |
+| Luxury Hourly, 3 booked hours, same 20-mile / 30-driving-minute route and 15-minute waiting | `max(3, 0.5)×115 + 20×3 + 15×1.50` | Transportation **$427.50** |
+
+The explicit offline fixture supplies exactly 32,186.88 meters (20 miles) and 1,800 driving seconds (30 minutes), with no stops initially. Those sample metrics reproduce all six original vehicle amounts through the new formula. With its original extras/gratuity, Luxury remains `$225 + $50 + $175 + $45 = $495`.
+
+### 11.4 Places sessions, transient provider content, and draft restoration
+
+`maps.js` loads Maps JavaScript once and imports the `places` library. It uses `AutocompleteSuggestion.fetchAutocompleteSuggestions`, a separate `AutocompleteSessionToken` per input editing session, `prediction.toPlace()`, then `place.fetchFields()` for `id`, `displayName`, `location`, `formattedAddress`, and `attributions`. The first details fetch from that prediction carries its autocomplete token automatically; a selected session is discarded. The selected label includes the place name and address, so a hotel, airport, or park remains identifiable rather than showing only its postal address. `displayName` is requested for that visible behavior; Google API billing follows the requested fields.
+
+Suggestions use a custom accessible combobox/listbox, arrow/Enter/Escape handling, safe text rendering, visible provider errors, and generation guards for predictions and details. Untranslated **Google Maps** text attribution appears with suggestions and route information. Returned attribution `provider` / `providerURI` values are normalized for safe display, with only HTTPS provider links enabled. Public `terms.html` and `privacy.html` provide actual prototype Terms of Use and a Privacy Notice, explain current data processing, and link/incorporate the applicable Google terms and privacy policy. These notices do not establish operator booking/cancellation rules; the existing operator-policy dialogs remain separate placeholders.
+
+The existing tab-scoped `sessionStorage` draft keeps booking/contact/options, stop IDs/waits, original **user-typed queries**, and selected Google **place IDs**. It does not retain Google-formatted addresses, attribution payloads, suggestions, or driving metrics. Browser geolocation coordinates are browser/user input and can be stored with that draft; they are not Google Place coordinates. A normal-mode refresh first resolves each saved Google place ID through a fresh `Place.fetchFields()` request for its canonical address/location/providers, then calculates a fresh route. The original query is not presented as a restored canonical Google address. If details restoration fails, the app clears the failed selection, returns to Trip, and requires reselection without displaying a quote. Browser-supplied coordinates remain the separate user-input case. No saved provider metrics are trusted to bypass Google availability.
+
+The active browser workflow keeps normalized Google route metrics in memory. The server does not cache Google provider results, and there is no provider-result database or disk cache. Starting a new request clears the draft, submission identity, and active route. Existing contact validation, consent, edits, and draft consistency checks remain.
+
+`?demo=1` is an **explicit offline reference fixture**, not an error fallback. It initializes the historical example each document load and supplies sample selected locations and fixed sample route metrics; labels identify those metrics as examples. Its date remains 8 September 2026 at 6:00 AM and greeting uses Emily. Searching/altering a location still invokes the real Places integration; do not treat fixture mileage as a live quote for a modified journey. Normal mode starts empty and never silently enables this fixture.
+
+### 11.5 Server API and request boundaries
+
+`server.js` is now required for live mode. It serves an explicit public application/asset allowlist and delegates `/api/maps/*` to `maps-api.js`; private configuration, server source modules, tests, backups, and arbitrary repository files are not public routes.
+
+- `GET /api/maps/config`: browser key plus browser/Routes configuration booleans. The Routes key is never returned.
+- `POST /api/maps/route`: JSON `origin`, `destination`, and at most five ordered `stops`. A waypoint is a bounded nonempty Place ID or a validated latitude/longitude pair. Arbitrary addresses/upstream URLs/extra request properties are rejected.
+- Server-only upstream: `POST https://routes.googleapis.com/directions/v2:computeRoutes`, API-key header, field mask **`routes.distanceMeters,routes.duration`**, `DRIVE`, `TRAFFIC_UNAWARE`, and `optimizeWaypointOrder:false`. Intermediate waypoints remain ordinary stopovers in supplied order; no route optimization or extra local detour calculation is added.
+- Normalize the first route into nonnegative meters and duration seconds, provider, and calculation timestamp. Protobuf duration strings are parsed as seconds. The application needs aggregate metrics, so leg/polyline/map fields are not requested.
+- No Google provider-result cache is kept on the server. Each required route request is forwarded to Google; normalized metrics remain in the active browser booking only. Wait, service, and tariff choices do not alter Google's road path and are calculated locally from the selected active route.
+- API responses use `Cache-Control: no-store`; the browser has no persistent route cache, and provider metrics are not written to local files or the draft.
+- Input body limit 16 KiB; route POST limit 30 requests per socket IP per minute; bounded client accounting; same-origin browser-request checks; fixed upstream destination; 12-second provider timeout; sanitized errors. These controls bound the prototype endpoint; operator hosting/usage policies remain separate.
+- Unconfigured keys, malformed requests, no-route responses, invalid Google payloads, timeout, network errors, and rate limits return explicit failure states. An older in-flight route cannot overwrite a newer route after edits/reset.
+
+### 11.6 Runtime, configuration, hosting, and backup
+
+Current minimum runtime: **Node.js 24.5+**. `npm start` and `npm run dev` run `node --use-env-proxy server.js`. The flag lets outbound Node fetch honor the environment's proxy configuration. There is no frontend build step or runtime package dependency; `npm ci` installs the pinned development/test tools.
+
+Configuration names only; **no actual API key values belong in this file or the repository**:
+
+| Binding | Use | Expected restriction |
+| --- | --- | --- |
+| `GOOGLE_MAPS_BROWSER_KEY` | Maps JavaScript / Places (New), delivered to browser configuration | Permitted website HTTP referrers plus appropriate API restrictions |
+| `GOOGLE_ROUTES_API_KEY` | Server-only Routes call | Routes API restriction and appropriate server/IP access controls |
+| `PORT` | HTTP listening port, default 3000 | Hosting configuration; optional `--port` override |
+
+The server loads ignored `.env.local` without shell evaluation; existing injected environment values take precedence. [.env.example](.env.example) contains blank bindings and explanatory comments only. Use separate browser/server keys, enable the appropriate APIs/billing, configure referrers for the actual local/preview/production hosts, and keep the private Routes key out of frontend assets, logs, Git, screenshots, and archives. Browser key visibility is intentional; the server key is private.
+
+Host the live application with Node 24.5+ and same-origin API access; a static-only host cannot provide the Routes endpoint. Use HTTPS in deployment and permitted outbound access to `maps.googleapis.com`, `maps.gstatic.com`, `places.googleapis.com`, and `routes.googleapis.com`. Google may bill autocomplete/details and Routes requests; the prototype's demonstration fares are separate from those API charges. Static hosting can still display the explicit fixture for visual review.
+
+Pre-change backup: [releases/car-pro-form-static-v1.0.0-before-maps.zip](releases/car-pro-form-static-v1.0.0-before-maps.zip), all 47 tracked files at commit `9bd33e5`, SHA-256 `dd56418cca67d8bb16394e10998307d935d753ad6e40b762c453fc88765b25fe`. It was created and checked before private Maps configuration. [Backup/restore notes](releases/README.md) explain safe extraction into a separate empty folder. The previous runtime/behavior remains historical, not the current live setup.
+
+### 11.7 Scope, added demo assumptions, and reference differences
+
+| Item | Current choice / provenance |
+| --- | --- |
+| Location search | Real Google Places (New); replaces the historical local datalist. No local location fallback in normal mode. |
+| Road metrics | Real Google Routes when available; no geodesic approximation, fabricated normal-mode route, or stale-price substitution. |
+| Prototype tariffs | Table/formulas in 11.2 are newly added demo business rules. Google does not endorse or calculate those prices. |
+| Offline metrics | Exactly 20 miles / 30 driving minutes in explicit `?demo=1`; source screenshot did not supply those metrics. Added to reproduce the original six sample prices through the new formula. |
+| Stops | Five maximum, stable IDs, listed wait choices/default 5 minutes, per-class waiting prices; new controls absent from original screenshots. |
+| Time labels | Separate Pickup time and automatic Travel time, explicitly confirmed by the owner; no replacement of the pickup clock input. |
+| Hourly | Drop-off/route now required; minimum booked time 2 hours, default 3, maximum selection 12; larger actual driving time + mileage + waits drives its formula. Supersedes historical fixed hourly multiplication. |
+| Retained sample conflicts | Continue one entered date/address throughout, payer greeting, consistent generated quantities, and locally generated request ID. Original conflicting screenshot examples remain transcribed above. |
+| Submission | Still local/static navigation to thank-you, with visible demo disclosure. No reservation is stored/sent, no email is sent, and no payment is collected. Google route requests do not change that. |
+| Policies | New public `terms.html` / `privacy.html` contain prototype usage/data-handling notices and applicable Google terms/policy links. Existing operator booking/cancellation dialogs remain placeholders; these notices do not invent operator rules. |
+| Future WordPress | No WordPress conversion is included in this update. Current HTML/CSS/JS and proxy are the prototype to review before that later integration. |
+
+Google route metrics are estimates; this phase adds neither operator availability nor confirmation processing. Screenshot review/email/payment wording remains reference copy alongside the explicit demo-submission disclosure. The original `docs/previews/` captures are the historical static v1.0.0 visual record; any current integration captures are identified separately.
+
+### 11.8 Verification status
+
+- **Live Routes verified, 18 October 2026:** after the cloud network policy became effective, domain reachability was rechecked. An actual unmocked POST through the running `npm start` same-origin proxy, with one intermediate stop, returned HTTP 200: **30,855 meters**, **2,492 driving seconds**, provider **`google`**. This establishes the tested live server-route path; it does not establish every route, production referrer, or tariff policy.
+- **Initial network failure resolved:** earlier proxy `403 Forbidden` responses occurred before Google key validation. The successful later runtime request supersedes that blocker; no credential values are recorded here.
+- **Live browser Places and complete booking flow verified, 18 October 2026:** the real Maps JavaScript SDK produced Google suggestions; actual `toPlace()` / `fetchFields()` selections preserved the names and addresses of **Willis Tower → Millennium Park → Chicago O’Hare International Airport**. The stop route displayed **31.1 km / 19.3 mi**, **36 minutes driving**, **15 minutes waiting**, and **51 minutes total** (duration displays round upward). All six vehicle quotes updated; Luxury SUV transportation was **$261.19**, including **$22.50 waiting**. With 20% gratuity and no extras, Review and the local thank-you page both showed **$313.43**. Fresh place details and route calculation also succeeded on draft reload. This was unmocked Google traffic with the supplied keys, tested from the current application origin; new production referrers/hosting remain a separate configuration.
+- **Live desktop/mobile captures:** [suggestions desktop](docs/previews/maps/live-google-suggestions-desktop.png), [Trip desktop](docs/previews/maps/live-google-trip-desktop.png), [Trip phone](docs/previews/maps/live-google-trip-phone.png), [vehicles phone](docs/previews/maps/live-google-vehicles-phone.png), and [thank-you phone](docs/previews/maps/live-google-thank-you-phone.png). These show the integration; the earlier twelve captures remain the static baseline. No horizontal overflow was found in the live phone flow and no browser exceptions/console errors were observed.
+- **Synthetic live-test contact data:** the final live confirmation capture uses the test contact `Live Demo`, an `example.com` email, a `555` test telephone number, and `321 Oak Street`. These are test inputs, not a real customer or newly prefilled normal-mode defaults.
+- **Live-test defect corrected:** leaving a selected pickup field while its details request was pending could cancel that selection. A committed selection now survives focus moving to the next field; only typing/Escape/disposal makes that response obsolete. Updating one selection preserves the other field’s text, focus, and suggestions. A delayed-details browser regression covers this interaction.
+- **Cloud browser trust resolved:** Node/Python reached Google through the configured proxy. Chromium 154 additionally needed the existing environment CA trusted in a dedicated persistent profile; verification stayed enabled. Reusable startup instructions include that local setup and the required proxy route.
+- **Automated integration validation:** pricing/API unit checks and deterministic mocked browser flows exercise formulas, selected-place requirements, waiting/Hourly calculations, provider failures, stale responses, freshly restored Places details, retained drafts, and layouts. CI includes `npm run test:unit` alongside syntax/browser checks. `npm ci` (frozen lockfile), `npm run check`, and **43/43 unit checks** passed. The final complete Playwright run passed **39/39 browser tests** in 2.5 minutes: 24 existing booking/layout regressions and 15 Maps integration cases, with no failures or skips. Together with the 43 unit checks, **82 checks passed**. Twelve reference captures (six desktop and six mobile) were generated in ignored test artifacts. Section 10’s historical 24-test count is superseded.
+- **Production hosting / WordPress:** neither public deployment nor WordPress conversion is part of this verification record.
+
+- **Release checks:** the pre-change ZIP passed integrity and SHA-256 verification. All 63 current tracked/unignored release files and decompressed backup entries were scanned: no Google API key values were found. Private `.env.local` is ignored and is not served; `/server.js` is also not public. Both public prototype policy pages returned HTTP 200 and fit a 320 px viewport.
+- **Reusable environment configuration:** updated `install_script` and `start_skill` were saved in the environment draft, including Node 24.5+, unit/browser checks, proxy/key handling, and trusted Chromium setup. Current-instance live checks passed; publishing the draft and restoring a new task are separate platform actions and have not been verified.

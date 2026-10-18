@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="How the TUXANO reservation form prototype handles browser drafts, location searches, and Google Maps route requests.">
+    <title>Prototype Privacy Notice | TUXANO</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="policy-page">
+    <main class="policy-content">
+      <a class="policy-back" href="/">← Return to the reservation form</a>
+      <h1>Prototype Privacy Notice</h1>
+      <p>This notice describes the current reservation form prototype. The form creates a demonstration summary; it does not send a real reservation, payment, or email.</p>
+
+      <section>
+        <h2>Information kept in this tab</h2>
+        <p>The application uses your browser’s session storage to keep a draft. The draft can include trip details, your location search text, selected place IDs or device coordinates, stop waiting times, vehicle and extra selections, contact and passenger details, billing address, notes, agreement selection, and the local demonstration request ID.</p>
+        <p>This storage belongs to the current browser tab. Its lifetime depends on your browser’s tab and session restoration behavior. The application does not send these contact, passenger, billing, or note fields to a reservation database.</p>
+        <p>Google suggestion lists, fetched place details and provider attributions, and driving distance and duration results are used in memory rather than persisted in the browser draft. Selected place IDs can be retained so that the selected locations can be used again.</p>
+      </section>
+
+      <section>
+        <h2>Location searches and Google Maps</h2>
+        <p>When you type into a location search field, the search text is sent to Google through its Maps JavaScript Places service to obtain suggestions. Selecting a suggestion requests place details from Google, including its identifier, location, address, and any supplied provider attribution.</p>
+        <p>For a driving estimate, this application sends the selected pickup, destination, and ordered stops as place IDs or coordinates to its route endpoint. The server forwards those waypoints to Google Routes. Route requests do not include your contact or billing fields, special-request notes, or the pickup date and clock time. Stop waiting times are used by this application to calculate the displayed total duration and demonstration price.</p>
+        <p>Google may receive technical information associated with these requests, such as your IP address and browser or request metadata. Google’s processing, storage, and use of information are governed by the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>, which is incorporated into this notice for the Google-powered features.</p>
+        <p>Those features are also subject to the <a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noopener noreferrer">Google Maps/Google Earth Additional Terms of Service</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Google Terms of Service</a>.</p>
+      </section>
+
+      <section>
+        <h2>Using your current location</h2>
+        <p>The current-location button asks your browser for geolocation permission. If you allow access, the returned coordinates are used as the pickup location, can be retained in the tab’s draft, and are sent to Google when calculating that route. You can enter and select a pickup address instead, and you can manage location permission in your browser.</p>
+      </section>
+
+      <section>
+        <h2>Temporary route processing and hosting</h2>
+        <p>Driving results are processed in memory to display an estimate and calculate the demonstration price. The application does not create a persistent database of Google suggestions, place details, or driving results.</p>
+        <p>The hosting service and network providers may process request metadata, including IP addresses and access logs. Their logging, retention, and security practices depend on the hosting configuration and their own policies. This prototype does not define a retention period for those external logs.</p>
+      </section>
+
+      <section>
+        <h2>Removing the local draft</h2>
+        <p>Use “Start a new request” on the demonstration summary to replace the local draft, or clear this site’s stored browser data. Closing a tab may end its session storage, but browser session restoration can affect that behavior. Clearing the local draft does not delete information already processed by Google or any hosting provider.</p>
+      </section>
+
+      <nav aria-label="Policy navigation">
+        <a href="terms.html">Prototype Terms of Use</a>
+        <a href="/">Return to the reservation form</a>
+      </nav>
+    </main>
+  </body>
+</html>
