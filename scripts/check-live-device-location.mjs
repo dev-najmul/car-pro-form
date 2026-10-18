@@ -28,8 +28,12 @@ try {
   await page.goto(site, { waitUntil: 'domcontentloaded' });
   async function choose(label, query, pattern) {
     await page.getByLabel(label, { exact: true }).fill(query);
+    const input = page.getByLabel(label, { exact: true });
     await page.getByRole('option', { name: pattern }).first().click();
-    await expect(page.getByLabel(label, { exact: true })).toHaveValue(pattern);
+    const fieldId = await input.getAttribute('data-place-field');
+    const address = page.locator(`[data-selected-place="${fieldId}"] .selected-location-address`);
+    await expect(address).toBeVisible();
+    await expect(input).toHaveValue(await address.innerText());
   }
   await choose('Pickup location', 'Nathullahbad Central Bus Terminal', /Nathullahbad Central Bus Terminal/i);
   const originalPickup = await page.getByLabel('Pickup location', { exact: true }).inputValue();
