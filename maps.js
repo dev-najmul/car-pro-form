@@ -1,5 +1,71 @@
 const SDK_CALLBACK = '__tuxanoGoogleMapsReady';
 const text = value => typeof value === 'string' ? value : value?.text || value?.toString?.() || '';
+
+const MAPS_URL_LIMIT = 2000;
+const mapLinkPoint = point => {
+  if (!point || typeof point !== 'object' || Array.isArray(point)) return null;
+  if (Object.hasOwn(point, 'placeId')) {
+    if (typeof point.placeId !== 'string' || !point.placeId.trim() || point.placeId.length > 512 || /[\u0000-\u001f\u007f]/u.test(point.placeId)) return null;
+    const label = [point.text, point.name, point.address].find(value => typeof value === 'string' && value.trim())?.trim();
+    return label ? { id: point.placeId, label } : null;
+  }
+  return Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90 && Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180
+    ? { label: `${point.latitude},${point.longitude}` } : null;
+};
+const mapQuery = (point, limit) => point.id && limit ? Array.from(point.label).slice(0, limit).join('') : point.label;
+const fitMapsUrl = build => {
+  for (const limit of [null, 160, 80, 40, 20, 1]) {
+    const url = build(limit);
+    if (url.length <= MAPS_URL_LIMIT) return url;
+  }
+  return '';
+};
+
+// Place IDs fix the selected identity even when a long display label is shortened.
+// Empty results mean an invalid point or an exact-ID URL that cannot fit safely.
+export function googlePlaceUrl(point) {
+  const selected = mapLinkPoint(point);
+  if (!selected) return '';
+  return fitMapsUrl(limit => {
+    const url = new URL('https://www.google.com/maps/search/');
+    url.searchParams.set('api', '1'); url.searchParams.set('query', mapQuery(selected, limit));
+    if (selected.id) url.searchParams.set('query_place_id', selected.id);
+    return url.href;
+  });
+}
+
+export function googleRouteLinks(points) {
+  if (!Array.isArray(points) || points.length < 2) return [];
+  const selected = points.map(mapLinkPoint);
+  if (selected.some(point => !point)) return [];
+  const links = [];
+  for (let start = 0; start < selected.length - 1;) {
+    let end = Math.min(start + 4, selected.length - 1), link = '';
+    for (; end > start; end--) {
+      const part = selected.slice(start, end + 1), stops = part.slice(1, -1);
+      // Google's waypoint ID list cannot represent a mixture of IDs and coordinates.
+      // Shorter consecutive parts keep every identity instead of omitting any IDs.
+      if (stops.some(point => point.id?.includes('|')) || stops.some(point => point.id) && stops.some(point => !point.id)) continue;
+      link = fitMapsUrl(limit => {
+        const url = new URL('https://www.google.com/maps/dir/');
+        url.searchParams.set('api', '1'); url.searchParams.set('travelmode', 'driving');
+        url.searchParams.set('origin', mapQuery(part[0], limit)); url.searchParams.set('destination', mapQuery(part.at(-1), limit));
+        if (part[0].id) url.searchParams.set('origin_place_id', part[0].id);
+        if (part.at(-1).id) url.searchParams.set('destination_place_id', part.at(-1).id);
+        if (stops.length) {
+          url.searchParams.set('waypoints', stops.map(point => mapQuery(point, limit).replaceAll('|', ' ')).join('|'));
+          if (stops[0].id) url.searchParams.set('waypoint_place_ids', stops.map(point => point.id).join('|'));
+        }
+        return url.href;
+      });
+      if (link) break;
+    }
+    if (!link) return [];
+    links.push(link); start = end;
+  }
+  return links;
+}
+
 export class MapsClient {
   constructor() { this.sessions = new Map(); }
   async config() {
@@ -40,7 +106,7 @@ export class MapsClient {
   async suggest(query, fieldId) {
     const { AutocompleteSuggestion, AutocompleteSessionToken } = await this.ready();
     if (!this.sessions.has(fieldId)) this.sessions.set(fieldId, new AutocompleteSessionToken());
-    const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query, sessionToken: this.sessions.get(fieldId), language: 'en', region: 'us' });
+    const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query, sessionToken: this.sessions.get(fieldId), language: 'en' });
     return (response.suggestions || []).filter(s => s.placePrediction).slice(0, 5).map(s => ({ prediction: s.placePrediction, placeId: s.placePrediction.placeId, text: text(s.placePrediction.text), main: text(s.placePrediction.mainText), secondary: text(s.placePrediction.secondaryText) }));
   }
   async select(suggestion, fieldId) {
@@ -60,7 +126,7 @@ export class MapsClient {
     const name = place.displayName || '', address = place.formattedAddress || '';
     const label = name && address && !address.toLowerCase().includes(name.toLowerCase()) ? `${name}, ${address}` : address || name || fallback;
     if (!label) throw new Error('Please select this location again to restore its address.');
-    return { placeId: place.id, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
+    return { placeId: place.id, name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
   }
   async route(request, signal) {
     const config = await this.config();
@@ -173,8 +239,19 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError })
   const keydown = event => {
     if (event.key === 'Escape') { selecting = false; ++generation; clearTimeout(timer); close(); return; }
     if (!list || !suggestions.length || !list.querySelector('[role="option"]')) return;
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); active = (active + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1) + suggestions.length) % suggestions.length; highlight(); }
-    if (event.key === 'Enter') { event.preventDefault(); select(active < 0 ? 0 : active); }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      active = active < 0 ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1) : (active + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length;
+      list.querySelector('.places-selection-hint')?.remove(); highlight();
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (active >= 0) select(active);
+      else if (!list.querySelector('.places-selection-hint')) {
+        const hint = document.createElement('p'); hint.className = 'places-message places-selection-hint'; hint.setAttribute('role', 'status');
+        hint.textContent = 'Choose the matching location from the suggestions, or use the arrow keys then Enter.'; list.prepend(hint);
+      }
+    }
   };
   const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); } }, 150); };
   input.addEventListener('input', search); input.addEventListener('keydown', keydown); input.addEventListener('blur', blur);

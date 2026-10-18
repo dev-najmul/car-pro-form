@@ -109,6 +109,36 @@ test('normal mode requires selected places, supports keyboard selection, and cal
   await total(page, 270); // $225 transportation + $45 gratuity, no extras.
 });
 
+for (const selection of ['keyboard', 'keyboard-up', 'click']) test(`Enter cannot silently choose an unrelated first place; explicit ${selection} selects the intended match`, async ({ page }) => {
+  const query = 'Nathullabad Central Bus Terminal';
+  const unrelated = 'Notun Bazar Bus Stop, Dhaka, Bangladesh';
+  const intended = 'Nathullabad Central Bus Terminal, Barishal, Bangladesh';
+  await page.evaluate(({ query, unrelated, intended }) => {
+    window.__mapsMock.suggestionsByQuery = { [query]: [unrelated, intended] };
+  }, { query, unrelated, intended });
+  await selectPlace(page, 'Drop-off location', 'Sayedabad, Dhaka, Bangladesh');
+  const pickup = page.getByLabel('Pickup location', { exact: true });
+  await pickup.fill(query);
+  await expect(page.getByRole('option', { name: intended, exact: true })).toBeVisible();
+  expect(await page.evaluate(query => window.__mapsMock.calls.find(call => call.kind === 'suggest' && call.query === query).region, query)).toBeUndefined();
+  await pickup.press('Enter');
+  await expect(pickup).toHaveValue(query);
+  await expect(page.getByRole('option', { name: unrelated, exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: intended, exact: true })).toBeVisible();
+  await expect(page.locator('.places-selection-hint')).toHaveAttribute('role', 'status');
+  await expect(page.locator('.places-selection-hint')).toContainText('Choose the matching location');
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')).trip.pickupPlace)).toBeNull();
+  expect(contexts.get(page).requests).toHaveLength(0);
+  expect(await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'details').map(call => call.query))).not.toContain(unrelated);
+  if (selection === 'keyboard') {
+    await pickup.press('ArrowDown'); await pickup.press('ArrowDown'); await pickup.press('Enter');
+  } else if (selection === 'keyboard-up') { await pickup.press('ArrowUp'); await pickup.press('Enter'); }
+  else await page.getByRole('option', { name: intended, exact: true }).click();
+  await expect(pickup).toHaveValue(intended);
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  expect(contexts.get(page).requests.at(-1)).toEqual({ origin: { placeId: pointId(intended) }, destination: { placeId: pointId('Sayedabad, Dhaka, Bangladesh') }, stops: [] });
+});
+
 test('ordered stops add vehicle-specific wait fees once and removal keeps the surviving stop', async ({ page }) => {
   await trip(page);
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();

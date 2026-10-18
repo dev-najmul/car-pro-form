@@ -1,4 +1,4 @@
-**Current prototype direction (19 October 2026):** version 1.2.0 uses the supplied server key in a temporary test backend, matching the later WordPress architecture. The client does not need to change Google Cloud settings. See [Section 13](#13-temporary-server-routes-preview--version-120).
+**Current prototype direction (19 October 2026):** version 1.2.1 adds deliberate location selection and full-address/Google Maps verification, using the supplied server key in a temporary test backend. The client does not need to change Google Cloud settings. See [Section 14](#14-location-accuracy-investigation--version-121) for the latest accuracy fix and [Section 13](#13-temporary-server-routes-preview--version-120) for test hosting.
 
 # Car Pro Form — Project Specification
 
@@ -1514,3 +1514,40 @@ The keepalive condition explicitly requires `success() && !cancelled()` so a can
 **Release safety:** the final source/configuration and decompressed pre-Maps backup scan passed for all 74 tracked/unignored release files, with no Google key values found. The private environment and generated `dist` remain ignored. No new dummy fare schedule or WordPress conversion was introduced.
 
 **Latest-session live retest passed:** [Check live GitHub Pages run 39157735762](https://github.com/dev-najmul/car-pro-form/actions/runs/39157735762) completed successfully against the newly published session and final application commit `20a50ba`. Every live-check step and screenshot/report upload succeeded. This repeats the complete real-provider form/stop/pricing/phone/thank-you verification after the cancellation fix and final deployment.
+
+
+## 14. Location accuracy investigation — version 1.2.1
+
+### Report and verified cause
+
+The owner compared a form result of 11.2 km / 37 minutes with a Google Maps result of 167 km / 3h29. The screenshots show different endpoints: the form selected **Notun Bazar Bus Stop, Dhaka → Sayedabad, Dhaka**; the Maps screenshot uses **Sayedabad, Dhaka → Nathullahbad Central Bus Terminal, Barishal**, also in the opposite direction. These are different journeys, not a kilometers/miles conversion error.
+
+Actual Google calls on **19 October 2026, 01:23–01:25 Asia/Dhaka**, using the existing authorized keys and canonical Places IDs, reproduced the form result exactly for its displayed locations. Google also returns unrelated suggestions for some misspelled terminal searches; a Shah Amanat airport query returned a similarly named business first and the real airport second. A concrete UI defect was reproduced: pressing Enter with no highlighted prediction silently accepted the first result, allowing an unintended location to replace the typed query. This proves an unsafe selection path, but does not establish which key/click the owner used.
+
+| Actual Google route | Distance | Baseline driving duration |
+| --- | ---: | ---: |
+| Notun Bazar, Dhaka → Sayedabad | 11.190 km | 36m48s |
+| Nathullahbad, Barishal → Sayedabad | 166.685 km | 3h22m51s |
+| Sayedabad → Nathullahbad | 166.655 km | 3h24m25s |
+| Dhaka airport → Sayedabad | 20.149 km | 37m34s |
+| Sayedabad → Shah Amanat airport, Chattogram | 251.797 km | 5h00m58s |
+| Dhaka airport → Nathullahbad via Sayedabad | 186.804 km | 4h01m59s |
+
+A separate current-traffic query for Sayedabad → Nathullahbad returned **167.072 km / 3h29m38s**, consistent with the owner's Maps screenshot. The application currently uses `TRAFFIC_UNAWARE`; pickup date/clock time is booking information and is not a traffic forecast. The direction, selected Places, traffic settings and time must match for a fair comparison. The ordered-stop route's leg distances and durations sum correctly; 15 minutes waiting adds 900 seconds once (4h16m59s total).
+
+### Correction scope
+
+- Require a deliberate click/tap or highlighted keyboard choice; Enter alone cannot accept an unrelated first prediction. Keep the list and provide an accessible selection hint. Fix initial ArrowUp selection as part of this keyboard handling.
+- Remove the hardcoded US region from worldwide Places searches; no country restriction or fabricated local address list is introduced.
+- Display the full selected canonical address outside the scrolling input, including its city/country, and provide an exact-Place-ID Google Maps link. Keep names/addresses transient; saved drafts still retain only IDs/user queries and fetch fresh details.
+- Provide a comparison route link using the exact selected IDs, pickup→drop-off direction, and stop order. Long routes open in supported parts so Google Maps' mobile stop limits never silently omit a stop.
+- Clearly label the estimate as excluding live traffic and the scheduled pickup time. Do not change tariffs, provider metrics, demo submission or the deferred WordPress scope to make a screenshot match.
+- Add regression coverage for the accidental Enter selection, canonical-address visibility, exact-ID links, invalidation/restoration, and multiple real Bangladesh routes on the published site.
+
+The Google Maps consumer website was blocked by the current cloud's outbound proxy; no network/TLS bypass was attempted. The seven direct Google Routes calls and real Places selections succeeded. Exact-ID comparison links allow the owner to open the same selected route in their browser. Final automated and published-site validation follows below when completed.
+
+**Updated application tested with real Google data locally:** on 19 October 2026 at 01:33 Asia/Dhaka, Enter without a highlighted result preserved the typed terminal query and displayed the deliberate-selection hint. Clicking the real Nathullahbad terminal and Sayedabad predictions yielded their exact canonical IDs and **166,685 meters / 12,171 seconds**, displayed as **166.7 km / 103.6 mi / 3h23m**. The selected Barishal and Dhaka addresses remained fully visible, the exact-ID Maps comparison link used the same direction, and the 390 px phone layout had no horizontal overflow. This local Node check is separate from the upcoming published-site regression.
+
+**Local release verification:** syntax checks passed; **79/79 unit tests + 52/52 browser tests = 131 passing automated checks**, no failures/skips. The new Enter regressions fail the original implementation and pass the correction. Tests cover canonical-address visibility/invalidation/restoration, text safety and 320/390 px layouts, exact-ID/directed/ordered Maps links, mobile waypoint/URL limits, and the existing complete booking/provider/pricing/error flows. The final 77 release files and decompressed pre-Maps ZIP passed credential and backup-integrity scanning.
+
+The manual hosted live workflow now adds five Bangladesh cases: the intended intercity journey and reverse, the local Notun Bazar control, airport → terminal with a Sayedabad stop/15-minute wait, and Sayedabad → the correct Chattogram airport (not its similarly named business). Each uses real public Places/Routes, exact selected/requested IDs, provider-versus-display arithmetic, all six quotes, full readable addresses, Maps comparison links and phone layout. It also retains the existing Chicago full-booking/thank-you check. This hosted run must succeed after deployment before claiming the public correction verified.

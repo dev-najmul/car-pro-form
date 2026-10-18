@@ -36,14 +36,14 @@ export function installPlacesStub() {
       AutocompleteSessionToken: class { constructor() { this.token = ++token; } },
       AutocompleteSuggestion: { fetchAutocompleteSuggestions: async request => {
         const query = request.input;
-        control.calls.push({ kind: 'suggest', query, token: request.sessionToken?.token });
+        control.calls.push({ kind: 'suggest', query, token: request.sessionToken?.token, region: request.region });
         await wait('suggest', query);
         if (control.failSuggestions.includes(query)) throw new Error('Google location search is temporarily unavailable.');
         if (control.emptySuggestions.includes(query)) return { suggestions: [] };
-        return { suggestions: [{ placePrediction: {
-          placeId: 'test-' + encodeURIComponent(query), text: { text: query }, mainText: { text: query }, secondaryText: { text: 'Test location' },
-          toPlace: () => makePlace('test-' + encodeURIComponent(query), 'details'),
-        } }] };
+        return { suggestions: (control.suggestionsByQuery?.[query] || [query]).map(label => ({ placePrediction: {
+          placeId: 'test-' + encodeURIComponent(label), text: { text: label }, mainText: { text: label }, secondaryText: { text: 'Test location' },
+          toPlace: () => makePlace('test-' + encodeURIComponent(label), 'details'),
+        } })) };
       } },
     };
   } } };
