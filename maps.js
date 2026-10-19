@@ -123,14 +123,14 @@ export function googleRouteLinks(points) {
 export class MapsClient {
   constructor() { this.sessions = new Map(); }
   async config() {
-    if (!this.configuration) this.configuration = fetch(new URL('./maps-config.json', import.meta.url), { cache: 'no-store' }).then(async response => {
-      if (!response.ok) throw new Error('Location search is not configured for this website yet. Please contact TUXANO.');
+    if (!this.configuration) this.configuration = (globalThis.TuxanoBooking ? Promise.resolve({ ok: true, json: async () => ({ ...globalThis.TuxanoBooking.maps }) }) : fetch(new URL('./maps-config.json', import.meta.url), { cache: 'no-store' })).then(async response => {
+      if (!response.ok) throw new Error('Location search is not configured for this website yet. Please contact the booking provider.');
       const config = await response.json();
       if (config.providerMode === 'remote') {
         let url;
         try { url = new URL(config.routeEndpoint); } catch { throw new Error('The test route service is not configured correctly.'); }
         const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-        if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) throw new Error('The test route service is not configured correctly.');
+        if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || (!globalThis.TuxanoBooking && url.search) || url.hash || (globalThis.TuxanoBooking && url.origin !== location.origin)) throw new Error('The route service is not configured correctly.');
         if (config.previewExpiresAt) {
           const expiry = new Date(config.previewExpiresAt).getTime();
           if (!Number.isFinite(expiry)) throw new Error('The test route service expiration is invalid.');
@@ -144,7 +144,7 @@ export class MapsClient {
   async ready() {
     if (!this.library) this.library = (async () => {
       const config = await this.config();
-      if (!config.browserConfigured || !config.browserKey) throw new Error('Location search is not available yet. Please contact TUXANO.');
+      if (!config.browserConfigured || !config.browserKey) throw new Error('Location search is not available yet. Please contact the booking provider.');
       if (!globalThis.google?.maps?.importLibrary) await new Promise((resolve, reject) => {
         const script = document.createElement('script');
         const fail = () => { clearTimeout(timer); script.remove(); delete globalThis[SDK_CALLBACK]; reject(new Error('Google location search could not be loaded. Please try again.')); };
@@ -225,14 +225,20 @@ export class MapsClient {
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
     let response;
     try {
-      response = await fetch(config.providerMode === 'remote' ? config.routeEndpoint : new URL('./api/maps/route', import.meta.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal: controller.signal, cache: 'no-store' });
+      const runtime = globalThis.TuxanoBooking;
+      const headers = { 'Content-Type': 'application/json' };
+      if (runtime) {
+        headers['X-Tuxano-Session'] = runtime.token;
+        if (runtime.nonce) headers['X-WP-Nonce'] = runtime.nonce;
+      }
+      response = await fetch(config.providerMode === 'remote' ? config.routeEndpoint : new URL('./api/maps/route', import.meta.url), { method: 'POST', headers, credentials: runtime ? 'same-origin' : 'omit', body: JSON.stringify(request), signal: controller.signal, cache: 'no-store' });
     } catch (failure) {
       if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
-      throw new Error(timedOut ? 'Route calculation took too long. Please try again.' : 'The test route service is unavailable. Please check that the test session is still running.');
+      throw new Error(timedOut ? 'Route calculation took too long. Please try again.' : globalThis.TuxanoBooking ? 'The route service is unavailable. Please try again.' : 'The test route service is unavailable. Please check that the test session is still running.');
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     let data;
     try { data = await response.json(); } catch { throw new Error('The route service is temporarily unavailable. Please try again.'); }
-    if (!response.ok) throw new Error(data.error?.message || 'The route could not be calculated. Please check your locations and try again.');
+    if (!response.ok) throw new Error(data.message || data.error?.message || 'The route could not be calculated. Please check your locations and try again.');
     if (!Number.isFinite(data.distanceMeters) || data.distanceMeters < 0 || !Number.isFinite(data.durationSeconds) || data.durationSeconds < 0) throw new Error('The route service returned an invalid estimate. Please try again.');
     return data;
   }
@@ -262,7 +268,7 @@ export class MapsClient {
       return { distanceMeters: route.distanceMeters, durationSeconds: route.durationMillis / 1000, provider: 'google', calculatedAt: new Date().toISOString() };
     } catch (failure) {
       if (failure.name === 'AbortError') throw failure;
-      if (/PERMISSION_DENIED|REQUEST_DENIED|API_KEY|not authorized|blocked/i.test(failure.message)) throw new Error('Route calculation is not available for this website yet. Please contact TUXANO.');
+      if (/PERMISSION_DENIED|REQUEST_DENIED|API_KEY|not authorized|blocked/i.test(failure.message)) throw new Error('Route calculation is not available for this website yet. Please contact the booking provider.');
       throw new Error(failure.message || 'The route could not be calculated. Please try again.');
     } finally { clearTimeout(timer); if (abort) signal?.removeEventListener('abort', abort); }
   }

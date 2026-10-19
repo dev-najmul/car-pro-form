@@ -287,7 +287,7 @@ test('provider route failure is visible and retry recovers without a fixture fal
 test('missing Google configuration and no-result searches remain truthful and editable', async ({ page }) => {
   const control = contexts.get(page); control.config = { browserKey: '', browserConfigured: false, routesConfigured: false };
   await page.getByLabel('Pickup location', { exact: true }).fill('Find unavailable place');
-  await expect(page.getByText('Location search is not available yet. Please contact TUXANO.', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Location search is not available yet. Please contact the booking provider.', { exact: true }).first()).toBeVisible();
   expect(control.sdk).toHaveLength(0); expect(control.requests).toHaveLength(0);
   control.config = { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true };
   await page.reload();

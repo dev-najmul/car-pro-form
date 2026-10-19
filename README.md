@@ -1,3 +1,12 @@
+# WordPress plugin — Tuxano Booking 2.0.0
+
+The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
+
+- [Plugin ZIP](releases/tuxano-booking-2.0.0.zip) · [checksum](releases/tuxano-booking-2.0.0.zip.sha256)
+- [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
+- Shortcode: `[tuxano_booking]`. For the full reference design choose **Tuxano Booking — full page** as the page template.
+- Build: `npm run build:wordpress`. Existing static setup and historical prototype notes follow below.
+
 # TUXANO Reservation Request
 
 A responsive five-step transportation form built with HTML, CSS, and vanilla JavaScript from the supplied desktop/phone designs. Version 1.1 adds Google Places (New) location selection, Google Routes driving estimates, automatic travel time, and route-based **demonstration tariffs**. The design photographs and fonts are self-hosted.

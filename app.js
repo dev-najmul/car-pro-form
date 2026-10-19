@@ -1,11 +1,21 @@
 import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE_LOCATION_POLICY, normalizeDevicePosition, requestDeviceLocation } from "./maps.js";
 import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
-/* Google provides route metrics. Prices and booking submission remain a demo. */
+/* The shared frontend supports both the static prototype and WordPress runtime. */
 (() => {
   "use strict";
+  const runtime = globalThis.TuxanoBooking || null;
+  const settings = {
+    currency: "USD", currencySymbol: "$", meetPrice: 50, firstSeatPrice: 75,
+    additionalSeatPrice: 50, defaultGratuity: 20, companyName: "TUXANO",
+    supportEmail: "info@tuxano.com", supportPhone: "+1 (717) 434–6195",
+    website: "https://tuxano.com", termsUrl: "", privacyUrl: "",
+    maxStops: 5, minHours: 2, maxHours: 12, ...runtime?.settings,
+  };
   const STORAGE = "tuxano-booking-v1";
-  let DEMO_MODE = new URLSearchParams(location.search).get("demo") === "1";
+  let DEMO_MODE = !runtime && new URLSearchParams(location.search).get("demo") === "1";
+  let receipt = null, requestKey = "", submitting = false;
+  const gratuities = [...new Set([10, 15, 20, 25, settings.defaultGratuity])].sort((a, b) => a - b).map(String);
   const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
   const maps = new MapsClient();
   let currentRoute = null, routeStatus = "idle", routeMessage = "", routeGeneration = 0, routeController = null, routePromise = null;
@@ -31,7 +41,7 @@ import { mountPickupMap } from "./pickup-map.js";
     "Contact & Billing",
     "Review & Submit",
   ];
-  const vehicles = [
+  const staticVehicles = [
     {
       id: "premium",
       name: "PREMIUM SUV",
@@ -129,6 +139,8 @@ import { mountPickupMap } from "./pickup-map.js";
       ],
     },
   ];
+  const vehicles = runtime ? runtime.vehicles : staticVehicles;
+  const unavailableVehicle = { id: "", name: "", display: "No vehicle selected", capacity: 1, luggageCapacity: 0, image: "", models: [], features: [] };
   const paths = {
     calendar:
       '<rect x="3" y="5" width="18" height="16" rx="1"/><path d="M16 3v4M8 3v4M3 11h18M7 15h2M12 15h2M7 18h2M12 18h2"/>',
@@ -186,12 +198,32 @@ import { mountPickupMap } from "./pickup-map.js";
         })[c],
     );
   const money = (value) =>
-    value === null || !Number.isFinite(Number(value)) ? "—" : "$" +
+    value === null || !Number.isFinite(Number(value)) ? "—" : e(settings.currencySymbol) +
     Number(value).toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  const whole = (value) => value === null || !Number.isFinite(Number(value)) ? "—" : "$" + Number(value).toLocaleString("en-US");
+  const whole = (value) => value === null || !Number.isFinite(Number(value)) ? "—" : e(settings.currencySymbol) + Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const asset = (path) => {
+    if (!path) return "";
+    if (!runtime) return "assets/" + path;
+    try {
+      const url = new URL(path, new URL("assets/", runtime.assetUrl));
+      return ["https:", "http:"].includes(url.protocol) ? url.href : "";
+    } catch { return ""; }
+  };
+  const safeUrl = (value, fallback = "") => {
+    try { const url = new URL(value, location.href); return ["https:", "http:"].includes(url.protocol) ? url.href : fallback; } catch { return fallback; }
+  };
+  const bags = (vehicle = selected()) => vehicle.luggageCapacity ?? vehicle.capacity;
+  const policies = () => runtime
+    ? `${settings.termsUrl ? `<a href="${e(safeUrl(settings.termsUrl))}" target="_blank" rel="noopener noreferrer">Terms & Conditions</a>` : "Terms & Conditions"} and ${settings.privacyUrl ? `<a href="${e(safeUrl(settings.privacyUrl))}" target="_blank" rel="noopener noreferrer">Privacy Policy</a>` : "Privacy Policy"}`
+    : '<button type="button" class="text-link" data-policy="Terms & Conditions">Terms & Conditions</button> and <button type="button" class="text-link" data-policy="Cancellation Policy">Cancellation Policy</button>';
+  const brand = (hero = false) => !runtime || settings.companyName === "TUXANO"
+    ? `<img src="${e(asset("tuxano-wordmark.png"))}" alt="${e(settings.companyName)} Private Transportation"${hero ? ' class="brand-logo"' : ""}>`
+    : `<strong${hero ? ' class="brand-logo" style="font:500 48px var(--serif);color:white"' : ""}>${e(settings.companyName)}</strong>`;
+  const phoneLink = () => settings.supportPhone ? `<a href="tel:${e(settings.supportPhone.replace(/[^+0-9]/g, ""))}">${e(settings.supportPhone)}</a>` : "";
+  const supportFooter = () => `<footer class="thank-footer"><div>${brand()}${settings.supportPhone ? `<a href="tel:${e(settings.supportPhone.replace(/[^+0-9]/g, ""))}">${icon("phone")}${e(settings.supportPhone)}</a>` : ""}${settings.supportEmail ? `<a href="mailto:${e(settings.supportEmail)}">${icon("mail")}${e(settings.supportEmail)}</a>` : ""}${settings.website ? `<a href="${e(safeUrl(settings.website))}" target="_blank" rel="noopener noreferrer">${icon("globe")}${e(settings.website.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a>` : ""}</div></footer>`;
   const defaults = () => ({
     trip: {
       service: "transfer",
@@ -199,7 +231,7 @@ import { mountPickupMap } from "./pickup-map.js";
       dropoff: "",
       date: "",
       time: "",
-      hours: 3,
+      hours: Math.min(settings.maxHours, Math.max(settings.minHours, 3)),
       stops: [],
       pickupPlace: null, dropoffPlace: null, pickupQuery: "", dropoffQuery: "",
     },
@@ -213,8 +245,8 @@ import { mountPickupMap } from "./pickup-map.js";
     child: false,
     carSeats: 0,
     boosterSeats: 0,
-    gratuity: "20",
-    custom: 20,
+    gratuity: String(settings.defaultGratuity),
+    custom: settings.defaultGratuity,
     inPerson: false,
     special: "",
     billing: {
@@ -315,7 +347,7 @@ import { mountPickupMap } from "./pickup-map.js";
       }
     }
     const seen = new Set();
-    clean.trip.stops = Array.isArray(saved.trip?.stops) ? saved.trip.stops.slice(0, 5).map(stop => {
+    clean.trip.stops = Array.isArray(saved.trip?.stops) ? saved.trip.stops.slice(0, settings.maxStops).map(stop => {
       if (typeof stop === "string") return makeStop(stop);
       if (!stop || typeof stop !== "object") return makeStop();
       const result = makeStop(typeof stop.text === "string" ? stop.text.slice(0, 1024) : "");
@@ -335,17 +367,17 @@ import { mountPickupMap } from "./pickup-map.js";
     clean.flightType = ["commercial", "private"].includes(clean.flightType)
       ? clean.flightType
       : "commercial";
-    clean.gratuity = ["10", "15", "20", "25", "custom"].includes(clean.gratuity)
+    clean.gratuity = [...gratuities, "custom"].includes(clean.gratuity)
       ? clean.gratuity
-      : "20";
+      : String(settings.defaultGratuity);
     const integer = (value, min, max, fallback) =>
       Number.isInteger(value) && value >= min && value <= max
         ? value
         : fallback;
-    clean.trip.hours = integer(clean.trip.hours, 2, 12, 3);
-    clean.passengers = integer(clean.passengers, 1, 6, 1);
+    clean.trip.hours = integer(clean.trip.hours, settings.minHours, settings.maxHours, Math.min(settings.maxHours, Math.max(settings.minHours, 3)));
+    clean.passengers = integer(clean.passengers, 1, 100, 1);
     for (const name of ["luggage", "carSeats", "boosterSeats"])
-      clean[name] = integer(clean[name], 0, 6, 0);
+      clean[name] = integer(clean[name], 0, 100, 0);
     clean.completed = integer(clean.completed, 0, 4, 0);
     clean.custom =
       Number.isFinite(clean.custom) && clean.custom >= 0 && clean.custom <= 100
@@ -367,14 +399,14 @@ import { mountPickupMap } from "./pickup-map.js";
     return clean;
   }
   try {
-    const saved = JSON.parse(sessionStorage.getItem(STORAGE) || "null");
-    state = restoreDraft(saved);
+    if (runtime) sessionStorage.removeItem(STORAGE);
+    else state = restoreDraft(JSON.parse(sessionStorage.getItem(STORAGE) || "null"));
   } catch {
     /* Draft persistence is optional. */
   }
-  if (new URLSearchParams(location.search).get("demo") === "1")
-    state = fixture();
+  if (DEMO_MODE) state = fixture();
   const save = () => {
+    if (runtime) return; // WordPress drafts and receipts never persist personal information in browser storage.
     try {
       const snapshot = structuredClone(state);
       // Keep only place IDs and the user's own queries across reload. Google
@@ -396,8 +428,11 @@ import { mountPickupMap } from "./pickup-map.js";
     }
   };
   const dirty = () => {
+    const hadReceipt = Boolean(receipt);
+    receipt = null; requestKey = "";
     state.submitted = false;
     state.requestId = "";
+    if (runtime && hadReceipt) invalidateRoute();
   };
   const get = (path) =>
     path.split(".").reduce((obj, part) => obj?.[part], state);
@@ -407,18 +442,19 @@ import { mountPickupMap } from "./pickup-map.js";
     keys.reduce((obj, key) => obj[key], state)[last] = value;
   };
   const selected = () =>
-    vehicles.find((v) => v.id === state.vehicle) || vehicles[1];
+    vehicles.find((v) => v.id === state.vehicle) || vehicles[1] || vehicles[0] || unavailableVehicle;
   const costs = () => {
+    if (receipt) return receipt.pricing;
     const v = selected();
     const fare = transportQuote(v);
     const transportation = fare?.transportation ?? null;
     const car = state.child ? state.carSeats : 0,
       booster = state.child ? state.boosterSeats : 0;
-    const carCost = car ? 75 + (car - 1) * 50 : 0;
+    const carCost = car ? settings.firstSeatPrice + (car - 1) * settings.additionalSeatPrice : 0;
     const boosterCost = booster
       ? car
-        ? booster * 50
-        : 75 + (booster - 1) * 50
+        ? booster * settings.additionalSeatPrice
+        : settings.firstSeatPrice + (booster - 1) * settings.additionalSeatPrice
       : 0;
     const percent = state.inPerson
       ? 0
@@ -426,7 +462,7 @@ import { mountPickupMap } from "./pickup-map.js";
         ? Number(state.custom || 0)
         : Number(state.gratuity);
     const tip = transportation === null ? null : Math.round(transportation * percent) / 100;
-    const meet = state.meet ? 50 : 0;
+    const meet = state.meet ? settings.meetPrice : 0;
     return {
       transportation,
       carCost,
@@ -458,11 +494,11 @@ import { mountPickupMap } from "./pickup-map.js";
   const seatText = () =>
     `${state.child ? state.carSeats : 0} car seats, ${state.child ? state.boosterSeats : 0} booster seat${state.boosterSeats === 1 ? "" : "s"}`;
   const model = () =>
-    state.vehicle === "luxury"
+    !runtime && state.vehicle === "luxury"
       ? "Lincoln Navigator or similar"
       : selected().models.at(-1);
   const vehicleImage = () =>
-    state.vehicle === "luxury" ? "navigator-cutout.png" : selected().image;
+    !runtime && state.vehicle === "luxury" ? "navigator-cutout.png" : selected().image;
   let step = 0;
   const app = document.querySelector("#app");
   const announce = (text) => {
@@ -490,13 +526,13 @@ import { mountPickupMap } from "./pickup-map.js";
   const security = () =>
     `<div class="security">${icon("shield")}<div><strong>Secure & Confidential</strong><p>Your information is encrypted and handled securely.</p></div></div>`;
   const total = () =>
-    `<div class="total"><h4>ESTIMATED TOTAL</h4><strong data-testid="estimated-total">${money(costs().total)}</strong><p>All-Inclusive (USD)</p></div>`;
+    `<div class="total"><h4>ESTIMATED TOTAL</h4><strong data-testid="estimated-total">${money(costs().total)}</strong><p>All-Inclusive (${e(settings.currency)})</p></div>`;
   const lines = (compact = false) => {
     const c = costs();
     return `<div class="price-lines"><div><span>Transportation${compact ? `<span class="desktop-copy"> (${e(selected().display)})</span>` : ""}</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>Child Seats${compact ? ` <span class="seat-detail">(${seatText()})</span>` : `<small>${seatText()}</small>`}</span><strong>${money(c.seats)}</strong></div><div><span>${compact ? '<span class="desktop-copy">Chauffeur </span>' : ""}Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div>`;
   };
   const summary = () =>
-    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle"><img src="assets/${state.vehicle === "luxury" ? "navigator-summary.png" : selected().image}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
+    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle">${selected().image ? `<img src="${e(asset(!runtime && state.vehicle === "luxury" ? "navigator-summary.png" : selected().image))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${bags()} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
   const nextSteps = () =>
     `<aside class="next-card"><h3><span class="round-icon">${icon("circlecheck")}</span>WHAT HAPPENS NEXT</h3><ol><li>We review availability and trip details.</li><li>You’ll receive an email with confirmation details and any payment instructions.</li><li>Once confirmed, your reservation is secured.</li></ol><p>Reservation requests are typically reviewed within 2–4 business hours.</p></aside>`;
   const header = () =>
@@ -650,7 +686,8 @@ import { mountPickupMap } from "./pickup-map.js";
   function transportQuote(vehicle = selected()) {
     const route = usableRoute();
     if (!route) return null;
-    return quoteTransportation(vehicle.id, route, waitingMinutes(), state.trip.service, state.trip.hours);
+    if (runtime && !vehicle.tariff) return null;
+    return quoteTransportation(vehicle.id, route, waitingMinutes(), state.trip.service, state.trip.hours, runtime ? vehicle.tariff : null, settings);
   }
   const stopDescription = () => state.trip.stops.map(stop => `${stop.text} (${stop.waitMinutes} min stop)`).join(" → ");
   function routeDetails(full = false) {
@@ -659,7 +696,7 @@ import { mountPickupMap } from "./pickup-map.js";
     const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : "Select pickup, drop-off, and any stops from the location suggestions.";
     const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId || point?.nearbyName);
     const previewNote = full && maps.previewExpiresAt ? `<p class="test-session-note">Temporary live test · Route server available until ${e(new Date(maps.previewExpiresAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))}.</p>` : '';
-    return `${previewNote}${full ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : ""}" role="${routeStatus === "error" ? "alert" : "status"}">${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
+    return `${previewNote}${full ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : ""}" role="${routeStatus === "error" ? "alert" : "status"}">${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
   }
   function providerAttributions() {
     const points = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)];
@@ -746,26 +783,36 @@ import { mountPickupMap } from "./pickup-map.js";
   function tripPage() {
     const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${target ? `<div class="device-location-wrap">${deviceLocationMarkup()}</div>` : ""}`;
     const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
-    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}${DEMO_MODE ? "" : `<button type="button" class="text-link pickup-map-open" data-action="choose-pickup-map" ${deviceLocation.status !== "idle" ? "hidden" : ""}>Choose pickup on map</button>`}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= 5 ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:11}, (_,i) => i + 2).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div><div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
+    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}${DEMO_MODE ? "" : `<button type="button" class="text-link pickup-map-open" data-action="choose-pickup-map" ${deviceLocation.status !== "idle" ? "hidden" : ""}>Choose pickup on map</button>`}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:settings.maxHours - settings.minHours + 1}, (_,i) => i + settings.minHours).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div>${runtime ? `<p class="route-status">Pickup dates and times use ${e(settings.timezone || "the website timezone")}.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
   // Step 2: all six vehicle classes, using the original supplied pictures.
   function vehicleCard(v) {
     const quote = transportQuote(v)?.transportation ?? null;
-    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${v.id}"><img class="vehicle-photo" src="assets/${v.image}" alt="${e(v.display)} outside a luxury hotel"><h3>${v.name}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${v.capacity} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${m}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${f}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>USD</small></strong>${waitingMinutes() ? `<small class="waiting-price">Includes ${waitingMinutes()} min waiting (${money(transportQuote(v)?.waitingCharge ?? null)})</small>` : ""}</div><button class="btn primary" type="button" data-select="${v.id}" aria-label="Select ${v.display}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? `${icon("check")} SELECTED` : "SELECT"}</button></article>`;
+    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${e(v.id)}">${v.image ? `<img class="vehicle-photo" src="${e(asset(v.image))}" alt="${e(v.display)} outside a luxury hotel">` : ""}<h3>${e(v.name)}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${bags(v)} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${e(m)}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${e(f)}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>${e(settings.currency)}</small></strong>${waitingMinutes() ? `<small class="waiting-price">Includes ${waitingMinutes()} min waiting (${money(transportQuote(v)?.waitingCharge ?? null)})</small>` : ""}</div><button class="btn primary" type="button" data-select="${e(v.id)}" aria-label="Select ${e(v.display)}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? `${icon("check")} SELECTED` : "SELECT"}</button></article>`;
+  }
+  function collections() {
+    if (!runtime) return `<section class="collection"><h2>SUV COLLECTION</h2><p>Spacious, comfortable, and perfect for everyday executive travel,</p><div class="vehicle-grid">${vehicles.slice(0, 3).map(vehicleCard).join("")}</div></section><section class="collection"><h2>ROLLS-ROYCE COLLECTION</h2><p>The ultimate in luxury, prestige, and refinement.</p><div class="vehicle-grid">${vehicles.slice(3).map(vehicleCard).join("")}</div></section>`;
+    const groups = new Map();
+    vehicles.forEach(vehicle => {
+      const category = vehicle.category || "VEHICLES";
+      if (!groups.has(category)) groups.set(category, { description: vehicle.categoryDescription || "", items: [] });
+      groups.get(category).items.push(vehicle);
+    });
+    return groups.size ? [...groups].map(([name, group]) => `<section class="collection"><h2>${e(name)}</h2>${group.description ? `<p>${e(group.description)}</p>` : ""}<div class="vehicle-grid">${group.items.map(vehicleCard).join("")}</div></section>`).join("") : `<p role="status">No vehicles are currently available. Please contact ${e(settings.companyName)} for assistance.</p>`;
   }
   function vehiclesPage() {
-    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("arrow", "route-arrow")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}${dateLabel()}</p><p>${icon("clock")}${timeLabel()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div><section class="collection"><h2>SUV COLLECTION</h2><p>Spacious, comfortable, and perfect for everyday executive travel,</p><div class="vehicle-grid">${vehicles.slice(0, 3).map(vehicleCard).join("")}</div></section><section class="collection"><h2>ROLLS-ROYCE COLLECTION</h2><p>The ultimate in luxury, prestige, and refinement.</p><div class="vehicle-grid">${vehicles.slice(3).map(vehicleCard).join("")}</div></section><div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO PASSENGERS AND EXTRAS")}</div>`;
+    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("arrow", "route-arrow")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}${dateLabel()}</p><p>${icon("clock")}${timeLabel()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div>${collections()}<div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO PASSENGERS AND EXTRAS")}</div>`;
   }
 
   // Step 3: passenger counts, flight details, optional extras, and gratuity.
   function seatControls() {
     const c = costs();
-    return `<div class="seat-area"><div class="seat-counts"><div>${icon("seat")}<strong>Car Seats</strong>${qty("carSeats", "car seats", state.carSeats, selected().capacity)}</div><div>${icon("seat")}<strong>Booster Seats</strong>${qty("boosterSeats", "booster seats", state.boosterSeats, selected().capacity)}</div><p>First seat $75 <span>•</span> Each additional seat $50</p></div><table class="seat-table"><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody><tr><td>Car Seat</td><td>${state.carSeats}</td><td>${whole(c.carCost)}</td></tr><tr><td>Booster Seat</td><td>${state.boosterSeats}</td><td>${whole(c.boosterCost)}</td></tr><tr><th>Total</th><td></td><th>${whole(c.seats)}</th></tr></tbody></table></div>`;
+    return `<div class="seat-area"><div class="seat-counts"><div>${icon("seat")}<strong>Car Seats</strong>${qty("carSeats", "car seats", state.carSeats, selected().capacity)}</div><div>${icon("seat")}<strong>Booster Seats</strong>${qty("boosterSeats", "booster seats", state.boosterSeats, selected().capacity)}</div><p>First seat ${money(settings.firstSeatPrice)} <span>•</span> Each additional seat ${money(settings.additionalSeatPrice)}</p></div><table class="seat-table"><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody><tr><td>Car Seat</td><td>${state.carSeats}</td><td>${whole(c.carCost)}</td></tr><tr><td>Booster Seat</td><td>${state.boosterSeats}</td><td>${whole(c.boosterCost)}</td></tr><tr><th>Total</th><td></td><th>${whole(c.seats)}</th></tr></tbody></table></div>`;
   }
   function passengersPage() {
     const c = costs();
-    return `<div class="columns passengers-columns" data-step="3"><form id="booking-form" class="panel passengers-panel">${panelHeader(3, "PASSENGERS & EXTRAS", "people", "Add passenger details, flight information, and any extras.")}<section class="form-section">${section(1, "PASSENGERS AND LUGGAGE", "people")}<div class="section-body passenger-counts"><label>${icon("people")}NUMBER OF PASSENGERS</label>${qty("passengers", "passengers", state.passengers, selected().capacity, 1)}<label>${icon("luggage")}LUGGAGE</label>${qty("luggage", "luggage", state.luggage, selected().capacity)}</div></section><section class="form-section">${section(2, "AIRPORT DETAILS", "plane")}<div class="section-body"><div class="segments aviation"><button type="button" data-flight="commercial" aria-pressed="${state.flightType === "commercial"}">${icon("plane")}COMMERCIAL FLIGHT</button><button type="button" data-flight="private" aria-pressed="${state.flightType === "private"}">${icon("plane")}PRIVATE AVIATION</button></div><div class="field-grid"><div><label class="label">${state.flightType === "private" ? "OPERATOR" : "AIRLINE"}</label>${field("airline", state.flightType === "private" ? "Operator" : "Airline", state.flightType === "private" ? "Type your operator" : "Type your airline")}</div><div><label class="label">FLIGHT / TAIL NUMBER</label>${field("flight", "Flight / tail number", "Type your flight / tail number")}</div></div><p class="helper">${icon("info")}Flight details help us monitor your itinerary and verify that your scheduled pickup time aligns with your flight.</p></div></section><section class="form-section">${section(3, "ADD TO YOUR TRIP", "case")}<div class="section-body"><div class="extra-row">${icon("person")}<div><strong>Meet & Greet</strong><p>Chauffeur meets you at baggage claim and assists with luggage.</p></div>${toggle("meet", "Meet & Greet")}</div><div class="extra-row">${icon("seat")}<div><strong>Child Seats</strong><p>Car seats and booster seats available upon request.</p></div>${toggle("child", "Child Seats")}</div>${state.child ? seatControls() : ""}</div></section><section class="gratuity-section"><div class="gratuity-options">${section(4, "CHAUFFEUR GRATUITY", "star", "Optional. Calculated on transportation charges only.")}<div class="section-body"><div class="segments gratuity">${["10", "15", "20", "25", "custom"].map((g) => `<button type="button" data-tip="${g}" aria-pressed="${!state.inPerson && state.gratuity === g}">${g === "custom" ? "Custom" : g + "%"}</button>`).join("")}</div>${state.gratuity === "custom" && !state.inPerson ? `<label class="custom-tip">Custom gratuity percentage<input type="number" class="input" data-field="custom" aria-label="Custom gratuity percentage" min="0" max="100" step="0.5" value="${state.custom}"></label>` : ""}<label class="checkbox small-check"><input type="checkbox" data-field="inPerson" ${state.inPerson ? "checked" : ""}>I’ll tip the chauffeur in person.</label></div></div><div class="gratuity-result"><strong>${c.percent}% = <span>${money(c.tip)}</span></strong><p>100% of your gratuity goes directly to your chauffeur.</p></div></section><section class="form-section special-section">${section(5, "SPECIAL REQUESTS (Optional)", "chat", "Anything else we should know to personalize your trip?")}<div class="section-body">${textarea("special", "Special requests", "Pickup instructions, quiet ride preference, luggage notes, or other personal requests", 250)}</div></section><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO CONTACT & BILLING", true)}</form>${summary()}</div>`;
+    return `<div class="columns passengers-columns" data-step="3"><form id="booking-form" class="panel passengers-panel">${panelHeader(3, "PASSENGERS & EXTRAS", "people", "Add passenger details, flight information, and any extras.")}<section class="form-section">${section(1, "PASSENGERS AND LUGGAGE", "people")}<div class="section-body passenger-counts"><label>${icon("people")}NUMBER OF PASSENGERS</label>${qty("passengers", "passengers", state.passengers, selected().capacity, 1)}<label>${icon("luggage")}LUGGAGE</label>${qty("luggage", "luggage", state.luggage, bags())}</div></section><section class="form-section">${section(2, "AIRPORT DETAILS", "plane")}<div class="section-body"><div class="segments aviation"><button type="button" data-flight="commercial" aria-pressed="${state.flightType === "commercial"}">${icon("plane")}COMMERCIAL FLIGHT</button><button type="button" data-flight="private" aria-pressed="${state.flightType === "private"}">${icon("plane")}PRIVATE AVIATION</button></div><div class="field-grid"><div><label class="label">${state.flightType === "private" ? "OPERATOR" : "AIRLINE"}</label>${field("airline", state.flightType === "private" ? "Operator" : "Airline", state.flightType === "private" ? "Type your operator" : "Type your airline")}</div><div><label class="label">FLIGHT / TAIL NUMBER</label>${field("flight", "Flight / tail number", "Type your flight / tail number")}</div></div><p class="helper">${icon("info")}Flight details help us monitor your itinerary and verify that your scheduled pickup time aligns with your flight.</p></div></section><section class="form-section">${section(3, "ADD TO YOUR TRIP", "case")}<div class="section-body"><div class="extra-row">${icon("person")}<div><strong>Meet & Greet</strong><p>Chauffeur meets you at baggage claim and assists with luggage.</p></div>${toggle("meet", "Meet & Greet")}</div><div class="extra-row">${icon("seat")}<div><strong>Child Seats</strong><p>Car seats and booster seats available upon request.</p></div>${toggle("child", "Child Seats")}</div>${state.child ? seatControls() : ""}</div></section><section class="gratuity-section"><div class="gratuity-options">${section(4, "CHAUFFEUR GRATUITY", "star", "Optional. Calculated on transportation charges only.")}<div class="section-body"><div class="segments gratuity">${[...gratuities, "custom"].map((g) => `<button type="button" data-tip="${g}" aria-pressed="${!state.inPerson && state.gratuity === g}">${g === "custom" ? "Custom" : g + "%"}</button>`).join("")}</div>${state.gratuity === "custom" && !state.inPerson ? `<label class="custom-tip">Custom gratuity percentage<input type="number" class="input" data-field="custom" aria-label="Custom gratuity percentage" min="0" max="100" step="0.5" value="${state.custom}"></label>` : ""}<label class="checkbox small-check"><input type="checkbox" data-field="inPerson" ${state.inPerson ? "checked" : ""}>I’ll tip the chauffeur in person.</label></div></div><div class="gratuity-result"><strong>${c.percent}% = <span>${money(c.tip)}</span></strong><p>100% of your gratuity goes directly to your chauffeur.</p></div></section><section class="form-section special-section">${section(5, "SPECIAL REQUESTS (Optional)", "chat", "Anything else we should know to personalize your trip?")}<div class="section-body">${textarea("special", "Special requests", "Pickup instructions, quiet ride preference, luggage notes, or other personal requests", 250)}</div></section><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO CONTACT & BILLING", true)}</form>${summary()}</div>`;
   }
 
   // Step 4: payer, primary passenger, and billing address.
@@ -879,7 +926,7 @@ import { mountPickupMap } from "./pickup-map.js";
       .filter(Boolean)
       .join(", ");
   function reviewPage() {
-    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", stopDescription()]] : []), ["Date & Time:", fullDate()], ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"], ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle"><img src="assets/${vehicleImage()}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${selected().capacity} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
+    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", stopDescription()]] : []), ["Date & Time:", fullDate()], ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"], ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle">${vehicleImage() ? `<img src="${e(asset(vehicleImage()))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${bags()} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
       [
         ["Passengers:", state.passengers],
         ["Luggage:", state.luggage],
@@ -905,7 +952,7 @@ import { mountPickupMap } from "./pickup-map.js";
     ])}</div></div><div class="billing-review">${rows([
       ["Billing Address:", billingAddress()],
       ["Billing Notes:", state.billing.notes || "None"],
-    ])}</div></section><label class="checkbox consent"><input type="checkbox" data-field="consent" ${state.consent ? "checked" : ""} required><span>I agree to the <button type="button" class="text-link" data-policy="Terms & Conditions">Terms & Conditions</button> and <button type="button" class="text-link" data-policy="Cancellation Policy">Cancellation Policy</button>.</span></label><div class="form-error" role="alert" hidden></div>${nav("SUBMIT RESERVATION REQUEST", true)}</form><div class="review-sidebar"><aside class="price-summary"><h3>PRICE SUMMARY</h3>${lines(true)}${total()}${security()}</aside>${nextSteps()}</div></div>`;
+    ])}</div></section><label class="checkbox consent"><input type="checkbox" data-field="consent" ${state.consent ? "checked" : ""} required><span>I agree to the ${policies()}.</span></label>${runtime ? '<label style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden" aria-hidden="true">Leave this field empty<input name="website" data-booking-honeypot tabindex="-1" autocomplete="off"></label>' : ""}<div class="form-error" role="alert" hidden></div>${nav("SUBMIT RESERVATION REQUEST", true)}</form><div class="review-sidebar"><aside class="price-summary"><h3>PRICE SUMMARY</h3>${lines(true)}${total()}${security()}</aside>${nextSteps()}</div></div>`;
   }
 
   // Confirmation: no remote booking, payment, or email is performed.
@@ -919,7 +966,7 @@ import { mountPickupMap } from "./pickup-map.js";
       "en-US",
       { weekday: "short" },
     );
-    return `<header class="thank-hero"><img src="assets/tuxano-wordmark.png" alt="TUXANO Private Transportation" class="brand-logo"></header><main id="main" tabindex="-1" class="thank-content"><h1>Thank you, ${e(state.billing.first)}.</h1><p>Your reservation request has been received and is currently being reviewed.</p><p>Reservation requests are typically reviewed within 2–4 business hours.</p><p class="request-id">Request ID: ${e(state.requestId)}</p><p class="demo-notice">Demo request only — no reservation, payment, or email has been sent.</p><div class="received-card"><div class="received-status"><span class="seal">${icon("check")}</span><div><h2>Reservation Request Received</h2><p>We’ll confirm availability and send you the next steps soon.</p></div></div><div class="received-date">${icon("calendar")}<div><p>Pickup Date & Time</p><strong>${dateLabel(true)}</strong><span>${weekday}, ${timeLabel()}</span></div></div></div><section class="thank-section">${thankHeading("TRIP DETAILS", "calendar")}${rows(
+    return `<header class="thank-hero">${brand(true)}</header><main id="main" tabindex="-1" class="thank-content"><h1>Thank you, ${e(state.billing.first)}.</h1><p>Your reservation request has been received and is currently being reviewed.</p><p>Reservation requests are typically reviewed within 2–4 business hours.</p><p class="request-id">Request ID: ${e(state.requestId)}</p>${runtime ? "" : '<p class="demo-notice">Demo request only — no reservation, payment, or email has been sent.</p>'}<div class="received-card"><div class="received-status"><span class="seal">${icon("check")}</span><div><h2>Reservation Request Received</h2><p>We’ll confirm availability and send you the next steps soon.</p></div></div><div class="received-date">${icon("calendar")}<div><p>Pickup Date & Time</p><strong>${dateLabel(true)}</strong><span>${weekday}, ${timeLabel()}</span></div></div></div><section class="thank-section">${thankHeading("TRIP DETAILS", "calendar")}${rows(
       [
         [
           "Service Type:",
@@ -933,7 +980,7 @@ import { mountPickupMap } from "./pickup-map.js";
       ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"],
       ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"],
       ],
-    )}</section><section class="thank-section">${thankHeading("VEHICLE SELECTED", "car")}<div class="thank-vehicle"><img src="assets/${vehicleImage()}" alt="${e(selected().display)}"><div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${selected().capacity} Bags</span></div></div></div></section><section class="thank-section extras-thank">${thankHeading("PASSENGERS & EXTRAS", "people")}${rows(
+    )}</section><section class="thank-section">${thankHeading("VEHICLE SELECTED", "car")}<div class="thank-vehicle">${vehicleImage() ? `<img src="${e(asset(vehicleImage()))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${bags()} Bags</span></div></div></div></section><section class="thank-section extras-thank">${thankHeading("PASSENGERS & EXTRAS", "people")}${rows(
       [
         ["Passengers:", state.passengers],
         ["Luggage:", state.luggage],
@@ -964,7 +1011,7 @@ import { mountPickupMap } from "./pickup-map.js";
         ["Billing Email:", state.billing.email],
         ["Billing Address:", billingAddress()],
       ],
-    )}${noteStrip("BILLING NOTES", "chat", state.billing.notes)}</section><section class="thank-section thank-pricing">${thankHeading("PRICING SUMMARY", "dollar")}<div class="thank-prices"><div class="price-lines"><div><span>Transportation (${e(selected().display)})</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>${state.child ? state.carSeats : 0} Car Seats</span><strong>${money(c.carCost)}</strong></div><div><span>${state.child ? state.boosterSeats : 0} Booster Seat${state.boosterSeats === 1 ? "" : "s"}</span><strong>${money(c.boosterCost)}</strong></div><div><span>Chauffeur Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div><p class="payment-note"><span class="dark-icon">${icon("wallet")}</span>Payment instructions will be sent separately.</p></div>${total()}</section><section class="thank-next"><span class="next-symbol">${icon("circlecheck")}</span><div><h3>WHAT HAPPENS NEXT?</h3><ol><li><span>1</span><p>We review availability and reservation details.</p></li><li><span>2</span><p>You’ll receive an email with confirmation details and any payment instructions.</p></li><li><span>3</span><p>Once confirmed, your reservation is secured.</p></li></ol></div></section><section class="assistance"><div>${icon("phone")}<div><h3>NEED ASSISTANCE?</h3><p>Call, text, or WhatsApp us anytime.</p><a href="tel:+17174346195">+1 (717) 434–6195</a></div></div><div><strong>Thank you for choosing TUXANO.</strong><p>We look forward to your journey with us.</p><strong>TUXANO Private Transportation.</strong></div></section><button class="text-link start-over" type="button" data-action="reset">Start a new request</button></main><footer class="thank-footer"><div><img src="assets/tuxano-wordmark.png" alt="TUXANO Private Transportation"><a href="tel:+17174346195">${icon("phone")}+1 (717) 434–6195</a><a href="mailto:info@tuxano.com">${icon("mail")}info@tuxano.com</a><a href="https://tuxano.com" target="_blank" rel="noopener noreferrer">${icon("globe")}tuxano.com</a></div></footer>`;
+    )}${noteStrip("BILLING NOTES", "chat", state.billing.notes)}</section><section class="thank-section thank-pricing">${thankHeading("PRICING SUMMARY", "dollar")}<div class="thank-prices"><div class="price-lines"><div><span>Transportation (${e(selected().display)})</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>${state.child ? state.carSeats : 0} Car Seats</span><strong>${money(c.carCost)}</strong></div><div><span>${state.child ? state.boosterSeats : 0} Booster Seat${state.boosterSeats === 1 ? "" : "s"}</span><strong>${money(c.boosterCost)}</strong></div><div><span>Chauffeur Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div><p class="payment-note"><span class="dark-icon">${icon("wallet")}</span>Payment instructions will be sent separately.</p></div>${total()}</section><section class="thank-next"><span class="next-symbol">${icon("circlecheck")}</span><div><h3>WHAT HAPPENS NEXT?</h3><ol><li><span>1</span><p>We review availability and reservation details.</p></li><li><span>2</span><p>You’ll receive an email with confirmation details and any payment instructions.</p></li><li><span>3</span><p>Once confirmed, your reservation is secured.</p></li></ol></div></section><section class="assistance"><div>${icon("phone")}<div><h3>NEED ASSISTANCE?</h3><p>Call, text, or WhatsApp us anytime.</p>${phoneLink()}</div></div><div><strong>Thank you for choosing ${e(settings.companyName)}.</strong><p>We look forward to your journey with us.</p><strong>${e(settings.companyName)}${runtime ? "" : " Private Transportation"}.</strong></div></section><button class="text-link start-over" type="button" data-action="reset">Start a new request</button></main>${supportFooter()}`;
   }
 
   function render() {
@@ -993,8 +1040,8 @@ import { mountPickupMap } from "./pickup-map.js";
       step === 5 ? "thank-page" : `form-page step-${step + 1}`;
     document.title =
       step === 5
-        ? "Request Received | TUXANO"
-        : `${labels[step]} | TUXANO Reservation Request`;
+        ? `Request Received | ${settings.companyName}`
+        : `${labels[step]} | ${settings.companyName} Reservation Request`;
     app.innerHTML =
       step === 5
         ? thankPage()
@@ -1017,6 +1064,7 @@ import { mountPickupMap } from "./pickup-map.js";
     }
   }
   function go(index, replace = false) {
+    if (submitting) return;
     if (index < 0 || index > 5) return;
     if (index === 5 && !state.submitted) return;
     if (index < 5 && index > state.completed) return;
@@ -1034,7 +1082,7 @@ import { mountPickupMap } from "./pickup-map.js";
     document.querySelector("#main").focus({ preventScroll: true });
     announce(
       step === 5
-        ? "Your demo request summary is ready."
+        ? runtime ? "Your reservation request has been received." : "Your demo request summary is ready."
         : `Step ${step + 1}: ${labels[step]}`,
     );
   }
@@ -1075,10 +1123,10 @@ import { mountPickupMap } from "./pickup-map.js";
     if (step === 2) {
       if (
         state.passengers > selected().capacity ||
-        state.luggage > selected().capacity
+        state.luggage > bags()
       ) {
         error(
-          `This vehicle accommodates up to ${selected().capacity} passengers and ${selected().capacity} bags. Adjust the counts or choose another vehicle.`,
+          `This vehicle accommodates up to ${selected().capacity} passengers and ${bags()} bags. Adjust the counts or choose another vehicle.`,
         );
         return false;
       }
@@ -1109,10 +1157,10 @@ import { mountPickupMap } from "./pickup-map.js";
     if (
       state.trip.service === "hourly" &&
       (!Number.isInteger(state.trip.hours) ||
-        state.trip.hours < 2 ||
-        state.trip.hours > 12)
+        state.trip.hours < settings.minHours ||
+        state.trip.hours > settings.maxHours)
     )
-      return { index: 0, message: "Please choose between 2 and 12 hours." };
+      return { index: 0, message: `Please choose between ${settings.minHours} and ${settings.maxHours} hours.` };
     if (!routeRequest()) return { index: 0, message: "Select your pickup, drop-off, and every stop from the location suggestions." };
     if (!vehicles.some((vehicle) => vehicle.id === state.vehicle))
       return {
@@ -1123,7 +1171,7 @@ import { mountPickupMap } from "./pickup-map.js";
       state.passengers < 1 ||
       state.passengers > selected().capacity ||
       state.luggage < 0 ||
-      state.luggage > selected().capacity ||
+      state.luggage > bags() ||
       (state.child && state.carSeats + state.boosterSeats > state.passengers)
     )
       return {
@@ -1177,8 +1225,47 @@ import { mountPickupMap } from "./pickup-map.js";
       };
     return null;
   }
+  async function submitBooking() {
+    if (!currentRoute?.quoteToken) throw new Error("Please refresh your route before submitting this request.");
+    requestKey ||= globalThis.crypto.randomUUID();
+    const headers = { "Content-Type": "application/json", "X-Tuxano-Session": runtime.token };
+    if (runtime.nonce) headers["X-WP-Nonce"] = runtime.nonce;
+    const payload = { booking: structuredClone(state), quoteToken: currentRoute.quoteToken, requestKey, website: app.querySelector("[data-booking-honeypot]")?.value || "" };
+    const controls = [...app.querySelectorAll("input, select, textarea, button")].map(control => [control, control.disabled]);
+    const submitButton = app.querySelector('button[type="submit"]');
+    const originalText = submitButton?.innerHTML;
+    submitting = true;
+    controls.forEach(([control]) => { control.disabled = true; });
+    if (submitButton) submitButton.textContent = "Submitting…";
+    announce("Submitting your reservation request. Please wait.");
+    try {
+      let response;
+      try {
+        response = await fetch(runtime.restUrl + "bookings", {
+          method: "POST", headers, credentials: "same-origin", cache: "no-store",
+          body: JSON.stringify(payload), signal: AbortSignal.timeout(30000),
+        });
+      } catch {
+        throw new Error("We could not confirm that your request was received. Please try again; retrying this request will not create a duplicate.");
+      }
+      let result;
+      try { result = await response.json(); } catch { throw new Error("We could not confirm your submission. Please try again."); }
+      if (!response.ok) {
+        if (/quote|revision/i.test(result.code || "")) invalidateRoute();
+        throw new Error(result.message || "Your reservation request could not be saved. Please try again.");
+      }
+      const components = ["transportation", "carCost", "boosterCost", "seats", "meet", "percent", "tip", "total"];
+      if (typeof result.requestId !== "string" || !result.requestId || result.requestId.length > 100 || !result.pricing || components.some(key => !Number.isFinite(result.pricing[key]) || result.pricing[key] < 0) || !result.route || !Number.isFinite(result.route.distanceMeters) || result.route.distanceMeters < 0 || !Number.isFinite(result.route.durationSeconds) || result.route.durationSeconds < 0) throw new Error("We could not verify the saved request receipt. Please retry this request.");
+      return result;
+    } finally {
+      submitting = false;
+      controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+      if (submitButton) submitButton.innerHTML = originalText;
+    }
+  }
   async function advance() {
     if (advancing || !validate()) return;
+    if (runtime && step === 4 && receipt && state.submitted) { go(5); return; }
     advancing = true;
     const startingStep = step;
     const startingNavigation = navigationGeneration;
@@ -1199,17 +1286,23 @@ import { mountPickupMap } from "./pickup-map.js";
           state.consent = false; dirty(); save();
           go(issue.index); error(issue.message); return;
         }
+        if (runtime) {
+          receipt = await submitBooking();
+          currentRoute = { ...receipt.route, signature: routeSignature() };
+          state.requestId = receipt.requestId;
+          try { sessionStorage.removeItem(STORAGE); } catch { /* Browser persistence is optional. */ }
+        } else {
+          state.requestId = "TUX-REQUEST-" + (globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() || Date.now().toString(36).toUpperCase());
+        }
         state.submitted = true;
-        state.requestId =
-          "TUX-REQUEST-" +
-          (globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() ||
-            Date.now().toString(36).toUpperCase());
         save(); go(5); return;
       }
       state.completed = Math.max(state.completed, step + 1);
       state.submitted = false;
       save();
       go(step + 1);
+    } catch (failure) {
+      error(failure.message || "Your reservation request could not be submitted. Please try again.");
     } finally { advancing = false; }
   }
   function syncPassenger() {
@@ -1232,6 +1325,7 @@ import { mountPickupMap } from "./pickup-map.js";
       result.innerHTML = `${costs().percent}% = <span>${money(costs().tip)}</span>`;
   }
   app.addEventListener("input", (event) => {
+    if (submitting) return;
     const input = event.target;
     if (input.dataset.stop !== undefined) {
       dirty();
@@ -1270,6 +1364,7 @@ import { mountPickupMap } from "./pickup-map.js";
     updateValidity();
   });
   app.addEventListener("change", (event) => {
+    if (submitting) return;
     const input = event.target,
       path = input.dataset.field;
     if (input.dataset.stopWait) {
@@ -1302,6 +1397,7 @@ import { mountPickupMap } from "./pickup-map.js";
     advance();
   });
   app.addEventListener("click", async (event) => {
+    if (submitting) return;
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
     if (button.dataset.go !== undefined) {
@@ -1344,7 +1440,7 @@ import { mountPickupMap } from "./pickup-map.js";
     if (button.dataset.count) {
       const key = button.dataset.count,
         min = key === "passengers" ? 1 : 0,
-        limit = selected().capacity;
+        limit = key === "luggage" ? bags() : selected().capacity;
       state[key] = Math.max(
         min,
         Math.min(limit, state[key] + Number(button.dataset.delta)),
@@ -1385,7 +1481,7 @@ import { mountPickupMap } from "./pickup-map.js";
         go(step - 1);
         break;
       case "add-stop":
-        if (state.trip.stops.length < 5) {
+        if (state.trip.stops.length < settings.maxStops) {
           state.trip.stops.push(makeStop()); invalidateRoute();
           save();
           render();
@@ -1403,7 +1499,7 @@ import { mountPickupMap } from "./pickup-map.js";
         invalidateRoute(); state = defaults();
         save();
         step = -1;
-        history.replaceState(null, "", location.pathname);
+        history.replaceState(null, "", runtime ? location.pathname + location.search : location.pathname);
         go(0, true);
         break;
       case "locate":
@@ -1421,6 +1517,7 @@ import { mountPickupMap } from "./pickup-map.js";
     }
   });
   window.addEventListener("hashchange", () => {
+    if (submitting) { history.replaceState(null, "", "#" + routes[step]); return; }
     const index = routes.indexOf(location.hash.slice(1));
     const allowed =
       index === 5 ? state.submitted : index >= 0 && index <= state.completed;

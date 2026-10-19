@@ -1,0 +1,74 @@
+name: Verify WordPress plugin
+
+on:
+  push:
+    branches: [main]
+    paths: ['wordpress/**', 'app.js', 'maps.js', 'pickup-map.js', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'package*.json', '.github/workflows/wordpress.yml']
+  pull_request:
+    paths: ['wordpress/**', 'app.js', 'maps.js', 'pickup-map.js', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'package*.json', '.github/workflows/wordpress.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '8.1'
+            wordpress: '6.6'
+          - php: '8.3'
+            wordpress: 'latest'
+    services:
+      database:
+        image: mariadb:11.4
+        env:
+          # Disposable local CI database, never a deployment credential.
+          MARIADB_ROOT_PASSWORD: tuxano-ci-test-only
+        ports: ['3306:3306']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, mbstring, zip
+          tools: wp-cli
+          coverage: none
+      - run: npm ci && npm run check && npm run test:unit && npm run build:wordpress
+      - name: Lint all plugin PHP
+        run: rg --files wordpress/tuxano-booking -g '*.php' | xargs -n 1 php -l
+      - name: Install WordPress and activate the actual packaged ZIP
+        env:
+          WP_TEST_VERSION: ${{ matrix.wordpress }}
+        run: |
+          php -r '$db=new mysqli("127.0.0.1","root","tuxano-ci-test-only",null,3306);if(!$db->query("CREATE DATABASE tuxano_ci")){exit(1);}'
+          wp core download --version="$WP_TEST_VERSION" --path=/tmp/tuxano-wp
+          wp config create --path=/tmp/tuxano-wp --dbname=tuxano_ci --dbuser=root --dbpass=tuxano-ci-test-only --dbhost=127.0.0.1:3306
+          wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/tuxano-wp
+          wp config set DISABLE_WP_CRON true --raw --path=/tmp/tuxano-wp
+          wp core install --path=/tmp/tuxano-wp --url=http://127.0.0.1:8085 --title='Tuxano CI' --admin_user=tuxano_ci --admin_password="$(openssl rand -hex 24)" --admin_email=ci@example.invalid --skip-email
+          wp core verify-checksums --path=/tmp/tuxano-wp
+          wp plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.0.0.zip" --activate --path=/tmp/tuxano-wp
+      - name: Test settings, native fleet CRUD, pricing, REST, persistence and notifications
+        run: |
+          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-data.php" --path=/tmp/tuxano-wp
+          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-integration.php" --path=/tmp/tuxano-wp
+      - if: matrix.php == '8.3'
+        run: npx playwright install --with-deps chromium && npm test
+      - if: matrix.php == '8.3'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuxano-booking-2.0.0
+          path: |
+            releases/tuxano-booking-2.0.0.zip
+            releases/tuxano-booking-2.0.0.zip.sha256
+          retention-days: 14

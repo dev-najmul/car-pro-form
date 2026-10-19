@@ -1,4 +1,5 @@
-// All tariffs are demonstration values. Google supplies route metrics, not prices.
+// Static defaults are examples; WordPress uses administrator-configured tariffs.
+// Google supplies route metrics, not prices.
 export const METERS_PER_MILE = 1609.344;
 export const PRICING = Object.freeze({
   premium: Object.freeze({ base: 65, perMile: 2, perDrivingMinute: 3, minimum: 100, perWaitingMinute: 1, hourly: 95 }),
@@ -8,13 +9,14 @@ export const PRICING = Object.freeze({
   cullinan: Object.freeze({ base: 700, perMile: 20, perDrivingMinute: 25, minimum: 900, perWaitingMinute: 7.5, hourly: 750 }),
   phantom: Object.freeze({ base: 1000, perMile: 30, perDrivingMinute: 55, minimum: 1500, perWaitingMinute: 10, hourly: 1250 }),
 });
-export function quoteTransportation(vehicleId, route, waitMinutes = 0, service = 'transfer', hours = 3) {
-  const tariff = PRICING[vehicleId];
-  if (typeof vehicleId !== 'string' || !Object.hasOwn(PRICING, vehicleId)) throw new TypeError('Unknown vehicle class.');
+export function quoteTransportation(vehicleId, route, waitMinutes = 0, service = 'transfer', hours = 3, configuredTariff = null, limits = { minHours: 2, maxHours: 12 }) {
+  if (typeof vehicleId !== 'string' || (!configuredTariff && !Object.hasOwn(PRICING, vehicleId))) throw new TypeError('Unknown vehicle class.');
+  const tariff = configuredTariff || PRICING[vehicleId];
+  if (!tariff || ['base', 'perMile', 'perDrivingMinute', 'minimum', 'perWaitingMinute', 'hourly'].some(key => !Number.isFinite(tariff[key]) || tariff[key] < 0)) throw new TypeError('Invalid vehicle pricing.');
   if (!route || !Number.isFinite(route.distanceMeters) || route.distanceMeters < 0 || !Number.isFinite(route.durationSeconds) || route.durationSeconds < 0) throw new TypeError('A valid driving route is required.');
   if (!Number.isFinite(waitMinutes) || waitMinutes < 0 || waitMinutes > 600) throw new TypeError('Invalid stop waiting time.');
   if (!['transfer', 'hourly'].includes(service)) throw new TypeError('Unknown service type.');
-  if (service === 'hourly' && (!Number.isInteger(hours) || hours < 2 || hours > 12)) throw new TypeError('Choose 2–12 hours.');
+  if (service === 'hourly' && (!Number.isInteger(hours) || hours < limits.minHours || hours > limits.maxHours)) throw new TypeError(`Choose ${limits.minHours}–${limits.maxHours} hours.`);
   const miles = route.distanceMeters / METERS_PER_MILE;
   const drivingMinutes = route.durationSeconds / 60;
   const drivingCharge = service === 'hourly'

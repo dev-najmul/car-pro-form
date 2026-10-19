@@ -1,0 +1,63 @@
+.tuxano-admin { max-width: 1500px; color: #1d2327; }
+.tuxano-admin .tuxano-intro { max-width: 850px; font-size: 14px; margin: 10px 0 22px; }
+.tuxano-admin .tuxano-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin: 24px 0; }
+.tuxano-admin .tuxano-stat { display: flex; flex-direction: column; gap: 10px; padding: 20px; border: 1px solid #dcdcde; border-top: 3px solid #15326a; border-radius: 4px; background: #fff; text-decoration: none; color: #1d2327; }
+.tuxano-admin .tuxano-stat:hover { border-color: #2271b1; }
+.tuxano-admin .tuxano-stat strong { font-size: 29px; line-height: 1.1; }
+.tuxano-admin .tuxano-card { box-sizing: border-box; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; padding: 20px 24px; margin: 0 0 20px; min-width: 0; }
+.tuxano-admin .tuxano-card > h2:first-child { margin-top: 0; }
+.tuxano-admin .tuxano-card h2 { font-size: 17px; }
+.tuxano-admin .tuxano-dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(275px, 1fr); gap: 20px; align-items: start; }
+.tuxano-admin .tuxano-checklist li { margin: 12px 0; }
+.tuxano-admin .tuxano-table-scroll { overflow-x: auto; }
+.tuxano-admin table.widefat { min-width: 650px; }
+.tuxano-admin .widefat td, .tuxano-admin .widefat th { padding: 12px 10px; vertical-align: top; }
+.tuxano-admin .tuxano-reference { font-weight: 600; }
+.tuxano-admin .tuxano-nowrap { white-space: nowrap; }
+.tuxano-admin .tuxano-status { display: inline-block; border-radius: 12px; padding: 3px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #15326a; background: #e9eef8; }
+.tuxano-admin .tuxano-status-new { color: #135e96; background: #e9f2fc; }
+.tuxano-admin .tuxano-status-reviewing { color: #755600; background: #fff4cd; }
+.tuxano-admin .tuxano-status-confirmed, .tuxano-admin .tuxano-status-completed { color: #16572d; background: #e4f3e9; }
+.tuxano-admin .tuxano-status-cancelled { color: #8a2424; background: #fbeaea; }
+.tuxano-admin .tuxano-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 18px; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; }
+.tuxano-admin .tuxano-filters label { display: block; margin: 0 0 5px; font-weight: 600; }
+.tuxano-admin .tuxano-filters input, .tuxano-admin .tuxano-filters select { margin: 0; min-height: 32px; }
+.tuxano-admin .tuxano-filters input[type="search"] { width: 265px; }
+.tuxano-admin .tuxano-pagination { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; margin-top: 18px; }
+.tuxano-admin .page-numbers { border: 1px solid #c3c4c7; background: #fff; padding: 6px 11px; text-decoration: none; border-radius: 2px; }
+.tuxano-admin .page-numbers.current { background: #15326a; border-color: #15326a; color: #fff; }
+.tuxano-admin .tuxano-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
+.tuxano-admin .tuxano-contact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.tuxano-admin .tuxano-information { margin: 0; }
+.tuxano-admin .tuxano-information > div { display: grid; grid-template-columns: minmax(120px, 30%) minmax(0, 1fr); gap: 12px; border-bottom: 1px solid #f0f0f1; padding: 10px 0; }
+.tuxano-admin .tuxano-information > div:last-child { border-bottom: 0; }
+.tuxano-admin .tuxano-information dt { font-weight: 600; }
+.tuxano-admin .tuxano-information dd { margin: 0; overflow-wrap: anywhere; white-space: normal; }
+.tuxano-admin .tuxano-detail-sidebar .tuxano-information > div { display: block; }
+.tuxano-admin .tuxano-detail-sidebar .tuxano-information dt { margin-bottom: 5px; }
+.tuxano-admin .tuxano-detail-sidebar label { display: block; font-weight: 600; margin-bottom: 6px; }
+.tuxano-admin .tuxano-detail-sidebar textarea { font-weight: 400; }
+.tuxano-admin .tuxano-danger { border-color: #e0b4b4; }
+.tuxano-admin .tuxano-danger .button.delete { color: #b32d2e; border-color: #b32d2e; }
+.tuxano-admin .tuxano-stops { margin-left: 22px; }
+.tuxano-admin .form-table { margin-top: 0; }
+.tuxano-admin .form-table th { width: 230px; }
+.tuxano-admin .form-table td .description { max-width: 680px; }
+.tuxano-admin .form-table input[type="number"] { max-width: 180px; }
+@media (max-width: 1250px) {
+    .tuxano-admin .tuxano-dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+    .tuxano-admin .tuxano-contact-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (max-width: 960px) {
+    .tuxano-admin .tuxano-detail-grid { grid-template-columns: minmax(0, 1fr); }
+    .tuxano-admin .tuxano-detail-sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; align-items: start; }
+    .tuxano-admin .tuxano-card { padding: 18px; }
+}
+@media (max-width: 600px) {
+    .tuxano-admin .tuxano-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tuxano-admin .tuxano-stat { padding: 15px; }
+    .tuxano-admin .tuxano-information > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .tuxano-admin .tuxano-filters > div, .tuxano-admin .tuxano-filters input[type="search"] { width: 100%; }
+    .tuxano-admin .form-table th { width: auto; padding-bottom: 4px; }
+    .tuxano-admin .regular-text { max-width: 100%; }
+}

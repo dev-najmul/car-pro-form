@@ -1,9 +1,9 @@
 {
   "name": "car-pro-form",
-  "version": "1.2.3",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "A responsive five-step TUXANO reservation request prototype",
+  "description": "WordPress transportation booking plugin and responsive static form",
   "scripts": {
     "dev": "node --use-env-proxy server.js",
     "start": "node --use-env-proxy server.js",
@@ -11,8 +11,9 @@
     "test:ui": "playwright test --ui",
     "test:unit": "node --test tests/*.test.js",
     "build:pages": "node scripts/build-pages.mjs",
-    "check": "node --check app.js && node --check maps.js && node --check pickup-map.js && node --check pricing.js && node --check maps-api.js && node --check server.js && node --check scripts/build-pages.mjs && node --check scripts/download-cloudflared.mjs && node --check scripts/start-route-preview.mjs && node --check scripts/keep-route-preview.mjs && node --check scripts/check-live-pages.mjs && node --check scripts/check-live-bangladesh.mjs && node --check scripts/check-live-device-location.mjs",
-    "install:browser": "playwright install chromium"
+    "check": "node --check app.js && node --check maps.js && node --check pickup-map.js && node --check pricing.js && node --check maps-api.js && node --check server.js && node --check scripts/build-pages.mjs && node --check scripts/download-cloudflared.mjs && node --check scripts/start-route-preview.mjs && node --check scripts/keep-route-preview.mjs && node --check scripts/check-live-pages.mjs && node --check scripts/check-live-bangladesh.mjs && node --check scripts/check-live-device-location.mjs && node --check scripts/build-wordpress.mjs && node --check wordpress/tuxano-booking/assets/bootstrap.js && node --check wordpress/tuxano-booking/assets/embed.js && node --check wordpress/tuxano-booking/assets/admin.js",
+    "install:browser": "playwright install chromium",
+    "build:wordpress": "node scripts/build-wordpress.mjs"
   },
   "engines": {
     "node": ">=24.5"
