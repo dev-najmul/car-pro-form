@@ -11,7 +11,7 @@ The form now also runs as a WordPress plugin with administrator-controlled vehic
 
 A responsive five-step transportation form built with HTML, CSS, and vanilla JavaScript from the supplied desktop/phone designs. Version 1.1 adds Google Places (New) location selection, Google Routes driving estimates, automatic travel time, and route-based **demonstration tariffs**. The design photographs and fonts are self-hosted.
 
-Google supplies locations and driving metrics; it does not supply the prices. Submitting still opens a local demo thank-you page and sends no booking, email, or payment. WordPress conversion remains future work. GitHub Pages uses the supplied browser key for suggestions and a temporary private backend for Routes, with no further client Google Cloud changes. See [prototype testing](#temporary-wordpress-prototype-testing) for the two-hour test window.
+Google supplies locations and driving metrics; it does not supply the prices. Submitting the static prototype opens a local demo thank-you page and sends no booking, email, or payment. The WordPress plugin above saves real booking requests and invokes customer/admin notifications. GitHub Pages uses the supplied browser key for suggestions and a temporary private backend for Routes, with no further client Google Cloud changes. See [prototype testing](#temporary-wordpress-prototype-testing) for the two-hour test window.
 
 ## Run locally
 
