@@ -51,12 +51,21 @@ jobs:
           WP_TEST_VERSION: ${{ matrix.wordpress }}
         run: |
           php -r '$db=new mysqli("127.0.0.1","root","tuxano-ci-test-only",null,3306);if(!$db->query("CREATE DATABASE tuxano_ci")){exit(1);}'
-          wp core download --version="$WP_TEST_VERSION" --path=/tmp/tuxano-wp
+          # System unzip preserves the current core archive's long filenames.
+          # Verify the extracted core before executing/configuring any of it.
+          if [ "$WP_TEST_VERSION" = latest ]; then
+            curl --fail --location --retry 2 https://wordpress.org/latest.zip --output /tmp/tuxano-core.zip
+          else
+            curl --fail --location --retry 2 "https://wordpress.org/wordpress-$WP_TEST_VERSION.zip" --output /tmp/tuxano-core.zip
+          fi
+          mkdir /tmp/tuxano-core
+          unzip -q /tmp/tuxano-core.zip -d /tmp/tuxano-core
+          mv /tmp/tuxano-core/wordpress /tmp/tuxano-wp
+          wp core verify-checksums --path=/tmp/tuxano-wp
           wp config create --path=/tmp/tuxano-wp --dbname=tuxano_ci --dbuser=root --dbpass=tuxano-ci-test-only --dbhost=127.0.0.1:3306
           wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/tuxano-wp
           wp config set DISABLE_WP_CRON true --raw --path=/tmp/tuxano-wp
           wp core install --path=/tmp/tuxano-wp --url=http://127.0.0.1:8085 --title='Tuxano CI' --admin_user=tuxano_ci --admin_password="$(openssl rand -hex 24)" --admin_email=ci@example.invalid --skip-email
-          wp core verify-checksums --path=/tmp/tuxano-wp
           wp plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.0.0.zip" --activate --path=/tmp/tuxano-wp
       - name: Test settings, native fleet CRUD, pricing, REST, persistence and notifications
         run: |
