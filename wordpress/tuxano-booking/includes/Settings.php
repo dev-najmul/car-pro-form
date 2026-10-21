@@ -216,8 +216,12 @@ final class Settings
         return hash('sha256', (string) wp_json_encode([$version, $prices, $vehicles], JSON_PRESERVE_ZERO_FRACTION));
     }
 
-    /** A bounded decimal parser shared by admin fleet input. */
-    public static function decimal(mixed $value, float $maximum = 1000000): ?float
+    /**
+     * A bounded decimal parser shared by admin fleet input.
+     *
+     * @param mixed $value Untrusted scalar amount.
+     */
+    public static function decimal($value, float $maximum = 1000000): ?float
     {
         if (!is_string($value) && !is_int($value) && !is_float($value)) {
             return null;

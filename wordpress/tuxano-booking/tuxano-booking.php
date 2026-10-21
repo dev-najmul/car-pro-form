@@ -2,9 +2,9 @@
 /**
  * Plugin Name: Tuxano Booking
  * Description: Executive transportation requests, route-based pricing, fleet management and private booking administration.
- * Version: 2.0.0
+ * Version: 2.0.1
  * Requires at least: 6.6
- * Requires PHP: 8.1
+ * Requires PHP: 7.4
  * Author: Tuxano
  * License: GPL-2.0-or-later
  * Text Domain: tuxano-booking
@@ -14,7 +14,7 @@ namespace Tuxano\Booking;
 
 defined('ABSPATH') || exit;
 
-define('TUXANO_BOOKING_VERSION', '2.0.0');
+define('TUXANO_BOOKING_VERSION', '2.0.1');
 define('TUXANO_BOOKING_FILE', __FILE__);
 define('TUXANO_BOOKING_DIR', plugin_dir_path(__FILE__));
 define('TUXANO_BOOKING_URL', plugin_dir_url(__FILE__));

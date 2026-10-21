@@ -44,8 +44,9 @@ $check(!empty($admins), 'An administrator is required in the isolated installati
 $site = wp_parse_url(home_url('/'));
 $origin = $site['scheme'] . '://' . $site['host'] . (isset($site['port']) ? ':' . $site['port'] : '');
 $points = ['origin' => ['placeId' => 'ChIJ_Integration_Pickup'], 'destination' => ['latitude' => 40.75, 'longitude' => -73.98], 'stops' => [['placeId' => 'ChIJ_Integration_Stop']]];
+$provider_stops = $points['stops'];
 
-$request = static function (string $path, mixed $body = [], string $token = '', array $headers = [], string $method = 'POST', ?string $raw = null) use ($origin): WP_REST_Response {
+$request = static function (string $path, $body = [], string $token = '', array $headers = [], string $method = 'POST', ?string $raw = null) use ($origin): WP_REST_Response {
     $request = new WP_REST_Request($method, '/tuxano-booking/v1/' . $path);
     foreach (array_replace(['Origin' => $origin, 'Sec-Fetch-Site' => 'same-origin', 'Content-Type' => 'application/json'], $headers) as $name => $value) {
         $request->set_header($name, $value);
@@ -81,13 +82,13 @@ $new_quote = static function (string $token) use ($request, $check, $points, &$q
     $quotes[] = 'tuxano_quote_' . hash('sha256', $data['quoteToken']);
     return $data;
 };
-$http_mock = static function ($preempt, array $args, string $url) use ($check, &$provider_calls, &$provider_mode, $fixture_key, $points) {
+$http_mock = static function ($preempt, array $args, string $url) use ($check, &$provider_calls, &$provider_mode, &$provider_stops, $fixture_key, $points) {
     ++$provider_calls;
     $check($url === 'https://routes.googleapis.com/directions/v2:computeRoutes', 'Provider URL must remain the fixed Google endpoint.');
     $check($args['headers']['X-Goog-Api-Key'] === $fixture_key && $args['headers']['X-Goog-FieldMask'] === 'routes.distanceMeters,routes.duration', 'Server must send the private fixture key and bounded field mask.');
     $check($args['timeout'] <= 15 && $args['redirection'] === 0 && $args['limit_response_size'] === 262144, 'Provider calls must bound time, redirects and response size.');
     $sent = json_decode($args['body'], true);
-    $check($sent === ['origin' => $points['origin'], 'destination' => ['location' => ['latLng' => $points['destination']]], 'intermediates' => $points['stops'], 'travelMode' => 'DRIVE', 'routingPreference' => 'TRAFFIC_UNAWARE', 'computeAlternativeRoutes' => false, 'optimizeWaypointOrder' => false, 'units' => 'METRIC'], 'Google payload must preserve ordered locations and agreed routing options.');
+    $check($sent === ['origin' => $points['origin'], 'destination' => ['location' => ['latLng' => $points['destination']]], 'intermediates' => $provider_stops, 'travelMode' => 'DRIVE', 'routingPreference' => 'TRAFFIC_UNAWARE', 'computeAlternativeRoutes' => false, 'optimizeWaypointOrder' => false, 'units' => 'METRIC'], 'Google payload must preserve ordered locations and agreed routing options.');
     if ($provider_mode === 'unavailable') {
         return new WP_Error('fixture_unavailable', 'Deterministic provider outage.');
     }
@@ -139,12 +140,20 @@ try {
     $error($request('route', array_replace($points, ['origin' => ['placeId' => 'bad?query']]), $token), 400, 'tuxano_route_input', 'Malformed place IDs must fail.');
     $error($request('route', array_replace($points, ['origin' => ['latitude' => '40', 'longitude' => 0]]), $token), 400, 'tuxano_route_input', 'String map coordinates must fail.');
     $error($request('route', array_replace($points, ['stops' => array_fill(0, 6, $points['origin'])]), $token), 400, 'tuxano_route_input', 'Excess stops must fail.');
+    $error($request('route', array_replace($points, ['stops' => [1 => $points['stops'][0]]]), $token), 400, 'tuxano_route_input', 'Sparse stop indices must fail.');
+    $error($request('route', array_replace($points, ['stops' => [1 => $points['stops'][0], 0 => $points['origin']]]), $token), 400, 'tuxano_route_input', 'Reordered numeric stop indices must fail.');
     $check($provider_calls === 0, 'Invalid route input must never call the provider.');
     foreach (['unavailable' => 'tuxano_google_unavailable', 'denied' => 'tuxano_google_route', 'malformed' => 'tuxano_google_route'] as $mode => $code) {
         $provider_mode = $mode;
         $error($request('route', $points, $token), 502, $code, 'Provider ' . $mode . ' must return a controlled error.');
     }
     $provider_mode = 'ok';
+    $provider_stops = [];
+    $empty_route_response = $request('route', array_replace($points, ['stops' => []]), $token);
+    $empty_route = $empty_route_response->get_data();
+    $check($empty_route_response->get_status() === 200 && preg_match('/^[a-f0-9]{64}$/D', $empty_route['quoteToken'] ?? '') === 1, 'An empty stop list must produce a route quote.');
+    $quotes[] = 'tuxano_quote_' . hash('sha256', $empty_route['quoteToken']);
+    $provider_stops = $points['stops'];
     $quote = $new_quote($token);
     $check($quote['distanceMeters'] === 16093.44 && $quote['durationSeconds'] === 1200.0 && $quote['provider'] === 'google', 'Only provider metrics may form the server quote.');
     $quote_name = 'tuxano_quote_' . hash('sha256', $quote['quoteToken']);

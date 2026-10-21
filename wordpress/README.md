@@ -1,12 +1,12 @@
-# Tuxano Booking 2.0.0
+# Tuxano Booking 2.0.1
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.0.0.zip) · [SHA-256](../releases/tuxano-booking-2.0.0.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.0.1.zip) · [SHA-256](../releases/tuxano-booking-2.0.1.zip.sha256)
 
 ## Install and configure
 
-1. WordPress **Plugins → Add New → Upload Plugin**, select the ZIP and activate. Requires WordPress 6.6+ and PHP 8.1+. Activate per site; network-wide activation is deliberately rejected.
+1. WordPress **Plugins → Add New → Upload Plugin**, select the ZIP and activate. Requires WordPress 6.6+ and PHP 7.4+. Activate per site; network-wide activation is deliberately rejected.
 2. **Tuxano Booking → Settings**: add the Maps JavaScript/Places browser key and separate Routes server key. The latter stays on the WordPress server. Saved keys are write-only; empty inputs preserve them, explicit Clear removes them. Use suitable domain/API restrictions and enabled Google billing/APIs.
 3. Review **Vehicles**, **Collections** and **Pricing**. Six existing vehicles and sample tariffs are seeded once. Replace the sample amounts with approved business prices. Currency changes do not perform foreign-exchange conversion.
 4. Set business/contact details, public terms/privacy URLs, email recipient/sender, optional retention, route budgets and booking limits. Set the WordPress site timezone; the form displays that timezone for pickup date/time.
@@ -67,4 +67,4 @@ wp eval-file /path/to/repo/tests/wordpress-data.php
 wp eval-file /path/to/repo/tests/wordpress-integration.php
 ```
 
-The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 8.1 and current WordPress/PHP 8.3, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Actual Google-provider/local WordPress evidence is recorded separately in [project.md](../project.md#17-wordpress-plugin-conversion--version-200).
+The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Actual Google-provider/local WordPress evidence is recorded separately in [project.md](../project.md#17-wordpress-plugin-conversion--version-200).

@@ -245,7 +245,8 @@ final class Vehicles
         return $result;
     }
 
-    private static function image(mixed $value): ?string
+    /** @param mixed $value Untrusted photo input. */
+    private static function image($value): ?string
     {
         if (!is_string($value) || strlen($value) > 2048) {
             return null;
@@ -254,7 +255,7 @@ final class Vehicles
         if ($value === '') {
             return '';
         }
-        if (preg_match('#^assets/[a-zA-Z0-9/_\-.]+\.(?:png|jpe?g|webp|gif|avif)$#D', $value) && !str_contains($value, '..')) {
+        if (preg_match('#^assets/[a-zA-Z0-9/_\-.]+\.(?:png|jpe?g|webp|gif|avif)$#D', $value) && strpos($value, '..') === false) {
             return $value;
         }
         if (!preg_match('#^https://#i', $value)) {

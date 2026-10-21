@@ -1,6 +1,6 @@
 # WordPress implementation contract
 
-Plugin: `tuxano-booking`, version 2.0.0, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=8.1. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
+Plugin: `tuxano-booking`, version 2.0.1, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
 
 ## Runtime and UI
 - One top-level **Tuxano Booking** menu: dashboard, submissions (custom private table, detail/status/admin notes, search/status/date filters/pagination), vehicles (private CPT `tuxano_vehicle` with native CRUD and taxonomy `tuxano_collection`), pricing, settings.

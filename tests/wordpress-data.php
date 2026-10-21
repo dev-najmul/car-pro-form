@@ -185,6 +185,8 @@ try {
         static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => -1, 'durationSeconds' => 60], $base_booking, $settings),
         static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['service' => 'flight']]), $settings),
         static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [['waitMinutes' => 121]]]]), $settings),
+        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5]]]]), $settings),
+        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5], 0 => ['waitMinutes' => 10]]]]), $settings),
         static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['carSeats' => 6, 'boosterSeats' => 2]), $settings),
         static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['child' => 'false']), $settings),
     ] as $invalid_pricing) {

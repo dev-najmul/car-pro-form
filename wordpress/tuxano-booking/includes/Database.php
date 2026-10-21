@@ -68,7 +68,8 @@ final class Database
         return $id ? self::find((int) $id) : null;
     }
 
-    public static function insert(array $row): int|\WP_Error
+    /** @return int|\WP_Error */
+    public static function insert(array $row)
     {
         global $wpdb;
         // Suppress duplicate-key SQL output; a racing retry reads the winning row.
@@ -115,7 +116,8 @@ final class Database
         return $counts;
     }
 
-    public static function update(int $id, array $changes): bool|\WP_Error
+    /** @return bool|\WP_Error */
+    public static function update(int $id, array $changes)
     {
         global $wpdb;
         $clean = [];

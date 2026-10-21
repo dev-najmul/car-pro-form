@@ -37,7 +37,7 @@ final class Pricing
         }
         $stops = $trip['stops'] ?? [];
         $max_stops = self::integer($settings['max_stops'] ?? 5, 0, 5, 'maximum stops');
-        if (!is_array($stops) || !array_is_list($stops) || count($stops) > $max_stops) {
+        if (!is_array($stops) || $stops !== array_values($stops) || count($stops) > $max_stops) {
             throw new \InvalidArgumentException('Too many stops.');
         }
         $waiting_minutes = 0;
@@ -123,7 +123,8 @@ final class Pricing
         ];
     }
 
-    private static function number(mixed $value, float $min, float $max, string $label): float
+    /** @param mixed $value Untrusted numeric input. */
+    private static function number($value, float $min, float $max, string $label): float
     {
         if ((!is_int($value) && !is_float($value) && !is_string($value)) || (is_string($value) && !preg_match('/^\d+(?:\.\d+)?$/D', $value))) {
             throw new \InvalidArgumentException('Invalid ' . $label . '.');
@@ -135,7 +136,8 @@ final class Pricing
         return $value;
     }
 
-    private static function integer(mixed $value, int $min, int $max, string $label): int
+    /** @param mixed $value Untrusted integer input. */
+    private static function integer($value, int $min, int $max, string $label): int
     {
         $number = self::number($value, $min, $max, $label);
         if (floor($number) !== $number) {
@@ -144,7 +146,8 @@ final class Pricing
         return (int) $number;
     }
 
-    private static function boolean(mixed $value, string $label): bool
+    /** @param mixed $value Untrusted boolean input. */
+    private static function boolean($value, string $label): bool
     {
         if (!is_bool($value)) {
             throw new \InvalidArgumentException('Invalid ' . $label . '.');

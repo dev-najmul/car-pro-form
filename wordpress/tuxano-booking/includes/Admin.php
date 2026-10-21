@@ -29,7 +29,7 @@ final class Admin {
 
     public static function assets(string $hook): void {
         $screen = get_current_screen();
-        if (!str_contains($hook, 'tuxano') && (!$screen || ($screen->post_type !== 'tuxano_vehicle' && $screen->taxonomy !== 'tuxano_collection'))) {
+        if (strpos($hook, 'tuxano') === false && (!$screen || ($screen->post_type !== 'tuxano_vehicle' && $screen->taxonomy !== 'tuxano_collection'))) {
             return;
         }
         wp_enqueue_style('tuxano-booking-admin', TUXANO_BOOKING_URL . 'assets/admin.css', [], TUXANO_BOOKING_VERSION);
@@ -106,15 +106,18 @@ final class Admin {
         return '<span class="tuxano-status tuxano-status-' . esc_attr(sanitize_html_class($status)) . '">' . esc_html(self::status_label($status)) . '</span>';
     }
 
-    private static function scalar(mixed $value, string $fallback = '—'): string {
+    /** @param mixed $value */
+    private static function scalar($value, string $fallback = '—'): string {
         return is_scalar($value) && (string) $value !== '' ? (string) $value : $fallback;
     }
 
-    private static function money(mixed $amount, string $currency): string {
+    /** @param mixed $amount */
+    private static function money($amount, string $currency): string {
         return $currency . ' ' . number_format_i18n(is_numeric($amount) ? (float) $amount : 0, 2);
     }
 
-    private static function date_label(mixed $date, bool $utc = true): string {
+    /** @param mixed $date */
+    private static function date_label($date, bool $utc = true): string {
         if (!is_string($date) || $date === '') {
             return '—';
         }

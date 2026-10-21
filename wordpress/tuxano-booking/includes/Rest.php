@@ -16,7 +16,7 @@ final class Rest
             register_rest_route(self::NAMESPACE, '/' . $path, ['methods' => 'POST', 'callback' => [self::class, $path], 'permission_callback' => [self::class, 'permission']]);
         }
         add_filter('rest_post_dispatch', static function ($response, $server, $request) {
-            if (str_starts_with($request->get_route(), '/' . self::NAMESPACE . '/')) {
+            if (strpos($request->get_route(), '/' . self::NAMESPACE . '/') === 0) {
                 $response->header('Cache-Control', 'private, no-store, max-age=0');
                 $response->header('X-Content-Type-Options', 'nosniff');
             }
@@ -29,7 +29,8 @@ final class Rest
         return new \WP_Error($code, $message, ['status' => $status]);
     }
 
-    public static function origin(\WP_REST_Request $request): bool|\WP_Error
+    /** @return bool|\WP_Error */
+    public static function origin(\WP_REST_Request $request)
     {
         $origin = $request->get_header('origin');
         $site = wp_parse_url(home_url('/'));
@@ -86,7 +87,8 @@ final class Rest
         return preg_match('/^[a-f0-9]{64}$/D', $token) ? $token : '';
     }
 
-    public static function permission(\WP_REST_Request $request): bool|\WP_Error
+    /** @return bool|\WP_Error */
+    public static function permission(\WP_REST_Request $request)
     {
         $origin = self::origin($request);
         if (is_wp_error($origin)) { return $origin; }
@@ -98,7 +100,8 @@ final class Rest
         return true;
     }
 
-    public static function session(\WP_REST_Request $request): array|\WP_Error
+    /** @return array|\WP_Error */
+    public static function session(\WP_REST_Request $request)
     {
         if (!self::rate('session', self::client(), (int) Settings::get()['session_hourly_limit'], HOUR_IN_SECONDS)) { return self::fail('tuxano_rate', 'Too many booking sessions. Please try again later.', 429); }
         $vehicles = Vehicles::all();
@@ -111,9 +114,20 @@ final class Rest
         ]];
     }
 
-    private static function point(mixed $point): array
+    /** PHP 7.4 equivalent of array_is_list(), preserving key order and types. */
+    private static function is_list(array $values): bool
     {
-        if (!is_array($point) || array_is_list($point)) { throw new \InvalidArgumentException('Select valid pickup, stop and destination points.'); }
+        $index = 0;
+        foreach ($values as $key => $value) {
+            if ($key !== $index++) { return false; }
+        }
+        return true;
+    }
+
+    /** @param mixed $point */
+    private static function point($point): array
+    {
+        if (!is_array($point) || self::is_list($point)) { throw new \InvalidArgumentException('Select valid pickup, stop and destination points.'); }
         if (isset($point['placeId'])) {
             if (count($point) !== 1 || !is_string($point['placeId']) || !preg_match('/^[a-zA-Z0-9_-]{3,512}$/D', $point['placeId'])) {
                 throw new \InvalidArgumentException('Select a valid Google location.');
@@ -131,7 +145,7 @@ final class Rest
     private static function route_request(array $body): array
     {
         $stops = $body['stops'] ?? [];
-        if (!is_array($stops) || !array_is_list($stops) || count($stops) > (int) Settings::get()['max_stops']) { throw new \InvalidArgumentException('Check the number and order of your stops.'); }
+        if (!is_array($stops) || !self::is_list($stops) || count($stops) > (int) Settings::get()['max_stops']) { throw new \InvalidArgumentException('Check the number and order of your stops.'); }
         return ['origin' => self::point($body['origin'] ?? null), 'destination' => self::point($body['destination'] ?? null), 'stops' => array_map([self::class, 'point'], $stops)];
     }
 
@@ -140,7 +154,8 @@ final class Rest
         return isset($point['placeId']) ? $point : ['location' => ['latLng' => $point]];
     }
 
-    public static function route(\WP_REST_Request $request): array|\WP_Error
+    /** @return array|\WP_Error */
+    public static function route(\WP_REST_Request $request)
     {
         try {
             $body = $request->get_json_params();
@@ -170,15 +185,17 @@ final class Rest
         return array_merge($metrics, ['quoteToken' => $quote]);
     }
 
-    private static function text(mixed $value, int $max, bool $required = false, bool $multiline = false): string
+    /** @param mixed $value */
+    private static function text($value, int $max, bool $required = false, bool $multiline = false): string
     {
-        if (!is_string($value) || mb_strlen($value) > $max || str_contains($value, "\0")) { throw new \InvalidArgumentException('Please check the length and format of your booking details.'); }
+        if (!is_string($value) || mb_strlen($value) > $max || strpos($value, "\0") !== false) { throw new \InvalidArgumentException('Please check the length and format of your booking details.'); }
         $value = trim($multiline ? sanitize_textarea_field($value) : sanitize_text_field($value));
         if ($required && $value === '') { throw new \InvalidArgumentException('Please complete all required booking details.'); }
         return $value;
     }
 
-    private static function integer(mixed $value, int $min, int $max): int
+    /** @param mixed $value */
+    private static function integer($value, int $min, int $max): int
     {
         if (!is_int($value) || $value < $min || $value > $max) { throw new \InvalidArgumentException('Check passenger, luggage, seat and hour quantities.'); }
         return $value;
@@ -190,7 +207,8 @@ final class Rest
         return $body[$key];
     }
 
-    private static function selected(mixed $point): array
+    /** @param mixed $point */
+    private static function selected($point): array
     {
         if (!is_array($point)) { throw new \InvalidArgumentException('Choose each location from suggestions or a confirmed map point.'); }
         return isset($point['placeId']) ? self::point(['placeId' => $point['placeId']]) : self::point(['latitude' => $point['latitude'] ?? null, 'longitude' => $point['longitude'] ?? null]);
@@ -200,7 +218,7 @@ final class Rest
     {
         $settings = Settings::get();
         $trip = $body['trip'] ?? null;
-        if (!is_array($trip) || !is_array($trip['stops'] ?? null) || !array_is_list($trip['stops'])) { throw new \InvalidArgumentException('Complete the trip details.'); }
+        if (!is_array($trip) || !is_array($trip['stops'] ?? null) || !self::is_list($trip['stops'])) { throw new \InvalidArgumentException('Complete the trip details.'); }
         $points = self::route_request(['origin' => self::selected($trip['pickupPlace'] ?? null), 'destination' => self::selected($trip['dropoffPlace'] ?? null), 'stops' => array_map(static fn($stop) => self::selected(is_array($stop) ? ($stop['place'] ?? null) : null), $trip['stops'])]);
         if (wp_json_encode($points) !== wp_json_encode($quote['points'])) { throw new \InvalidArgumentException('Your route changed. Calculate the route again before submitting.'); }
         $service = $trip['service'] ?? '';
@@ -245,7 +263,8 @@ final class Rest
         return [$clean, $vehicle, $scheduled->format('Y-m-d H:i:s')];
     }
 
-    public static function bookings(\WP_REST_Request $request): array|\WP_Error
+    /** @return array|\WP_Error */
+    public static function bookings(\WP_REST_Request $request)
     {
         $body = $request->get_json_params();
         if (!is_array($body) || !is_array($body['booking'] ?? null) || !is_string($body['requestKey'] ?? null) || !preg_match('/^[a-zA-Z0-9_-]{16,100}$/D', $body['requestKey']) || !empty($body['website'])) { return self::fail('tuxano_booking_input', 'Please submit the completed booking form.'); }
