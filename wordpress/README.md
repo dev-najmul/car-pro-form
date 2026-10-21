@@ -68,3 +68,5 @@ wp eval-file /path/to/repo/tests/wordpress-integration.php
 ```
 
 The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Actual Google-provider/local WordPress evidence is recorded separately in [project.md](../project.md#17-wordpress-plugin-conversion--version-200).
+
+Version 2.0.1 was installed and activated on the authorized PHP 7.4.33 test site. The [live booking test page](https://bdreadyweb.com/carbook/tuxano-booking-test/) passed actual Google route/stop calculations, all six fleet prices, durable submission, responsive thank-you and admin readback. [Direct test-site ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.0.1-1.zip). Full hosted compatibility and live verification evidence is in [project.md Section 18](../project.md#18-php-74-compatibility-and-live-site-installation--21-october-2026).
