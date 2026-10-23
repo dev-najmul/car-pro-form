@@ -40,6 +40,12 @@ final class Database
             admin_mail varchar(20) NOT NULL DEFAULT 'pending',
             customer_mail_started datetime DEFAULT NULL,
             admin_mail_started datetime DEFAULT NULL,
+            revision bigint(20) unsigned NOT NULL DEFAULT 1,
+            updated_at datetime DEFAULT NULL,
+            history longtext DEFAULT NULL,
+            update_mail varchar(20) NOT NULL DEFAULT 'disabled',
+            update_mail_revision bigint(20) unsigned NOT NULL DEFAULT 0,
+            update_mail_started datetime DEFAULT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY reference (reference),
             UNIQUE KEY request_key (request_key),
@@ -55,9 +61,10 @@ final class Database
         global $wpdb;
         $row = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE id = %d', $id), ARRAY_A);
         if (!$row) { return null; }
-        foreach (['payload', 'pricing', 'route'] as $column) {
-            $row[$column] = json_decode($row[$column], true) ?: [];
+        foreach (['payload', 'pricing', 'route', 'history'] as $column) {
+            $row[$column] = json_decode((string) ($row[$column] ?? ''), true) ?: [];
         }
+        $row['revision'] = max(1, (int) ($row['revision'] ?? 1));
         return $row;
     }
 
@@ -126,8 +133,75 @@ final class Database
             $clean['status'] = $changes['status'];
         }
         if (isset($changes['notes'])) { $clean['notes'] = mb_substr(sanitize_textarea_field((string) $changes['notes']), 0, 10000); }
-        if (!$clean || !self::find($id)) { return new \WP_Error('missing_booking', __('Request not found.', 'tuxano-booking')); }
-        return $wpdb->update(self::table(), $clean, ['id' => $id]) !== false;
+        $row = self::find($id);
+        if (!$clean || !$row) { return new \WP_Error('missing_booking', __('Request not found.', 'tuxano-booking')); }
+        $entry = ['changes' => []];
+        foreach ($clean as $key => $value) {
+            if ($row[$key] !== $value) { $entry['changes'][$key] = ['old' => $row[$key], 'new' => $value]; }
+        }
+        if (!$entry['changes']) { return true; }
+        $result = self::revise($id, (int) $row['revision'], $clean, $entry);
+        return is_wp_error($result) ? $result : true;
+    }
+
+    /**
+     * Atomically replace an administrator revision and its audit entry. All
+     * checks and the audit append are persisted in one compare-and-swap write.
+     * This internal data method is called only by capability-checked services.
+     *
+     * @return array|\WP_Error
+     */
+    public static function revise(int $id, int $expected, array $changes, array $entry)
+    {
+        global $wpdb;
+        $row = self::find($id);
+        if (!$row) { return new \WP_Error('tuxano_booking_missing', __('Request not found.', 'tuxano-booking'), ['status' => 404]); }
+        if ($expected < 1 || (int) $row['revision'] !== $expected) {
+            return new \WP_Error('tuxano_edit_conflict', __('This request was changed by another administrator. Reload it before saving your changes.', 'tuxano-booking'), ['status' => 409]);
+        }
+        $allowed = ['status', 'notes', 'pickup_at', 'customer_name', 'customer_email', 'vehicle_name', 'total', 'currency', 'payload', 'pricing', 'route', 'update_mail', 'update_mail_revision', 'update_mail_started'];
+        $clean = array_intersect_key($changes, array_flip($allowed));
+        if (!$clean) { return new \WP_Error('tuxano_edit_validation', __('There are no request changes to save.', 'tuxano-booking'), ['status' => 400]); }
+        $next = $expected + 1;
+        $entry['revision'] = $next;
+        $entry['actor'] = get_current_user_id();
+        $entry['at'] = current_time('mysql', true);
+        $history = is_array($row['history']) ? $row['history'] : [];
+        if (!$history) {
+            // Keep the original accepted request even after contact, itinerary
+            // or rate changes. It is never returned by the public API.
+            $entry['original'] = array_intersect_key($row, array_flip(['payload', 'pricing', 'route', 'status', 'notes', 'customer_name', 'customer_email', 'vehicle_name', 'pickup_at']));
+        }
+        $history[] = $entry;
+        foreach (['payload', 'pricing', 'route'] as $column) {
+            if (isset($clean[$column]) && is_array($clean[$column])) { $clean[$column] = wp_json_encode($clean[$column]); }
+        }
+        $clean['revision'] = $next;
+        $clean['updated_at'] = $entry['at'];
+        $clean['history'] = wp_json_encode($history);
+        $success = $wpdb->update(self::table(), $clean, ['id' => $id, 'revision' => $expected]);
+        if ($success === false) { return new \WP_Error('tuxano_edit_storage', __('The request could not be updated. Your previous saved request is unchanged.', 'tuxano-booking'), ['status' => 503]); }
+        if ($success !== 1) { return new \WP_Error('tuxano_edit_conflict', __('This request was changed by another administrator. Reload it before saving your changes.', 'tuxano-booking'), ['status' => 409]); }
+        return self::find($id);
+    }
+
+    /** @return int|\WP_Error */
+    public static function bulk_delete(array $ids)
+    {
+        if (!current_user_can('manage_options')) { return new \WP_Error('tuxano_admin_forbidden', __('You cannot delete requests.', 'tuxano-booking'), ['status' => 403]); }
+        if (!$ids || count($ids) > 100) { return new \WP_Error('tuxano_bulk_selection', __('Select between 1 and 100 requests to delete.', 'tuxano-booking'), ['status' => 400]); }
+        $clean = [];
+        foreach ($ids as $id) {
+            if ((!is_int($id) && !is_string($id)) || !preg_match('/^[1-9][0-9]{0,18}$/D', (string) $id) || filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+                return new \WP_Error('tuxano_bulk_selection', __('A selected request ID is invalid.', 'tuxano-booking'), ['status' => 400]);
+            }
+            $clean[] = (int) $id;
+        }
+        $clean = array_values(array_unique($clean));
+        global $wpdb;
+        $placeholders = implode(',', array_fill(0, count($clean), '%d'));
+        $deleted = $wpdb->query($wpdb->prepare('DELETE FROM ' . self::table() . " WHERE id IN ({$placeholders})", ...$clean));
+        return $deleted === false ? new \WP_Error('tuxano_bulk_storage', __('The selected requests could not be deleted.', 'tuxano-booking'), ['status' => 503]) : (int) $deleted;
     }
 
     public static function delete(int $id): bool

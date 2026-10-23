@@ -1702,3 +1702,9 @@ The owner's native WordPress installer reported **PHP 7.4.33**, while version 2.
 - **Current ZIP delivery:** Media Library attachment **34** provides **https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.0.1-1.zip**. An unauthenticated HTTPS download matched release SHA-256 **`4c18d748cb085f483ef79ae192da6c98921a8a3f84df6a3f8a2f8a9a9820c422`**, **11,448,010 bytes**. The 2.0.0 ZIP remains historical; install/use 2.0.1 for PHP 7.4.
 
 Screenshots and machine-readable live reports are retained in ignored `wordpress-test-results/live-201/`. Private cookie state and automation helpers remain outside the repository; no passwords, API keys, cookies, database dump or local transport plugins entered the release. Reusable startup instructions now include the actual PHP 7.4 test command and current live-site status. Saved environment instructions remain a draft until reviewed/saved/published; no fresh-environment restoration claim is made.
+
+## 19. Full frontend/admin upgrade — 22 October 2026
+
+Read both newly attached DOCX files completely and inspected the three supplied screenshots before making changes. Confirmed all **eight main points in 2.docx** plus **five groups in 1.docx**, thirteen groups in total. The owner authorizes all modifications, testing and direct update/testing on the existing dedicated test site, then asks to review the final result personally.
+
+The complete itemized scope, technical decisions, security/data preservation boundaries and verification plan are recorded in [wordpress/UPGRADE-2.1.md](wordpress/UPGRADE-2.1.md). Target release: **2.1.0**, preserving existing bookings, settings, fleet prices and PHP 7.4 compatibility. Implementation and results will be checked off only after verified.

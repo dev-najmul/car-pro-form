@@ -189,7 +189,7 @@ async function fillContact(page, { sameAsPayer = false } = {}) {
     .selectOption({ label: "United States" });
   await page
     .getByLabel("State / Province", { exact: true })
-    .selectOption({ label: "Illinois" });
+    .fill("Illinois");
   await setToggle(page, "Same as billing contact", sameAsPayer);
   if (!sameAsPayer) {
     for (const [label, value] of [

@@ -1,6 +1,38 @@
 const SDK_CALLBACK = '__tuxanoGoogleMapsReady';
 const text = value => typeof value === 'string' ? value : value?.text || value?.toString?.() || '';
 
+export const countryCodeOf = value => typeof value === 'string' && /^[a-z]{2}$/i.test(value) ? value.toUpperCase() : '';
+
+// Country labels come from Google's structured address components, never from
+// searching a display address for words or guessing from a map coordinate.
+export function countryOfPlace(place) {
+  const component = (Array.isArray(place?.addressComponents) ? place.addressComponents : []).find(item => Array.isArray(item?.types) && item.types.includes('country'));
+  const countryCode = countryCodeOf(component?.shortText || component?.short_name);
+  return { countryCode, countryName: countryCode ? text(component?.longText || component?.long_name) : '' };
+}
+
+export function assertSameCountry(points) {
+  const countries = new Set((Array.isArray(points) ? points : []).map(point => countryCodeOf(point?.countryCode)).filter(Boolean));
+  if (countries.size > 1) throw new Error('Choose your drop-off and stops in the same country as your pickup location.');
+  return countries.values().next().value || '';
+}
+
+const restrictionCountry = value => {
+  const raw = typeof value === 'function' ? value() : value;
+  if (raw === undefined || raw === null || raw === '') return '';
+  const country = countryCodeOf(raw);
+  if (!country) throw new Error('Select your pickup again to set a valid location country.');
+  return country;
+};
+
+export function assertLocationCountry(place, countryCode) {
+  const expected = restrictionCountry(countryCode);
+  if (!expected) return;
+  const actual = countryCodeOf(place?.countryCode);
+  if (!actual) throw new Error('The country for this location could not be verified. Choose another address.');
+  if (actual !== expected) throw new Error('Choose your drop-off and stops in the same country as your pickup location.');
+}
+
 export const DEVICE_LOCATION_POLICY = Object.freeze({ maxAccuracyMeters: 100, maxAgeMs: 60000, timeoutMs: 15000 });
 
 export function normalizeDevicePosition(position, now = Date.now()) {
@@ -121,7 +153,7 @@ export function googleRouteLinks(points) {
 }
 
 export class MapsClient {
-  constructor() { this.sessions = new Map(); }
+  constructor() { this.sessions = new Map(); this.sessionCountries = new Map(); }
   async config() {
     if (!this.configuration) this.configuration = (globalThis.TuxanoBooking ? Promise.resolve({ ok: true, json: async () => ({ ...globalThis.TuxanoBooking.maps }) }) : fetch(new URL('./maps-config.json', import.meta.url), { cache: 'no-store' })).then(async response => {
       if (!response.ok) throw new Error('Location search is not configured for this website yet. Please contact the booking provider.');
@@ -157,16 +189,23 @@ export class MapsClient {
     })().catch(error => { this.library = null; throw error; });
     return this.library;
   }
-  async suggest(query, fieldId) {
+  async suggest(query, fieldId, { countryCode } = {}) {
+    const country = restrictionCountry(countryCode);
     const { AutocompleteSuggestion, AutocompleteSessionToken } = await this.ready();
+    if (this.sessionCountries.get(fieldId) !== country) {
+      this.sessions.delete(fieldId);
+      this.sessionCountries.set(fieldId, country);
+    }
     if (!this.sessions.has(fieldId)) this.sessions.set(fieldId, new AutocompleteSessionToken());
-    const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query, sessionToken: this.sessions.get(fieldId), language: 'en' });
+    const request = { input: query, sessionToken: this.sessions.get(fieldId), language: 'en' };
+    if (country) request.includedRegionCodes = [country.toLowerCase()];
+    const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
     return (response.suggestions || []).filter(s => s.placePrediction).slice(0, 5).map(s => ({ prediction: s.placePrediction, placeId: s.placePrediction.placeId, text: text(s.placePrediction.text), main: text(s.placePrediction.mainText), secondary: text(s.placePrediction.secondaryText) }));
   }
   async select(suggestion, fieldId) {
     // Selecting ends this session. New typing must get a fresh token even if
     // this selection's details response has not arrived yet.
-    this.sessions.delete(fieldId);
+    this.discardSession(fieldId);
     const place = suggestion.prediction.toPlace();
     return this.details(place, suggestion.text);
   }
@@ -175,14 +214,14 @@ export class MapsClient {
     return this.details(new Place({ id: placeId }));
   }
   async details(place, fallback = '') {
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'formattedAddress', 'attributions'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'formattedAddress', 'addressComponents', 'attributions'] });
     if (!place.id || !place.location) throw new Error('This place cannot be used for a driving route. Please choose another suggestion.');
     const name = place.displayName || '', address = place.formattedAddress || '';
     const label = name && address && !address.toLowerCase().includes(name.toLowerCase()) ? `${name}, ${address}` : address || name || fallback;
     if (!label) throw new Error('Please select this location again to restore its address.');
     const coordinates = coordinatesOf(place.location);
     if (!coordinates) throw new Error('This place has no valid map position. Please choose another suggestion.');
-    return { placeId: place.id, ...coordinates, name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
+    return { placeId: place.id, ...coordinates, ...countryOfPlace(place), name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
   }
   async describeDeviceLocation(point) {
     if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to find nearby landmarks.');
@@ -215,6 +254,7 @@ export class MapsClient {
     } finally { clearTimeout(timer); }
   }
   async route(request, signal) {
+    assertSameCountry([request?.origin, ...(Array.isArray(request?.stops) ? request.stops : []), request?.destination]);
     const config = await this.config();
     if (config.providerMode === 'browser') return this.browserRoute(request, signal);
     if (config.providerMode === 'remote' && config.previewExpiresAt && Date.now() >= new Date(config.previewExpiresAt).getTime()) throw new Error('This temporary test session has ended. Please restart the test session before calculating a new route.');
@@ -272,12 +312,12 @@ export class MapsClient {
       throw new Error(failure.message || 'The route could not be calculated. Please try again.');
     } finally { clearTimeout(timer); if (abort) signal?.removeEventListener('abort', abort); }
   }
-  discardSession(id) { this.sessions.delete(id); }
+  discardSession(id) { this.sessions.delete(id); this.sessionCountries.delete(id); }
 }
 
 // Suggestions are transient DOM/memory data. Every input owns its own session,
 // keyboard selection, and generation guard for both predictions and details.
-export function mountAutocomplete(input, { client, fieldId, onSelect, onError }) {
+export function mountAutocomplete(input, { client, fieldId, onSelect, onError, countryCode }) {
   let alive = true, selecting = false, generation = 0, timer, suggestions = [], active = -1, list;
   const owner = input.closest('.location-input');
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false');
@@ -292,8 +332,11 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError })
     const suggestion = suggestions[index]; if (!suggestion) return;
     const id = ++generation, query = input.value; selecting = true; close(); showMessage('Selecting location…');
     try {
+      const country = restrictionCountry(countryCode);
       const place = await client.select(suggestion, fieldId);
       if (!alive || id !== generation || input.value !== query) return;
+      if (restrictionCountry(countryCode) !== country) { close(); return; }
+      assertLocationCountry(place, country);
       close(); onSelect(place);
     } catch (error) { if (alive && id === generation) { showMessage(error.message); onError?.(error.message); } }
     finally { if (id === generation) selecting = false; }
@@ -308,8 +351,10 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError })
     timer = setTimeout(async () => {
       showMessage('Searching Google Maps…');
       try {
-        const result = await client.suggest(query, fieldId);
+        const country = restrictionCountry(countryCode);
+        const result = await client.suggest(query, fieldId, { countryCode: country });
         if (!alive || id !== generation || input.value.trim() !== query) return;
+        if (restrictionCountry(countryCode) !== country) { close(); return; }
         suggestions = result; close();
         if (!suggestions.length) { showMessage('No places found. Try a more specific address.'); return; }
         list = document.createElement('div'); list.className = 'places-dropdown';

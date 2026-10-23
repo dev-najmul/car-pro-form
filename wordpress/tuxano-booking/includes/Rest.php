@@ -15,6 +15,8 @@ final class Rest
         foreach (['route', 'bookings'] as $path) {
             register_rest_route(self::NAMESPACE, '/' . $path, ['methods' => 'POST', 'callback' => [self::class, $path], 'permission_callback' => [self::class, 'permission']]);
         }
+        register_rest_route(self::NAMESPACE, '/admin/route', ['methods' => 'POST', 'callback' => [self::class, 'admin_route'], 'permission_callback' => [self::class, 'admin_permission']]);
+        register_rest_route(self::NAMESPACE, '/admin/test-api', ['methods' => 'POST', 'callback' => [self::class, 'test_api'], 'permission_callback' => [self::class, 'admin_permission']]);
         add_filter('rest_post_dispatch', static function ($response, $server, $request) {
             if (strpos($request->get_route(), '/' . self::NAMESPACE . '/') === 0) {
                 $response->header('Cache-Control', 'private, no-store, max-age=0');
@@ -142,10 +144,10 @@ final class Rest
         return ['latitude' => $latitude, 'longitude' => $longitude];
     }
 
-    private static function route_request(array $body): array
+    private static function route_request(array $body, ?int $maximum_stops = null): array
     {
         $stops = $body['stops'] ?? [];
-        if (!is_array($stops) || !self::is_list($stops) || count($stops) > (int) Settings::get()['max_stops']) { throw new \InvalidArgumentException('Check the number and order of your stops.'); }
+        if (!is_array($stops) || !self::is_list($stops) || count($stops) > ($maximum_stops === null ? (int) Settings::get()['max_stops'] : $maximum_stops)) { throw new \InvalidArgumentException('Check the number and order of your stops.'); }
         return ['origin' => self::point($body['origin'] ?? null), 'destination' => self::point($body['destination'] ?? null), 'stops' => array_map([self::class, 'point'], $stops)];
     }
 
@@ -167,11 +169,27 @@ final class Rest
         if (!self::rate('route-session', hash('sha256', self::token($request)), (int) $settings['route_minute_limit'], MINUTE_IN_SECONDS) || !self::rate('route-client', self::client(), 120, MINUTE_IN_SECONDS) || !self::rate('route-global', 'all', (int) $settings['route_daily_limit'], DAY_IN_SECONDS)) {
             return self::fail('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429);
         }
+        $metrics = self::measure_route($points);
+        if (is_wp_error($metrics)) { return $metrics; }
+        $quote = bin2hex(random_bytes(32));
+        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
+        return array_merge($metrics, ['quoteToken' => $quote]);
+    }
+
+    /** A fixed, bounded Google request shared by public quotes and admin edits.
+     * @return array|\WP_Error
+     */
+    public static function measure_route(array $points, ?string $key = null, bool $admin = false)
+    {
+        try { $points = self::route_request($points, $admin ? 5 : null); }
+        catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
+        $key = $key === null ? (string) Settings::get()['routes_key'] : $key;
+        if ($key === '') { return self::fail('tuxano_not_configured', 'Route calculation is not configured. Please contact the transportation team.', 503); }
         $payload = ['origin' => self::google_waypoint($points['origin']), 'destination' => self::google_waypoint($points['destination']), 'intermediates' => array_map([self::class, 'google_waypoint'], $points['stops']), 'travelMode' => 'DRIVE', 'routingPreference' => 'TRAFFIC_UNAWARE', 'computeAlternativeRoutes' => false, 'optimizeWaypointOrder' => false, 'units' => 'METRIC'];
         // This endpoint is fixed, never visitor-controlled, and redirects are
         // disabled. The normal HTTP API also supports managed proxies with
         // remote DNS; wp_safe_remote_post would require unrelated local DNS.
-        $response = wp_remote_post('https://routes.googleapis.com/directions/v2:computeRoutes', ['timeout' => 15, 'redirection' => 0, 'sslverify' => true, 'limit_response_size' => 262144, 'headers' => ['Content-Type' => 'application/json', 'X-Goog-Api-Key' => $settings['routes_key'], 'X-Goog-FieldMask' => 'routes.distanceMeters,routes.duration'], 'body' => wp_json_encode($payload)]);
+        $response = wp_remote_post('https://routes.googleapis.com/directions/v2:computeRoutes', ['timeout' => 15, 'redirection' => 0, 'sslverify' => true, 'limit_response_size' => 262144, 'headers' => ['Content-Type' => 'application/json', 'X-Goog-Api-Key' => $key, 'X-Goog-FieldMask' => 'routes.distanceMeters,routes.duration'], 'body' => wp_json_encode($payload)]);
         if (is_wp_error($response)) { return self::fail('tuxano_google_unavailable', 'Google Routes is temporarily unavailable. Please try again.', 502); }
         $status = wp_remote_retrieve_response_code($response);
         $data = json_decode(wp_remote_retrieve_body($response), true);
@@ -180,9 +198,102 @@ final class Rest
             return self::fail('tuxano_google_route', $status === 200 ? 'No driving route was found. Please check your selected locations.' : 'Google could not calculate this route. Please try again or contact the transportation team.', 502);
         }
         $metrics = ['distanceMeters' => (float) $route['distanceMeters'], 'durationSeconds' => (float) $match[1], 'provider' => 'google', 'calculatedAt' => gmdate('c')];
-        $quote = bin2hex(random_bytes(32));
-        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
-        return array_merge($metrics, ['quoteToken' => $quote]);
+        return $metrics;
+    }
+
+    /** @return bool|\WP_Error */
+    public static function admin_permission(\WP_REST_Request $request)
+    {
+        if (!current_user_can('manage_options') || !wp_verify_nonce((string) $request->get_header('x-wp-nonce'), 'wp_rest')) {
+            return self::fail('tuxano_admin_forbidden', 'Administrator access and a valid security token are required.', 403);
+        }
+        return self::origin($request);
+    }
+
+    /** All administrator provider calls share the configured global cost cap. */
+    public static function admin_provider_budget(): bool
+    {
+        $settings = Settings::get();
+        return self::rate('admin-provider', (string) get_current_user_id(), 10, MINUTE_IN_SECONDS)
+            && self::rate('route-global', 'all', (int) $settings['route_daily_limit'], DAY_IN_SECONDS);
+    }
+
+    /** @return array|\WP_Error */
+    public static function admin_route(\WP_REST_Request $request)
+    {
+        $body = $request->get_json_params();
+        if (!is_array($body) || array_diff(array_keys($body), ['origin', 'destination', 'stops'])) { return self::fail('tuxano_route_input', 'Invalid route request.'); }
+        try { $points = self::route_request($body); }
+        catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
+        if (!self::admin_provider_budget()) { return self::fail('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
+        return self::measure_route($points, null, true);
+    }
+
+    /** Administrator-triggered connection check. No key is returned or logged.
+     * @return array|\WP_Error
+     */
+    public static function test_api(\WP_REST_Request $request)
+    {
+        $body = $request->get_json_params();
+        if (!is_array($body) || array_diff(array_keys($body), ['kind', 'key']) || !in_array($body['kind'] ?? '', ['browser', 'routes'], true)) {
+            return self::fail('tuxano_api_input', 'Choose a valid Google API connection to test.');
+        }
+        $kind = $body['kind'];
+        $key = $body['key'] ?? Settings::get()[$kind === 'browser' ? 'browser_key' : 'routes_key'];
+        if (!is_string($key) || !preg_match('/^[A-Za-z0-9_-]{20,200}$/D', $key)) {
+            return self::fail('tuxano_api_key', 'Enter or save a valid Google API key before testing.');
+        }
+        if ($kind === 'browser') {
+            // This is the intentionally public browser key, already exposed by
+            // the public Maps session. Only the nonce/capability-checked admin
+            // response uses it to test a fresh isolated browser SDK instance.
+            // PHP alone cannot establish HTTP-referrer/Places authorization.
+            return ['valid' => null, 'status' => 'browser_check_required', 'browserKey' => $key, 'message' => 'The browser key is ready for an isolated Maps JavaScript and Places authorization test on this domain.'];
+        }
+        if (!self::admin_provider_budget()) { return self::fail('tuxano_rate', 'Wait before testing the API again.', 429); }
+        $metrics = self::measure_route(['origin' => ['latitude' => 40.758, 'longitude' => -73.9855], 'destination' => ['latitude' => 40.7527, 'longitude' => -73.9772], 'stops' => []], $key);
+        if (is_wp_error($metrics)) { return self::fail('tuxano_api_connection', 'The Routes key could not complete a test route. Check the key, enabled Routes API, billing and allowed server restrictions.', 400); }
+        return ['valid' => true, 'status' => 'connected', 'message' => 'Google Routes accepted the key and returned a driving route. One test request was used.'];
+    }
+
+    /** Canonical route pointers exclude display text and untrusted country hints. */
+    public static function booking_points(array $body, bool $admin = false): array
+    {
+        $trip = $body['trip'] ?? null;
+        if (!is_array($trip) || !is_array($trip['stops'] ?? null) || !self::is_list($trip['stops'])) { throw new \InvalidArgumentException('Complete the trip details.'); }
+        self::country_consistency($trip);
+        return self::route_request(['origin' => self::selected($trip['pickupPlace'] ?? null), 'destination' => self::selected($trip['dropoffPlace'] ?? null), 'stops' => array_map(static fn($stop) => self::selected(is_array($stop) ? ($stop['place'] ?? null) : null), $trip['stops'])], $admin ? 5 : null);
+    }
+
+    /**
+     * Country hints originate in Google SDK details in the normal UI. They are
+     * a consistency/usability check, not server-verified geographic authority.
+     * Unknown coordinate countries are never guessed. Google still owns routes.
+     */
+    private static function country_consistency(array $trip): void
+    {
+        $countries = [];
+        $places = [$trip['pickupPlace'] ?? null, $trip['dropoffPlace'] ?? null];
+        foreach ($trip['stops'] ?? [] as $stop) { $places[] = is_array($stop) ? ($stop['place'] ?? null) : null; }
+        foreach ($places as $place) {
+            if (!is_array($place)) { continue; }
+            $code = $place['countryCode'] ?? '';
+            if ($code === '' || $code === null) { continue; }
+            if (!is_string($code) || !isset(Countries::all()[$code])) { throw new \InvalidArgumentException('Choose locations with valid country information.'); }
+            $countries[$code] = true;
+        }
+        if (count($countries) > 1) { throw new \InvalidArgumentException('Choose pickup, stops and destination in the same country. Contact the transportation team for a cross-border trip.'); }
+    }
+
+    /** Retain qualified UI metadata without sending it to Google as a waypoint. */
+    private static function selected_metadata(array $canonical, array $source): array
+    {
+        $code = $source['countryCode'] ?? '';
+        if (is_string($code) && isset(Countries::all()[$code])) {
+            $canonical['countryCode'] = $code;
+            if (isset($source['countryName'])) { $canonical['countryName'] = self::text($source['countryName'], 120); }
+        }
+        return $canonical;
     }
 
     /** @param mixed $value */
@@ -214,36 +325,36 @@ final class Rest
         return isset($point['placeId']) ? self::point(['placeId' => $point['placeId']]) : self::point(['latitude' => $point['latitude'] ?? null, 'longitude' => $point['longitude'] ?? null]);
     }
 
-    private static function booking(array $body, array $quote): array
+    public static function validate_booking(array $body, array $quote, bool $admin = false, ?array $historical_vehicle = null): array
     {
         $settings = Settings::get();
         $trip = $body['trip'] ?? null;
-        if (!is_array($trip) || !is_array($trip['stops'] ?? null) || !self::is_list($trip['stops'])) { throw new \InvalidArgumentException('Complete the trip details.'); }
-        $points = self::route_request(['origin' => self::selected($trip['pickupPlace'] ?? null), 'destination' => self::selected($trip['dropoffPlace'] ?? null), 'stops' => array_map(static fn($stop) => self::selected(is_array($stop) ? ($stop['place'] ?? null) : null), $trip['stops'])]);
+        $points = self::booking_points($body, $admin);
         if (wp_json_encode($points) !== wp_json_encode($quote['points'])) { throw new \InvalidArgumentException('Your route changed. Calculate the route again before submitting.'); }
         $service = $trip['service'] ?? '';
         if (!in_array($service, ['transfer', 'hourly'], true)) { throw new \InvalidArgumentException('Choose a valid service.'); }
-        $hours = self::integer($trip['hours'] ?? null, (int) $settings['min_hours'], (int) $settings['max_hours']);
+        $hours = self::integer($trip['hours'] ?? null, $admin ? 1 : (int) $settings['min_hours'], $admin ? 24 : (int) $settings['max_hours']);
         $date = self::text($trip['date'] ?? '', 10, true); $time = self::text($trip['time'] ?? '', 5, true);
         $scheduled = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $date . ' ' . $time, wp_timezone());
-        if (!$scheduled || $scheduled->format('Y-m-d H:i') !== $date . ' ' . $time || $scheduled->getTimestamp() <= time() || $scheduled->getTimestamp() > time() + 5 * YEAR_IN_SECONDS) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the booking website timezone.'); }
-        $vehicle = Vehicles::find(self::text($body['vehicle'] ?? '', 20, true));
+        if (!$scheduled || $scheduled->format('Y-m-d H:i') !== $date . ' ' . $time || ($admin ? ((int) $scheduled->format('Y') < 1970 || (int) $scheduled->format('Y') > 2100) : ($scheduled->getTimestamp() <= time() || $scheduled->getTimestamp() > time() + 5 * YEAR_IN_SECONDS))) { throw new \InvalidArgumentException($admin ? 'Enter a valid pickup date and time between 1970 and 2100.' : 'Choose a future pickup date and time within five years, in the booking website timezone.'); }
+        $vehicle_id = self::text($body['vehicle'] ?? '', 20, true);
+        $vehicle = $admin && $historical_vehicle && (string) ($historical_vehicle['id'] ?? '') === $vehicle_id ? $historical_vehicle : Vehicles::find($vehicle_id);
         if (!$vehicle) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
-        $clean = ['trip' => ['service' => $service, 'hours' => $hours, 'date' => $date, 'time' => $time, 'pickup' => self::text($trip['pickup'] ?? '', 1024, true), 'dropoff' => self::text($trip['dropoff'] ?? '', 1024, true), 'pickupPlace' => $points['origin'], 'dropoffPlace' => $points['destination'], 'stops' => []], 'vehicle' => $vehicle['id'], 'passengers' => self::integer($body['passengers'] ?? null, 1, $vehicle['capacity']), 'luggage' => self::integer($body['luggage'] ?? null, 0, $vehicle['luggageCapacity'])];
+        $clean = ['trip' => ['service' => $service, 'hours' => $hours, 'date' => $date, 'time' => $time, 'timezone' => wp_timezone_string(), 'pickup' => self::text($trip['pickup'] ?? '', 1024, true), 'dropoff' => self::text($trip['dropoff'] ?? '', 1024, true), 'pickupPlace' => self::selected_metadata($points['origin'], $trip['pickupPlace']), 'dropoffPlace' => self::selected_metadata($points['destination'], $trip['dropoffPlace']), 'stops' => []], 'vehicle' => $vehicle['id'], 'passengers' => self::integer($body['passengers'] ?? null, 1, $vehicle['capacity']), 'luggage' => self::integer($body['luggage'] ?? null, 0, $vehicle['luggageCapacity'])];
         foreach ($trip['stops'] as $index => $stop) {
             $wait = self::integer($stop['waitMinutes'] ?? null, 0, 120);
             if (!in_array($wait, self::WAIT_OPTIONS, true)) { throw new \InvalidArgumentException('Select an available stop waiting time.'); }
-            $clean['trip']['stops'][] = ['text' => self::text($stop['text'] ?? '', 1024, true), 'waitMinutes' => $wait, 'place' => $points['stops'][$index]];
+            $clean['trip']['stops'][] = ['text' => self::text($stop['text'] ?? '', 1024, true), 'waitMinutes' => $wait, 'place' => self::selected_metadata($points['stops'][$index], $stop['place'])];
         }
         foreach (['meet', 'child', 'inPerson', 'same', 'consent'] as $key) { $clean[$key] = self::boolean($body, $key); }
-        if (!$clean['consent']) { throw new \InvalidArgumentException('Please agree to the reservation terms before submitting.'); }
+        if (!$admin && !$clean['consent']) { throw new \InvalidArgumentException('Please agree to the reservation terms before submitting.'); }
         $clean['carSeats'] = self::integer($body['carSeats'] ?? null, 0, 100);
         $clean['boosterSeats'] = self::integer($body['boosterSeats'] ?? null, 0, 100);
         if ($clean['child'] && $clean['carSeats'] + $clean['boosterSeats'] > $clean['passengers']) { throw new \InvalidArgumentException('Child seats cannot exceed passenger count.'); }
         if (!$clean['child']) { $clean['carSeats'] = 0; $clean['boosterSeats'] = 0; }
         $gratuity = $body['gratuity'] ?? '';
         $presets = array_map('strval', array_unique([10, 15, 20, 25, (float) $settings['default_gratuity']]));
-        if (!is_string($gratuity) || ($gratuity !== 'custom' && !in_array($gratuity, $presets, true))) { throw new \InvalidArgumentException('Choose a valid gratuity.'); }
+        if (!is_string($gratuity) || ($gratuity !== 'custom' && ($admin ? Settings::decimal($gratuity, 100) === null : !in_array($gratuity, $presets, true)))) { throw new \InvalidArgumentException('Choose a valid gratuity.'); }
         $custom = $body['custom'] ?? 0;
         if ((!is_int($custom) && !is_float($custom)) || !is_finite((float) $custom) || $custom < 0 || $custom > 100) { throw new \InvalidArgumentException('Custom gratuity must be between 0 and 100 percent.'); }
         $clean['gratuity'] = $gratuity; $clean['custom'] = $custom;
@@ -252,10 +363,13 @@ final class Rest
         foreach (['billing', 'passenger'] as $section) {
             if (!is_array($body[$section] ?? null)) { throw new \InvalidArgumentException('Complete the contact and billing details.'); }
             $fields = $section === 'billing' ? ['first', 'last', 'email', 'phone', 'company', 'street', 'unit', 'city', 'region', 'zip', 'country', 'notes'] : ['first', 'last', 'email', 'mobile'];
-            $optional = $section === 'billing' ? ['company', 'unit', 'notes'] : ['email'];
+            $optional = $section === 'billing' ? ['company', 'unit', 'notes', 'region', 'zip'] : ['email'];
             $clean[$section] = [];
-            foreach ($fields as $key) { $clean[$section][$key] = self::text($body[$section][$key] ?? '', $key === 'notes' ? 500 : ($key === 'email' ? 254 : 200), !in_array($key, $optional, true), $key === 'notes'); }
+            foreach ($fields as $key) { $clean[$section][$key] = self::text($body[$section][$key] ?? '', $key === 'notes' ? 500 : ($key === 'email' ? 254 : ($key === 'region' ? 120 : ($key === 'zip' ? 40 : 200))), !in_array($key, $optional, true), $key === 'notes'); }
         }
+        $country = Countries::normalize($clean['billing']['country']);
+        if ($country === null) { throw new \InvalidArgumentException('Choose a valid billing country from the available countries.'); }
+        $clean['billing']['country'] = $country;
         if ($clean['same']) { $clean['passenger'] = ['first' => $clean['billing']['first'], 'last' => $clean['billing']['last'], 'email' => $clean['billing']['email'], 'mobile' => $clean['billing']['phone']]; }
         foreach ([$clean['billing']['email'], $clean['passenger']['email']] as $email) { if ($email !== '' && !is_email($email)) { throw new \InvalidArgumentException('Enter valid contact email addresses.'); } }
         foreach ([$clean['billing']['phone'], $clean['passenger']['mobile']] as $phone) { $length = strlen(preg_replace('/\D/', '', $phone)); if ($length < 7 || $length > 15) { throw new \InvalidArgumentException('Enter valid contact phone numbers.'); } }
@@ -281,7 +395,7 @@ final class Rest
         $quote = is_string($quoteToken) && preg_match('/^[a-f0-9]{64}$/D', $quoteToken) ? get_transient('tuxano_quote_' . hash('sha256', $quoteToken)) : false;
         if (!$quote || !hash_equals($quote['session'], hash('sha256', self::token($request)))) { return self::fail('tuxano_quote_expired', 'Your route quote has expired. Recalculate the route and try again.', 409); }
         if (!hash_equals($quote['revision'], Settings::revision())) { return self::fail('tuxano_pricing_changed', 'Vehicle or pricing settings changed. Refresh the page to obtain the current quote.', 409); }
-        try { [$booking, $vehicle, $pickup] = self::booking($body['booking'], $quote); $pricing = Pricing::calculate($vehicle, $quote['route'], $booking, Settings::get()); }
+        try { [$booking, $vehicle, $pickup] = self::validate_booking($body['booking'], $quote); $pricing = Pricing::calculate($vehicle, $quote['route'], $booking, Settings::get()); }
         catch (\InvalidArgumentException $error) { return self::fail('tuxano_booking_validation', $error->getMessage()); }
         $reference = 'TUX-' . gmdate('Y') . '-' . strtoupper(bin2hex(random_bytes(6)));
         $settings = Settings::get();
@@ -297,6 +411,7 @@ final class Rest
 
     private static function receipt(array $row): array
     {
-        return ['requestId' => $row['reference'], 'pricing' => $row['pricing'], 'route' => $row['route']];
+        $original = $row['history'][0]['original'] ?? null;
+        return ['requestId' => $row['reference'], 'pricing' => is_array($original) ? $original['pricing'] : $row['pricing'], 'route' => is_array($original) ? $original['route'] : $row['route']];
     }
 }

@@ -1,11 +1,12 @@
-# WordPress plugin — Tuxano Booking 2.0.1
+# WordPress plugin — Tuxano Booking 2.1.0
 
 The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
 
-- [Plugin ZIP](releases/tuxano-booking-2.0.1.zip) · [checksum](releases/tuxano-booking-2.0.1.zip.sha256)
+- [Plugin ZIP](releases/tuxano-booking-2.1.0.zip) · [checksum](releases/tuxano-booking-2.1.0.zip.sha256)
 - [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
 - Shortcode: `[tuxano_booking]`. For the full reference design choose **Tuxano Booking — full page** as the page template.
 - Build: `npm run build:wordpress`. Existing static setup and historical prototype notes follow below.
+- [Full 2.1 upgrade checklist](wordpress/UPGRADE-2.1.md): all eight admin/trip points plus five frontend groups from the owner's documents. Author: [Farhan](https://farhanrajnajmul.com/).
 
 # TUXANO Reservation Request
 

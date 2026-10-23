@@ -1,6 +1,7 @@
-import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE_LOCATION_POLICY, normalizeDevicePosition, requestDeviceLocation } from "./maps.js";
+import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE_LOCATION_POLICY, normalizeDevicePosition, requestDeviceLocation, assertSameCountry, countryCodeOf } from "./maps.js";
 import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
+import { COUNTRY_NAMES } from "./countries.js";
 /* The shared frontend supports both the static prototype and WordPress runtime. */
 (() => {
   "use strict";
@@ -24,6 +25,8 @@ import { mountPickupMap } from "./pickup-map.js";
   let restoringPlaces = false;
   let deviceLocation = { status: "idle", candidate: null, message: "" };
   let pickupMapCleanup;
+  const fieldErrors = new Map();
+  const touchedFields = new Set();
   const newStopId = () => "stop-" + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
   const makeStop = (text = "") => ({ id: newStopId(), text, query: text, place: null, waitMinutes: 5 });
   const routes = [
@@ -504,13 +507,21 @@ import { mountPickupMap } from "./pickup-map.js";
   const announce = (text) => {
     document.querySelector("#announcement").textContent = text;
   };
+  const fieldKey = path => "field-" + path.replace(/[^a-zA-Z0-9_-]/g, "-");
   const field = (
     path,
     label,
     placeholder,
     { type = "text", required = false, cls = "", max = "", list = "" } = {},
-  ) =>
-    `<input class="input ${cls}" type="${type}" name="${path}" data-field="${path}" aria-label="${label}" placeholder="${e(placeholder)}" value="${e(get(path))}" ${required ? "required" : ""} ${max ? `maxlength="${max}"` : ""} ${list ? `list="${list}"` : ""} autocomplete="${{ "billing.first": "given-name", "billing.last": "family-name", "billing.email": "email", "billing.phone": "tel", "billing.street": "address-line1", "billing.unit": "address-line2", "billing.city": "address-level2", "billing.zip": "postal-code" }[path] || "off"}">`;
+  ) => {
+    const contact = /^(billing|passenger)\./.test(path);
+    const limits = { "billing.first": 100, "billing.last": 100, "billing.email": 254, "billing.phone": 60, "billing.company": 200, "billing.street": 300, "billing.unit": 200, "billing.city": 120, "billing.region": 120, "billing.zip": 40, "passenger.first": 100, "passenger.last": 100, "passenger.mobile": 60, "passenger.email": 254 };
+    const maximum = max || limits[path] || "";
+    const id = fieldKey(path);
+    const message = fieldErrors.get(path) || "";
+    const input = `<input class="input ${cls}${message ? " field-invalid" : ""}" type="${type}" name="${path}" data-field="${path}" ${contact ? `id="${id}" aria-invalid="${Boolean(message)}"${message ? ` aria-describedby="${id}-error"` : ""}` : ""} aria-label="${label}" placeholder="${e(placeholder)}" value="${e(get(path))}" ${required ? "required" : ""} ${maximum ? `maxlength="${maximum}"` : ""} ${list ? `list="${list}"` : ""} autocomplete="${{ "billing.first": "given-name", "billing.last": "family-name", "billing.email": "email", "billing.phone": "tel", "billing.street": "address-line1", "billing.unit": "address-line2", "billing.city": "address-level2", "billing.region": "address-level1", "billing.zip": "postal-code", "passenger.first": "given-name", "passenger.last": "family-name", "passenger.mobile": "tel", "passenger.email": "email" }[path] || "off"}">`;
+    return contact ? `<div class="form-field"><label class="field-caption" for="${id}">${e(label)}${required ? ' <span aria-hidden="true">*</span>' : ' <span class="field-optional">(optional)</span>'}</label>${input}<p class="field-error" id="${id}-error" ${message ? "" : "hidden"}>${e(message)}</p></div>` : input;
+  };
   const textarea = (path, label, placeholder, max) =>
     `<div class="textarea-wrap"><textarea class="input" data-field="${path}" aria-label="${label}" placeholder="${e(placeholder)}" maxlength="${max}">${e(get(path))}</textarea><span class="char-count" data-counter="${path}">${get(path).length}/${max}</span></div>`;
   const toggle = (name, label) =>
@@ -541,56 +552,88 @@ import { mountPickupMap } from "./pickup-map.js";
   const selectedPoint = (point, value) => Boolean(point && point.text === value && (point.placeId || Number.isFinite(point.latitude) && Number.isFinite(point.longitude)));
   const deviceBusy = () => ["locating", "resolving"].includes(deviceLocation.status);
   const accuracyLabel = meters => meters === 0 ? "under 1 m" : meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.ceil(meters)} m`;
-  function deviceLocationMarkup() {
-    if (deviceLocation.status === "idle") return "";
-    if (deviceLocation.status === "map") return `<section class="device-location-panel pickup-map-picker" data-testid="pickup-map-picker" aria-label="Choose pickup on map"><h4>CHOOSE PICKUP ON MAP</h4><p>PC location can be approximate. Search your correct city/address, then click or move the map to place the center pin at your pickup.</p><label class="map-search-label" for="pickup-map-search">Search map for pickup</label><div class="location-input"><input id="pickup-map-search" class="input" data-map-search aria-label="Search map for pickup" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map class="pickup-map-canvas" aria-label="Pickup point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-pickup-map">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
+  const mapFieldLabel = fieldId => fieldId.startsWith("stop:") ? `stop ${state.trip.stops.findIndex(stop => stop.id === fieldId.slice(5)) + 1}` : fieldId === "dropoff" ? "drop-off" : "pickup";
+  const mapFieldPoint = fieldId => fieldId.startsWith("stop:") ? state.trip.stops.find(stop => stop.id === fieldId.slice(5))?.place : state.trip[fieldId + "Place"];
+  const mapTarget = () => deviceLocation.fieldId || "pickup";
+  function deviceLocationMarkup(fieldId = "pickup") {
+    if (deviceLocation.status === "idle" || (deviceLocation.status === "map" ? mapTarget() !== fieldId : fieldId !== "pickup")) return "";
+    if (deviceLocation.status === "map") {
+      const label = mapFieldLabel(fieldId), searchId = fieldId === "pickup" ? "pickup-map-search" : "map-search-" + fieldId.replace(/[^a-zA-Z0-9_-]/g, "-");
+      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Search and select an address, or click a named place on the map to use it. For an exact custom point, move the pin and confirm.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
+    }
     const candidate = deviceLocation.candidate;
     const url = candidate ? googlePlaceUrl(candidate) : "";
     return `<section class="device-location-panel" data-testid="device-location-preview" aria-label="Check detected pickup location"><h4>${deviceBusy() ? "CHECKING YOUR LOCATION" : "CHECK DETECTED PICKUP"}</h4><p class="device-location-message" role="status">${e(deviceLocation.message)}</p>${candidate ? `<p class="device-location-context">${e(candidate.text)}</p><dl><div><dt>Detected coordinates</dt><dd>${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}</dd></div><div><dt>Reported accuracy</dt><dd>Within ${accuracyLabel(candidate.accuracyMeters)}</dd></div></dl>${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">View detected location in Google Maps</a>` : ""}${candidate.nearbyName ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span><span>Nearby landmark, not an exact pickup address.</span></div>${attributionsMarkup(candidate.attributions || [])}` : ""}` : ""}<div class="device-location-actions">${deviceLocation.status === "ready" && candidate?.precise ? '<button type="button" class="btn primary" data-action="use-device-location">Use this pickup location</button>' : ""}<button type="button" class="${candidate?.precise ? "text-link" : "btn primary"}" data-action="choose-pickup-map">Choose pickup on map</button>${!deviceBusy() ? '<button type="button" class="text-link" data-action="locate">Try location again</button>' : ""}<button type="button" class="text-link" data-action="cancel-device-location">Cancel location detection</button></div></section>`;
   }
   function refreshDeviceLocation() {
     pickupMapCleanup?.(); pickupMapCleanup = null;
-    const box = app.querySelector(".device-location-wrap");
-    if (box) box.innerHTML = deviceLocationMarkup();
-    const mapLink = app.querySelector('.pickup-map-open');
-    if (mapLink) mapLink.hidden = deviceLocation.status !== "idle";
+    app.querySelectorAll("[data-map-wrap]").forEach(box => { box.innerHTML = deviceLocationMarkup(box.dataset.mapWrap); });
+    app.querySelectorAll(".location-map-open").forEach(button => { button.hidden = deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? button.dataset.mapField === mapTarget() : button.dataset.mapField === "pickup"); });
     const button = app.querySelector('[data-action="locate"].location-target');
     if (button) { button.disabled = deviceBusy(); button.setAttribute("aria-busy", String(deviceBusy())); }
     mountDeviceMap();
   }
   function refreshMapSelection() {
-    const panel = app.querySelector('[data-testid="pickup-map-picker"]');
+    const panel = app.querySelector('[data-map-picker]');
     if (!panel || deviceLocation.status !== "map") return;
     const candidate = deviceLocation.candidate;
     panel.querySelector('[data-action="use-map-location"]').disabled = !candidate;
-    panel.querySelector('[data-map-selection]').innerHTML = candidate ? `<p class="device-location-context">${e(candidate.text)}</p><p>Selected coordinates: ${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}. Manually chosen map point.</p><a href="${e(googlePlaceUrl(candidate))}" target="_blank" rel="noopener noreferrer">View selected pin in Google Maps</a>${candidate.nearbyName ? `<p>Nearby landmark, not an exact pickup address.</p>${attributionsMarkup(candidate.attributions || [])}` : ""}` : '<p>No pickup point selected yet. Choose your address or place the pin on the map.</p>';
+    panel.querySelector('[data-map-selection]').innerHTML = candidate ? `<p class="device-location-context">${e(candidate.text)}</p><p>Selected coordinates: ${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}. Manually chosen map point.</p><a href="${e(googlePlaceUrl(candidate))}" target="_blank" rel="noopener noreferrer">View selected pin in Google Maps</a>${candidate.nearbyName ? `<p>Nearby landmark, not an exact address.</p>${attributionsMarkup(candidate.attributions || [])}` : ""}` : '<p>No point selected yet. Choose an address or place the pin on the map.</p>';
+  }
+  function assignLocation(fieldId, place) {
+    if (fieldId.startsWith("stop:")) {
+      const stop = state.trip.stops.find(item => item.id === fieldId.slice(5));
+      if (!stop) return false;
+      stop.text = place.text; stop.query = place.text; stop.place = place;
+    } else {
+      state.trip[fieldId] = place.text; state.trip[fieldId + "Query"] = place.text; state.trip[fieldId + "Place"] = place;
+    }
+    return true;
+  }
+  function countryConflictForField(fieldId) {
+    if (fieldId === "pickup") return "";
+    try { assertSameCountry([state.trip.pickupPlace, mapFieldPoint(fieldId)]); return ""; } catch (failure) { return failure.message; }
+  }
+  function countryConflict() {
+    try { assertSameCountry([state.trip.pickupPlace, ...state.trip.stops.map(stop => stop.place), state.trip.dropoffPlace]); return ""; } catch (failure) { return failure.message; }
+  }
+  function commitMapPlace(fieldId, place, generation) {
+    if (generation !== locationGeneration || deviceLocation.status !== "map" || mapTarget() !== fieldId) return;
+    if (!place || !Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
+    try { if (fieldId !== "pickup") assertSameCountry([state.trip.pickupPlace, place]); } catch (failure) { announce(failure.message); return; }
+    cancelDeviceLocation(); dirty(); invalidateRoute();
+    if (!assignLocation(fieldId, { ...place, confirmedAt: Date.now() })) return;
+    save(); render(); calculateRoute();
+    app.querySelector(`[data-place-field="${CSS.escape(fieldId)}"]`)?.focus({ preventScroll: true });
+    announce(`${mapFieldLabel(fieldId)} selected from Google Maps.`);
   }
   function mountDeviceMap() {
-    const panel = app.querySelector('[data-testid="pickup-map-picker"]');
+    const panel = app.querySelector('[data-map-picker]');
     if (!panel || deviceLocation.status !== "map") return;
-    const generation = locationGeneration;
-    pickupMapCleanup = mountPickupMap(panel, { client: maps, initial: deviceLocation.candidate || deviceLocation.mapInitial, onPick: candidate => {
-      if (generation !== locationGeneration || deviceLocation.status !== "map") return;
-      deviceLocation.candidate = candidate; refreshMapSelection();
-    } });
+    const generation = locationGeneration, fieldId = mapTarget();
+    pickupMapCleanup = mountPickupMap(panel, {
+      client: maps, fieldId, label: mapFieldLabel(fieldId),
+      countryCode: fieldId === "pickup" ? "" : () => countryCodeOf(state.trip.pickupPlace?.countryCode),
+      initial: deviceLocation.candidate || deviceLocation.mapInitial,
+      onPick: candidate => {
+        if (generation !== locationGeneration || deviceLocation.status !== "map" || mapTarget() !== fieldId) return;
+        deviceLocation.candidate = candidate; refreshMapSelection();
+      },
+      onCommit: place => commitMapPlace(fieldId, place, generation),
+    });
     refreshMapSelection();
   }
-  function choosePickupMap() {
-    const initial = deviceLocation.candidate || state.trip.pickupPlace;
+  function choosePickupMap(fieldId = "pickup") {
+    if (fieldId.startsWith("stop:") && !state.trip.stops.some(stop => stop.id === fieldId.slice(5))) return;
+    const initial = (mapTarget() === fieldId ? deviceLocation.candidate : null) || mapFieldPoint(fieldId);
     ++locationGeneration;
-    deviceLocation = { status: "map", candidate: null, mapInitial: initial, message: "" };
+    deviceLocation = { status: "map", fieldId, candidate: null, mapInitial: initial, message: "" };
     refreshDeviceLocation();
   }
   function useMapLocation() {
-    const candidate = deviceLocation.candidate;
+    const candidate = deviceLocation.candidate, fieldId = mapTarget(), generation = locationGeneration;
     if (deviceLocation.status !== "map" || candidate?.source !== "map" || !Number.isFinite(candidate.latitude) || Math.abs(candidate.latitude) > 90 || !Number.isFinite(candidate.longitude) || Math.abs(candidate.longitude) > 180) return;
-    cancelDeviceLocation(); dirty(); invalidateRoute();
-    state.trip.pickup = candidate.text;
-    state.trip.pickupQuery = `${candidate.latitude}, ${candidate.longitude}`;
-    state.trip.pickupPlace = { ...candidate, confirmedAt: Date.now() };
-    save(); render(); calculateRoute();
-    app.querySelector('[data-place-field="pickup"]')?.focus();
-    announce("Map pickup confirmed. The route uses your selected pin coordinates.");
+    commitMapPlace(fieldId, candidate, generation);
   }
   function cancelDeviceLocation() {
     ++locationGeneration;
@@ -674,7 +717,7 @@ import { mountPickupMap } from "./pickup-map.js";
     return links.length ? `<div class="route-comparison">${links.map((url, i) => `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">View ${links.length > 1 ? `route part ${i + 1}` : "route"} in Google Maps</a>`).join("")}${links.length > 1 ? "<p>All stops are included. Open each route part to check the full journey.</p>" : ""}</div>` : "";
   }
   const routeRequest = () => {
-    if (restoringPlaces) return null;
+    if (restoringPlaces || countryConflict()) return null;
     const trip = state.trip;
     if (!selectedPoint(trip.pickupPlace, trip.pickup) || !selectedPoint(trip.dropoffPlace, trip.dropoff) || trip.stops.some(stop => !selectedPoint(stop.place, stop.text))) return null;
     const waypoint = point => point.placeId ? { placeId: point.placeId } : { latitude: point.latitude, longitude: point.longitude };
@@ -695,8 +738,13 @@ import { mountPickupMap } from "./pickup-map.js";
     const travel = route ? formatDuration(route.durationSeconds + waitingMinutes() * 60) : "";
     const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : "Select pickup, drop-off, and any stops from the location suggestions.";
     const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId || point?.nearbyName);
+    if (full && !route && routeStatus !== "loading" && routeStatus !== "error" && !restoringPlaces) {
+      const attribution = hasGooglePlace && !DEMO_MODE ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span></div>${providerAttributions()}` : "";
+      const policyLinks = runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>';
+      return attribution + policyLinks;
+    }
     const previewNote = full && maps.previewExpiresAt ? `<p class="test-session-note">Temporary live test · Route server available until ${e(new Date(maps.previewExpiresAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))}.</p>` : '';
-    return `${previewNote}${full ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : ""}" role="${routeStatus === "error" ? "alert" : "status"}">${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
+    return `${previewNote}${full && route ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : routeStatus === "loading" ? "route-loading" : ""}" role="${routeStatus === "error" ? "alert" : "status"}" ${routeStatus === "loading" ? 'aria-busy="true"' : ""}>${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
   }
   function providerAttributions() {
     const points = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)];
@@ -715,6 +763,13 @@ import { mountPickupMap } from "./pickup-map.js";
     refreshRoutePanel();
   }
   async function calculateRoute() {
+    const conflict = countryConflict();
+    if (conflict) {
+      ++routeGeneration; routeController?.abort(); routePromise = null; currentRoute = null;
+      routeStatus = "error"; routeMessage = conflict; refreshRoutePanel(); updateValidity();
+      app.querySelectorAll('[data-place-field]:not([data-place-field="pickup"])').forEach(control => { if (countryConflictForField(control.dataset.placeField)) paintFieldValidation(control); });
+      return false;
+    }
     const request = routeRequest(), signature = routeSignature();
     if (!request) { routeStatus = "idle"; refreshRoutePanel(); return false; }
     if (usableRoute()) return true;
@@ -741,7 +796,7 @@ import { mountPickupMap } from "./pickup-map.js";
   function mountPlaces() {
     app.querySelectorAll("[data-place-field]").forEach(input => {
       const fieldId = input.dataset.placeField;
-      autocompleteCleanups.push(mountAutocomplete(input, { client: maps, fieldId, onSelect: place => {
+      autocompleteCleanups.push(mountAutocomplete(input, { client: maps, fieldId, countryCode: fieldId === "pickup" ? "" : () => countryCodeOf(state.trip.pickupPlace?.countryCode), onSelect: place => {
         dirty(); invalidateRoute();
         if (fieldId.startsWith("stop:")) {
           const stop = state.trip.stops.find(item => item.id === fieldId.slice(5));
@@ -749,6 +804,8 @@ import { mountPickupMap } from "./pickup-map.js";
           stop.text = place.text; stop.place = place;
         } else { if (fieldId === "pickup") cancelDeviceLocation(); state.trip[fieldId] = place.text; state.trip[fieldId + "Place"] = place; }
         input.value = place.text;
+        updateValidity();
+        if (input.getAttribute("aria-invalid") === "true") paintFieldValidation(input);
         save(); refreshRoutePanel(); calculateRoute();
       }, onError: message => announce(message) }));
     });
@@ -781,9 +838,10 @@ import { mountPickupMap } from "./pickup-map.js";
   // Step 1: selected Google places, ordered stopovers, separate pickup clock time,
   // and an automatic driving + waiting duration.
   function tripPage() {
-    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${target ? `<div class="device-location-wrap">${deviceLocationMarkup()}</div>` : ""}`;
+    const mapControls = fieldId => DEMO_MODE ? "" : `<button type="button" class="text-link location-map-open${fieldId === "pickup" ? " pickup-map-open" : ""}" data-action="choose-map" data-map-field="${e(fieldId)}" ${deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? mapTarget() === fieldId : fieldId === "pickup") ? "hidden" : ""}>Choose ${mapFieldLabel(fieldId)} on map</button><div class="location-map-wrap${fieldId === "pickup" ? " device-location-wrap" : ""}" data-map-wrap="${e(fieldId)}">${deviceLocationMarkup(fieldId)}</div>`;
+    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${mapControls(path)}`;
     const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
-    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}${DEMO_MODE ? "" : `<button type="button" class="text-link pickup-map-open" data-action="choose-pickup-map" ${deviceLocation.status !== "idle" ? "hidden" : ""}>Choose pickup on map</button>`}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:settings.maxHours - settings.minHours + 1}, (_,i) => i + settings.minHours).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div>${runtime ? `<p class="route-status">Pickup dates and times use ${e(settings.timezone || "the website timezone")}.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
+    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}${mapControls("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label><select id="hours" class="input" aria-label="Hours" data-field="trip.hours">${Array.from({length:settings.maxHours - settings.minHours + 1}, (_,i) => i + settings.minHours).map(hours => `<option value="${hours}" ${hours === state.trip.hours ? "selected" : ""}>${hours} hours</option>`).join("")}</select></div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", timeLabel(), "time")}</div>${runtime ? `<p class="route-status">Pickup dates and times use ${e(settings.timezone || "the website timezone")}.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
   // Step 2: all six vehicle classes, using the original supplied pictures.
@@ -816,100 +874,15 @@ import { mountPickupMap } from "./pickup-map.js";
   }
 
   // Step 4: payer, primary passenger, and billing address.
-  const regions = [
-    "Alabama",
-    "Alaska",
-    "Arizona",
-    "Arkansas",
-    "California",
-    "Colorado",
-    "Connecticut",
-    "Delaware",
-    "District of Columbia",
-    "Florida",
-    "Georgia",
-    "Hawaii",
-    "Idaho",
-    "Illinois",
-    "Indiana",
-    "Iowa",
-    "Kansas",
-    "Kentucky",
-    "Louisiana",
-    "Maine",
-    "Maryland",
-    "Massachusetts",
-    "Michigan",
-    "Minnesota",
-    "Mississippi",
-    "Missouri",
-    "Montana",
-    "Nebraska",
-    "Nevada",
-    "New Hampshire",
-    "New Jersey",
-    "New Mexico",
-    "New York",
-    "North Carolina",
-    "North Dakota",
-    "Ohio",
-    "Oklahoma",
-    "Oregon",
-    "Pennsylvania",
-    "Rhode Island",
-    "South Carolina",
-    "South Dakota",
-    "Tennessee",
-    "Texas",
-    "Utah",
-    "Vermont",
-    "Virginia",
-    "Washington",
-    "West Virginia",
-    "Wisconsin",
-    "Wyoming",
-  ];
-  const canada = [
-    "Alberta",
-    "British Columbia",
-    "Manitoba",
-    "New Brunswick",
-    "Newfoundland and Labrador",
-    "Northwest Territories",
-    "Nova Scotia",
-    "Nunavut",
-    "Ontario",
-    "Prince Edward Island",
-    "Quebec",
-    "Saskatchewan",
-    "Yukon",
-  ];
-  const countries = [
-    "United States",
-    "Canada",
-    "United Kingdom",
-    "Bangladesh",
-    "Other",
-  ];
+  const countries = COUNTRY_NAMES;
   const dropdown = (path, label, placeholder, options) =>
-    `<select class="input" data-field="${path}" aria-label="${label}" required><option value="">${placeholder}</option>${options.map((value) => `<option value="${e(value)}" ${get(path) === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select>`;
+    `<div class="form-field"><label class="field-caption" for="${fieldKey(path)}">${e(label)} <span aria-hidden="true">*</span></label><select id="${fieldKey(path)}" class="input" data-field="${path}" aria-label="${label}" required><option value="">${placeholder}</option>${options.map((value) => `<option value="${e(value)}" ${get(path) === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select><p class="field-error" id="${fieldKey(path)}-error" hidden></p></div>`;
   function contactPage() {
-    const regionField = ["United States", "Canada"].includes(
-      state.billing.country,
-    )
-      ? dropdown(
-          "billing.region",
-          "State / Province",
-          "State / Province *",
-          state.billing.country === "Canada" ? canada : regions,
-        )
-      : field("billing.region", "State / Province", "State / Province *", {
-          required: true,
-        });
-    return `<div class="columns contact-columns" data-step="4"><form id="booking-form" class="panel contact-panel">${panelHeader(4, "CONTACT & BILLING", "clipboard", "Tell us who is making the reservation and who is traveling.")}<section class="form-section">${section(1, "BILLING CONTACT (PAYER) *", "person", "The person or company responsible for payment.")}<div class="section-body input-stack"><div class="field-grid">${field("billing.first", "Billing first name", "First Name *", { required: true })}${field("billing.last", "Billing last name", "Last Name *", { required: true })}</div>${field("billing.email", "Billing email", "Email *", { type: "email", required: true })}${field("billing.phone", "Billing phone", "Phone Number *", { type: "tel", required: true })}${field("billing.company", "Company name", "Company Name (optional)")}</div></section><section class="form-section">${section(2, "PRIMARY PASSENGER *", "person", "Who will be riding in the vehicle?")}<div class="section-body input-stack"><label class="checkbox"><input type="checkbox" data-field="same" ${state.same ? "checked" : ""}>Same as billing contact</label><div class="field-grid">${field("passenger.first", "Passenger first name", "First Name *", { required: true })}${field("passenger.last", "Passenger last name", "Last Name *", { required: true })}</div><div class="field-grid">${field("passenger.mobile", "Passenger mobile", "Mobile Number *", { type: "tel", required: true })}${field("passenger.email", "Passenger email", "Email (optional)", { type: "email" })}</div><p class="helper no-icon">Passenger contact information is used for chauffeur communication and ride updates.</p></div></section><section class="form-section">${section(3, "BILLING ADDRESS *", "pin", "Required for invoicing and account records.")}<div class="section-body input-stack"><div class="field-grid">${field("billing.street", "Street address", "Street Address *", { required: true })}${field("billing.unit", "Apt / Suite / Unit", "Apt / Suite / Unit (optional)")}</div><div class="field-grid">${field("billing.city", "City", "City *", { required: true })}${regionField}</div><div class="field-grid">${field("billing.zip", "ZIP / Postal Code", "ZIP / Postal Code *", { required: true })}${dropdown("billing.country", "Country", "Country *", countries)}</div><p class="helper">${icon("info")}Enter billing address for invoicing and account records.</p></div></section><section class="form-section billing-notes">${section(4, "ADDITIONAL BILLING INFORMATION (Optional)", "document")}<div class="section-body">${textarea("billing.notes", "Billing notes", "Add any billing instructions or payment-related notes, if needed.", 500)}</div></section><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO REVIEW & SUBMIT", true)}</form>${summary()}</div>`;
+    const regionField = field("billing.region", "State / Province", "State / Province (optional)");
+    return `<div class="columns contact-columns" data-step="4"><form id="booking-form" class="panel contact-panel">${panelHeader(4, "CONTACT & BILLING", "clipboard", "Tell us who is making the reservation and who is traveling.")}<section class="form-section">${section(1, "BILLING CONTACT (PAYER) *", "person", "The person or company responsible for payment.")}<div class="section-body input-stack"><div class="field-grid">${field("billing.first", "Billing first name", "First Name *", { required: true })}${field("billing.last", "Billing last name", "Last Name *", { required: true })}</div>${field("billing.email", "Billing email", "Email *", { type: "email", required: true })}${field("billing.phone", "Billing phone", "Phone Number *", { type: "tel", required: true })}${field("billing.company", "Company name", "Company Name (optional)")}</div></section><section class="form-section">${section(2, "PRIMARY PASSENGER *", "person", "Who will be riding in the vehicle?")}<div class="section-body input-stack"><label class="checkbox"><input type="checkbox" data-field="same" ${state.same ? "checked" : ""}>Same as billing contact</label><div class="field-grid">${field("passenger.first", "Passenger first name", "First Name *", { required: true })}${field("passenger.last", "Passenger last name", "Last Name *", { required: true })}</div><div class="field-grid">${field("passenger.mobile", "Passenger mobile", "Mobile Number *", { type: "tel", required: true })}${field("passenger.email", "Passenger email", "Email (optional)", { type: "email" })}</div><p class="helper no-icon">Passenger contact information is used for chauffeur communication and ride updates.</p></div></section><section class="form-section">${section(3, "BILLING ADDRESS *", "pin", "Required for invoicing and account records.")}<div class="section-body input-stack"><div class="field-grid">${field("billing.street", "Street address", "Street Address *", { required: true })}${field("billing.unit", "Apt / Suite / Unit", "Apt / Suite / Unit (optional)")}</div><div class="field-grid">${field("billing.city", "City", "City *", { required: true })}${regionField}</div><div class="field-grid">${field("billing.zip", "ZIP / Postal Code", "ZIP / Postal Code (optional)")}${dropdown("billing.country", "Country", "Country *", countries)}</div><p class="helper">${icon("info")}Enter billing address for invoicing and account records.</p></div></section><section class="form-section billing-notes">${section(4, "ADDITIONAL BILLING INFORMATION (Optional)", "document")}<div class="section-body">${textarea("billing.notes", "Billing notes", "Add any billing instructions or payment-related notes, if needed.", 500)}</div></section><div class="form-error" role="alert" hidden></div>${nav("CONTINUE TO REVIEW & SUBMIT", true)}</form>${summary()}</div>`;
   }
 
-  // Step 5: review the actual retained form state and submit locally.
+  // Step 5: review retained fields before the authoritative WordPress submission.
   const reviewHead = (num, title, symbol, target) =>
     `<div class="review-heading"><span class="tile">${icon(symbol)}</span><h3>${num}. ${title}</h3><button type="button" data-go="${target}">EDIT ${icon("edit")}</button></div>`;
   const rows = (pairs) =>
@@ -955,7 +928,7 @@ import { mountPickupMap } from "./pickup-map.js";
     ])}</div></section><label class="checkbox consent"><input type="checkbox" data-field="consent" ${state.consent ? "checked" : ""} required><span>I agree to the ${policies()}.</span></label>${runtime ? '<label style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden" aria-hidden="true">Leave this field empty<input name="website" data-booking-honeypot tabindex="-1" autocomplete="off"></label>' : ""}<div class="form-error" role="alert" hidden></div>${nav("SUBMIT RESERVATION REQUEST", true)}</form><div class="review-sidebar"><aside class="price-summary"><h3>PRICE SUMMARY</h3>${lines(true)}${total()}${security()}</aside>${nextSteps()}</div></div>`;
   }
 
-  // Confirmation: no remote booking, payment, or email is performed.
+  // Confirmation follows a durable WordPress receipt; static mode remains a demo.
   const thankHeading = (label, symbol) =>
     `<h3 class="thank-section-title"><span class="dark-icon">${icon(symbol)}</span>${label}</h3>`;
   const noteStrip = (title, symbol, value) =>
@@ -1049,6 +1022,7 @@ import { mountPickupMap } from "./pickup-map.js";
     app
       .querySelectorAll('input[data-field="trip.pickup"]')
       .forEach((input) => (input.id = "pickup"));
+    app.querySelectorAll("form").forEach(form => { form.noValidate = true; });
     updateValidity();
     mountPlaces();
     mountDeviceMap();
@@ -1063,6 +1037,17 @@ import { mountPickupMap } from "./pickup-map.js";
           ?.focus({ preventScroll: true });
     }
   }
+  function scrollToStepStart() {
+    // A changing iframe document cannot move the page that embeds it by itself.
+    // Only the matching frame may ask its parent to reveal the start of a step.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    const frameId = globalThis.TuxanoBookingBoot?.frameId;
+    if (window.parent !== window && typeof frameId === "string" && frameId) {
+      window.parent.postMessage({ type: "tuxano-booking:scroll", frameId }, location.origin);
+    }
+    document.querySelector("#main")?.focus({ preventScroll: true });
+  }
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   function go(index, replace = false) {
     if (submitting) return;
     if (index < 0 || index > 5) return;
@@ -1078,8 +1063,7 @@ import { mountPickupMap } from "./pickup-map.js";
       "#" + routes[step],
     );
     render();
-    window.scrollTo(0, 0);
-    document.querySelector("#main").focus({ preventScroll: true });
+    scrollToStepStart();
     announce(
       step === 5
         ? runtime ? "Your reservation request has been received." : "Your demo request summary is ready."
@@ -1090,31 +1074,87 @@ import { mountPickupMap } from "./pickup-map.js";
     const box = app.querySelector(".form-error");
     if (box) {
       box.textContent = message;
+      delete box.dataset.validationSummary;
       box.hidden = false;
       box.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
     announce(message);
   }
+  function fieldMessage(control) {
+    const label = (control.getAttribute("aria-label") || control.name || "this field").replace(/^(Billing|Passenger) /, "");
+    if (control.validity.valueMissing) return control.type === "checkbox" ? "Please confirm this field to continue." : `Please enter ${label.toLowerCase()}.`;
+    if (control.validity.typeMismatch && control.type === "email") return "Please enter a valid email address, such as name@example.com.";
+    if (control.validity.tooLong) return `Use ${control.maxLength} characters or fewer.`;
+    if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return `Enter a value between ${control.min} and ${control.max}.`;
+    if (control.validity.badInput) return "Please enter a valid value.";
+    return control.validationMessage || "Please check this field.";
+  }
+  function paintFieldValidation(control) {
+    if (!control?.willValidate) return;
+    const path = control.dataset.field || control.dataset.stop || control.name || control.id;
+    const invalid = !control.validity.valid;
+    const message = invalid ? fieldMessage(control) : "";
+    if (message) fieldErrors.set(path, message); else fieldErrors.delete(path);
+    control.classList.toggle("field-invalid", invalid);
+    control.setAttribute("aria-invalid", String(invalid));
+    const id = (control.id || fieldKey(path)) + "-error";
+    let output = app.querySelector(`#${CSS.escape(id)}`);
+    if (!output) {
+      output = document.createElement("p"); output.className = "field-error"; output.id = id;
+      const anchor = control.closest(".picker-box") || control.closest(".location-input") || control;
+      anchor.insertAdjacentElement("afterend", output);
+    }
+    output.textContent = message; output.hidden = !invalid;
+    const descriptions = new Set((control.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
+    if (invalid) descriptions.add(id); else descriptions.delete(id);
+    if (descriptions.size) control.setAttribute("aria-describedby", [...descriptions].join(" ")); else control.removeAttribute("aria-describedby");
+  }
   function updateValidity() {
-    app.querySelectorAll("input[required]").forEach((input) => {
-      if (input.type === "checkbox") return;
-      input.setCustomValidity(
-        input.value && !input.value.trim() ? "Please enter a value." : "",
-      );
-      if (input.type === "tel" && input.value)
-        input.setCustomValidity(
-          input.value.replace(/\D/g, "").length >= 7 &&
-            input.value.replace(/\D/g, "").length <= 15
-            ? ""
-            : "Please enter a valid phone number (7–15 digits).",
-        );
+    app.querySelectorAll("input, select, textarea").forEach(control => {
+      if (!control.willValidate) return;
+      let message = "";
+      const value = control.value;
+      if (control.required && typeof value === "string" && value && !value.trim()) message = "Please enter a value.";
+      if (control.type === "tel" && value && !/^\+?[0-9() .-]+$/.test(value)) message = "Use a phone number with 7–15 digits; letters are not allowed.";
+      else if (control.type === "tel" && value && (value.replace(/\D/g, "").length < 7 || value.replace(/\D/g, "").length > 15)) message = "Please enter a valid phone number with 7–15 digits.";
+      if (control.type === "email" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) message = "Please enter a valid email address, such as name@example.com.";
+      if (control.maxLength > 0 && value.length > control.maxLength) message = `Use ${control.maxLength} characters or fewer.`;
+      if (control.dataset.placeField) {
+        const fieldId = control.dataset.placeField;
+        const place = mapFieldPoint(fieldId);
+        const valueMatches = fieldId.startsWith("stop:") ? state.trip.stops.find(stop => stop.id === fieldId.slice(5))?.text : state.trip[fieldId];
+        if (value && !selectedPoint(place, valueMatches) && !DEMO_MODE) message = "Choose this location from the suggestions or select it on the map.";
+        message = countryConflictForField(fieldId) || message;
+      }
+      control.setCustomValidity(message);
+      const key = control.dataset.field || control.dataset.stop || control.name || control.id;
+      if (touchedFields.has(key) || fieldErrors.has(key)) paintFieldValidation(control);
     });
+    const form = app.querySelector("form");
+    const summary = form?.querySelector('[data-validation-summary="true"]');
+    if (summary && [...form.querySelectorAll("input,select,textarea")].every(control => !control.willValidate || control.validity.valid)) summary.hidden = true;
+  }
+  function showInvalidFields(form) {
+    if (!form) return true;
+    const controls = [...form.querySelectorAll("input,select,textarea")].filter(control => control.willValidate);
+    const invalid = controls.filter(control => !control.validity.valid);
+    if (!invalid.length) return true;
+    controls.forEach(control => {
+      touchedFields.add(control.dataset.field || control.dataset.stop || control.name || control.id);
+      paintFieldValidation(control);
+    });
+    const box = form.querySelector(".form-error");
+    if (box) { box.textContent = `Please correct ${invalid.length === 1 ? "the highlighted field" : "the highlighted fields"} before continuing.`; box.dataset.validationSummary = "true"; box.hidden = false; }
+    invalid[0].focus({ preventScroll: true });
+    invalid[0].scrollIntoView({ block: "center", behavior: "instant" });
+    announce(`Please correct ${invalid.length} ${invalid.length === 1 ? "field" : "fields"}. ${fieldMessage(invalid[0])}`);
+    return false;
   }
   function validate() {
     if (restoringPlaces) { error("Please wait while your selected locations are restored."); return false; }
     updateValidity();
     const form = app.querySelector("form");
-    if (form && !form.reportValidity()) return false;
+    if (!showInvalidFields(form)) return false;
     if (step === 0 && !routeRequest()) { error("Choose pickup, drop-off, and every stop from the Google Maps suggestions."); return false; }
     if (step === 1 && !state.vehicle) {
       error("Please select a vehicle to continue.");
@@ -1194,8 +1234,6 @@ import { mountPickupMap } from "./pickup-map.js";
       "phone",
       "street",
       "city",
-      "region",
-      "zip",
       "country",
     ];
     if (
@@ -1324,6 +1362,12 @@ import { mountPickupMap } from "./pickup-map.js";
     if (result)
       result.innerHTML = `${costs().percent}% = <span>${money(costs().tip)}</span>`;
   }
+  app.addEventListener("focusout", event => {
+    const control = event.target;
+    if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) || !control.willValidate) return;
+    const key = control.dataset.field || control.dataset.stop || control.name || control.id;
+    touchedFields.add(key); updateValidity(); paintFieldValidation(control);
+  });
   app.addEventListener("input", (event) => {
     if (submitting) return;
     const input = event.target;
@@ -1384,12 +1428,10 @@ import { mountPickupMap } from "./pickup-map.js";
       }
     } else if (input.tagName === "SELECT") {
       set(path, path === "trip.hours" ? Number(input.value) : input.value);
-      if (path === "billing.country") {
-        state.billing.region = "";
-        save();
-        render();
-      }
     }
+    updateValidity();
+    const key = input.dataset.field || input.name || input.id;
+    if (touchedFields.has(key)) paintFieldValidation(input);
     save();
   });
   app.addEventListener("submit", (event) => {
@@ -1453,6 +1495,7 @@ import { mountPickupMap } from "./pickup-map.js";
     if (button.dataset.removeStop !== undefined) {
       const index = state.trip.stops.findIndex(item => item.id === button.dataset.removeStop);
       if (index < 0) return;
+      if (deviceLocation.status === "map" && mapTarget() === "stop:" + state.trip.stops[index].id) cancelDeviceLocation();
       maps.discardSession("stop:" + state.trip.stops[index].id);
       state.trip.stops.splice(index, 1); invalidateRoute();
       save(); render(); calculateRoute();
@@ -1497,6 +1540,7 @@ import { mountPickupMap } from "./pickup-map.js";
         restoringPlaces = false;
         DEMO_MODE = false;
         invalidateRoute(); state = defaults();
+        fieldErrors.clear(); touchedFields.clear();
         save();
         step = -1;
         history.replaceState(null, "", runtime ? location.pathname + location.search : location.pathname);
@@ -1504,6 +1548,8 @@ import { mountPickupMap } from "./pickup-map.js";
         break;
       case "locate":
         await detectDeviceLocation(); break;
+      case "choose-map":
+        choosePickupMap(button.dataset.mapField || "pickup"); break;
       case "choose-pickup-map":
         choosePickupMap(); break;
       case "use-map-location":
@@ -1526,7 +1572,7 @@ import { mountPickupMap } from "./pickup-map.js";
       ++navigationGeneration;
       step = index;
       render();
-      window.scrollTo(0, 0);
+      scrollToStepStart();
     } else {
       history.replaceState(null, "", "#" + routes[step]);
     }

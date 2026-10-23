@@ -110,28 +110,43 @@ test('a 100 km PC estimate offers an exact map correction without accepting its 
   await expect(page.getByTestId('route-distance')).toBeVisible();
 });
 
-test('map search is keyboard accessible, does not submit the booking, and uses the selected place coordinates', async ({ page }) => {
+test('map search is keyboard accessible and immediately commits the explicitly selected Google address', async ({ page }) => {
   await originalTrip(page);
+  const before = controls.get(page).requests.length;
   await openMap(page);
-  await page.evaluate(() => { window.__mapsMock.locations = { ['test-' + encodeURIComponent('Nathullahbad, Barishal')]: { lat: 22.7095, lng: 90.3667 } }; });
+  const query = 'Nathullahbad, Barishal';
+  await page.evaluate(({ query, id }) => {
+    window.__mapsMock.locations = { [id]: { lat: 22.7095, lng: 90.3667 } };
+    window.__placeCountryCodes = { [id]: 'BD' };
+  }, { query, id: pointId(query) });
   const search = page.getByLabel('Search map for pickup', { exact: true });
-  await search.fill('Nathullahbad, Barishal');
-  await expect(page.getByRole('option', { name: 'Nathullahbad, Barishal', exact: true })).toBeVisible();
+  await search.fill(query);
+  await expect(page.getByRole('option', { name: query, exact: true })).toBeVisible();
+  // Enter with no highlighted suggestion still cannot choose an unrelated place.
   await search.press('Enter');
   await expect(page).toHaveURL(/#trip$/);
   await expect(mapConfirm(page)).toBeDisabled();
-  await search.press('ArrowDown'); await search.press('Enter');
-  await expect(mapConfirm(page)).toBeEnabled();
-  await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
-  expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.7095);
-  await search.fill('A different unfinished search');
-  await expect(mapConfirm(page)).toBeDisabled();
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
-  await search.fill('Nathullahbad, Barishal');
-  await page.getByRole('option', { name: 'Nathullahbad, Barishal', exact: true }).click();
-  await expect(mapConfirm(page)).toBeEnabled();
-  await mapConfirm(page).click();
-  await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: 22.7095, longitude: 90.3667 });
+  expect(controls.get(page).requests).toHaveLength(before);
+  await search.press('ArrowDown'); await search.press('Enter');
+  await expect(pickup(page)).toHaveValue(query);
+  await expect(mapPicker(page)).toHaveCount(0);
+  await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ placeId: pointId(query) });
+  const selectedLink = new URL(await page.getByRole('link', { name: 'View selected pickup location in Google Maps' }).getAttribute('href'));
+  expect(selectedLink.searchParams.get('query_place_id')).toBe(pointId(query));
+  expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.7095);
+  await expect(page).toHaveURL(/#trip$/);
+
+  // An unfinished replacement search retains the committed address and route.
+  const committedRequests = controls.get(page).requests.length;
+  await openMap(page);
+  await page.getByLabel('Search map for pickup', { exact: true }).fill('A different unfinished search');
+  await expect(mapConfirm(page)).toBeDisabled();
+  await expect(pickup(page)).toHaveValue(query);
+  expect(controls.get(page).requests).toHaveLength(committedRequests);
+  await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
+  await expect(mapPicker(page)).toHaveCount(0);
+  await expect(pickup(page)).toHaveValue(query);
 });
 
 test('map dragging keeps the final exact point and ignores obsolete nearby responses', async ({ page }) => {
@@ -371,7 +386,7 @@ test('reload requires a new pickup for both confirmed and legacy coordinates whi
   await page.reload();
   await expect(pickup(page)).toHaveValue('');
   await expect(page.getByLabel('Drop-off location', { exact: true })).toHaveValue('Patuakhali, Bangladesh');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
 
   await page.evaluate(() => {
     const saved = JSON.parse(sessionStorage.getItem('tuxano-booking-v1'));
@@ -381,7 +396,7 @@ test('reload requires a new pickup for both confirmed and legacy coordinates whi
   });
   await page.reload();
   await expect(pickup(page)).toHaveValue('');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
   await selectPlace(page, 'Pickup location', 'A restored manual pickup');
   await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
   await page.reload();

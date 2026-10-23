@@ -72,13 +72,51 @@ final class Vehicles
         <tr><th><label for="tuxano-<?php echo esc_attr($field); ?>"><?php echo esc_html($label); ?></label></th><td><textarea class="large-text" rows="5" id="tuxano-<?php echo esc_attr($field); ?>" name="tuxano_vehicle[<?php echo esc_attr($field); ?>]"><?php echo esc_textarea(implode("\n", $data[$field])); ?></textarea><p class="description"><?php esc_html_e('One item per line. Up to 20 items, 200 characters per item.', 'tuxano-booking'); ?></p></td></tr>
         <?php endforeach; ?>
         </tbody></table>
-        <h3><?php esc_html_e('Vehicle tariffs', 'tuxano-booking'); ?></h3>
-        <p><?php esc_html_e('Transfer = max(minimum, base + miles × per mile + driving minutes × per driving minute). Hourly = max(booked hours, driving hours) × hourly rate + miles × per mile. Stop waiting is added separately.', 'tuxano-booking'); ?></p>
-        <table class="form-table" role="presentation"><tbody>
-        <?php foreach (self::TARIFF_FIELDS as $field => $label) : ?>
-        <tr><th><label for="tuxano-rate-<?php echo esc_attr($field); ?>"><?php echo esc_html($label); ?></label></th><td><input id="tuxano-rate-<?php echo esc_attr($field); ?>" name="tuxano_vehicle[tariff][<?php echo esc_attr($field); ?>]" type="number" min="0" max="1000000" step="0.0001" required value="<?php echo esc_attr((string) $data['tariff'][$field]); ?>"></td></tr>
-        <?php endforeach; ?>
-        </tbody></table>
+        <?php self::pricing_fields($data); ?>
+        <?php
+    }
+
+    /** A zero rate deliberately switches that component off; it is never a missing tariff. */
+    private static function pricing_fields(array $data): void
+    {
+        $settings = Settings::get();
+        $currency = $settings['currency'];
+        $help = [
+            'base' => __('A single starting charge for each transfer. It does not apply to hourly hire.', 'tuxano-booking'),
+            'perMile' => __('Charged for each driving mile, on transfers and hourly hire. One mile is about 1.609 km.', 'tuxano-booking'),
+            'perDrivingMinute' => __('Charged for each minute of driving on a transfer. Stop waiting is not included here.', 'tuxano-booking'),
+            'minimum' => __('The smallest transfer driving charge. Waiting and optional extras are added afterwards.', 'tuxano-booking'),
+            'perWaitingMinute' => __('Charged once per selected stop-waiting minute, for transfers and hourly hire.', 'tuxano-booking'),
+            'hourly' => __('Charged per booked hour or actual driving hour, whichever is greater. Mileage and stop waiting are added.', 'tuxano-booking'),
+        ];
+        $units = ['base' => __('per transfer', 'tuxano-booking'), 'perMile' => __('per mile', 'tuxano-booking'), 'perDrivingMinute' => __('per driving minute', 'tuxano-booking'), 'minimum' => __('minimum driving charge', 'tuxano-booking'), 'perWaitingMinute' => __('per waiting minute', 'tuxano-booking'), 'hourly' => __('per hour', 'tuxano-booking')];
+        $tariff = $data['tariff'];
+        $example = max((float) $tariff['minimum'], (float) $tariff['base'] + 20 * (float) $tariff['perMile'] + 30 * (float) $tariff['perDrivingMinute']) + 15 * (float) $tariff['perWaitingMinute'];
+        ?>
+        <section class="tuxano-vehicle-pricing" aria-labelledby="tuxano-pricing-title" data-tuxano-currency="<?php echo esc_attr($currency); ?>">
+            <h3 id="tuxano-pricing-title"><?php esc_html_e('Set this vehicle’s prices', 'tuxano-booking'); ?></h3>
+            <p><?php echo esc_html(sprintf(__('All amounts are in %s. Turn off any component with “None / not charged”, or leave its amount blank to save it as zero.', 'tuxano-booking'), $currency)); ?></p>
+            <div class="tuxano-pricing-guide">
+                <p><strong><?php esc_html_e('Transfer', 'tuxano-booking'); ?></strong> — <?php esc_html_e('Start with the base fare, add distance and driving time, then apply the minimum if higher. Add stop waiting once.', 'tuxano-booking'); ?></p>
+                <p><strong><?php esc_html_e('Hourly', 'tuxano-booking'); ?></strong> — <?php esc_html_e('Multiply the higher of booked hours or driving hours by the hourly rate, then add mileage and stop waiting.', 'tuxano-booking'); ?></p>
+                <p class="description"><?php esc_html_e('Meet & greet, child seats and gratuity are configured under Pricing. If every vehicle component is off, its transportation charge is zero. Keep an unfinished vehicle in Draft.', 'tuxano-booking'); ?></p>
+            </div>
+            <div class="tuxano-rate-grid">
+            <?php foreach (self::TARIFF_FIELDS as $field => $label) : $off = (float) $tariff[$field] === 0.0; ?>
+                <div class="tuxano-rate-field<?php echo $off ? ' is-disabled' : ''; ?>">
+                    <label for="tuxano-rate-<?php echo esc_attr($field); ?>"><strong><?php echo esc_html($label); ?></strong></label>
+                    <p id="tuxano-rate-help-<?php echo esc_attr($field); ?>" class="description"><?php echo esc_html($help[$field]); ?></p>
+                    <div class="tuxano-rate-amount"><input id="tuxano-rate-<?php echo esc_attr($field); ?>" name="tuxano_vehicle[tariff][<?php echo esc_attr($field); ?>]" data-tuxano-rate="<?php echo esc_attr($field); ?>" aria-describedby="tuxano-rate-help-<?php echo esc_attr($field); ?>" type="number" min="0" max="1000000" step="0.0001" placeholder="0.00" value="<?php echo esc_attr((string) $tariff[$field]); ?>"><span><?php echo esc_html($currency . ' ' . $units[$field]); ?></span></div>
+                    <label class="tuxano-rate-none"><input type="checkbox" name="tuxano_vehicle[disabled_tariff][<?php echo esc_attr($field); ?>]" data-tuxano-rate-toggle="<?php echo esc_attr($field); ?>" value="1" <?php checked($off); ?>> <?php esc_html_e('None / not charged', 'tuxano-booking'); ?></label>
+                </div>
+            <?php endforeach; ?>
+            </div>
+            <div class="tuxano-rate-preview" data-tuxano-rate-preview aria-live="polite">
+                <strong><?php esc_html_e('Example transfer', 'tuxano-booking'); ?></strong>
+                <p><?php esc_html_e('20 miles · 30 driving minutes · 15 minutes of stop waiting', 'tuxano-booking'); ?></p>
+                <p><strong data-tuxano-example-total><?php echo esc_html($currency . ' ' . number_format($example, 2, '.', ',')); ?></strong> <span class="description"><?php esc_html_e('transportation only, before extras and gratuity', 'tuxano-booking'); ?></span></p>
+            </div>
+        </section>
         <?php
     }
 
@@ -188,7 +226,9 @@ final class Vehicles
     {
         $stored = get_post_meta($id, self::META, true);
         $defaults = ['display' => '', 'capacity' => 6, 'luggageCapacity' => 6, 'image' => '', 'models' => [], 'features' => [], 'tariff' => array_fill_keys(array_keys(self::TARIFF_FIELDS), 0.0)];
-        return array_replace($defaults, is_array($stored) ? array_intersect_key($stored, $defaults) : []);
+        $data = array_replace($defaults, is_array($stored) ? array_intersect_key($stored, $defaults) : []);
+        $data['tariff'] = array_replace($defaults['tariff'], is_array($data['tariff']) ? array_intersect_key($data['tariff'], $defaults['tariff']) : []);
+        return $data;
     }
 
     /** @return array<string,mixed>|\WP_Error */
@@ -230,13 +270,27 @@ final class Vehicles
                 }
             }
         }
-        $rates = $input['tariff'] ?? null;
-        if (!is_array($rates)) {
-            return $error(__('All six tariff values are required.', 'tuxano-booking'));
+        $rates = $input['tariff'] ?? [];
+        $disabled = $input['disabled_tariff'] ?? [];
+        if (!is_array($rates) || !is_array($disabled)) {
+            return $error(__('Check the vehicle amounts and their None / not charged options.', 'tuxano-booking'));
+        }
+        foreach ($disabled as $field => $value) {
+            if (!array_key_exists($field, self::TARIFF_FIELDS) || !in_array($value, [true, false, 1, 0, '1', '0'], true)) {
+                return $error(__('Choose a valid None / not charged option.', 'tuxano-booking'));
+            }
         }
         $result['tariff'] = [];
         foreach (self::TARIFF_FIELDS as $field => $_label) {
-            $number = Settings::decimal($rates[$field] ?? null);
+            $off = in_array($disabled[$field] ?? false, [true, 1, '1'], true);
+            if (!$off && !array_key_exists($field, $rates)) {
+                return $error(__('Enter each vehicle amount or explicitly choose None / not charged.', 'tuxano-booking'));
+            }
+            $value = $rates[$field] ?? null;
+            if (array_key_exists($field, $rates) && (!is_string($value) && !is_int($value) && !is_float($value))) {
+                return $error(__('Tariffs must be numbers, or blank for no charge.', 'tuxano-booking'));
+            }
+            $number = $off || (is_string($value) && trim($value) === '') ? 0.0 : Settings::decimal($value);
             if ($number === null) {
                 return $error(__('Tariffs must be numbers between 0 and 1,000,000, with up to four decimal places.', 'tuxano-booking'));
             }

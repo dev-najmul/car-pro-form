@@ -16,6 +16,10 @@ export function installPlacesStub() {
       this.choices.push({ kind: 'click', latitude: lat, longitude: lng });
       this.maps.at(-1)?.emit('click', { latLng: latLng({ lat, lng }) });
     },
+    poi(placeId, lat = 41, lng = -87) {
+      this.choices.push({ kind: 'poi', placeId, latitude: lat, longitude: lng });
+      this.maps.at(-1)?.emit('click', { placeId, latLng: latLng({ lat, lng }), stop: () => { this.stoppedPoi = placeId; } });
+    },
     drag(lat, lng) {
       this.choices.push({ kind: 'drag', latitude: lat, longitude: lng });
       const map = this.maps.at(-1);
@@ -52,15 +56,22 @@ export function installPlacesStub() {
     emit(name, event) { for (const listener of this.listeners.get(name) || []) listener(event); }
     unbindAll() { this.listeners.clear(); }
   }
+  const fixtureCountry = id => window.__placeCountryCodes?.[id] || control.countries?.[id] || control.locations?.[id]?.countryCode || '';
+  const countryComponents = id => {
+    const code = fixtureCountry(id);
+    return code ? [{ shortText: code.toUpperCase(), longText: window.__placeCountryNames?.[id] || code.toUpperCase(), types: ['country', 'political'] }] : [];
+  };
   const makePlace = (id, kind) => {
     const query = id.startsWith('test-') ? decodeURIComponent(id.slice(5)) : id;
     return {
       id, displayName: window.__placeDisplayNames?.[id] || '', formattedAddress: window.__placeCanonicalLabels?.[id] || query,
       location: latLng(control.locations?.[id] || { lat: 41, lng: -87 }),
+      addressComponents: countryComponents(id),
       attributions: [{ provider: 'Demo Places Provider', providerURI: 'https://example.com/maps-attribution' }],
       fetchFields: async function(request) {
         control.calls.push({ kind, query, id, fields: request.fields }); await wait('details', query);
         if (control.locations?.[id]) this.location = latLng(control.locations[id]);
+        this.addressComponents = countryComponents(id);
       },
     };
   };
@@ -97,11 +108,14 @@ export function installPlacesStub() {
       AutocompleteSessionToken: class { constructor() { this.token = ++token; } },
       AutocompleteSuggestion: { fetchAutocompleteSuggestions: async request => {
         const query = request.input;
-        control.calls.push({ kind: 'suggest', query, token: request.sessionToken?.token, region: request.region });
+        control.calls.push({ kind: 'suggest', query, token: request.sessionToken?.token, region: request.region, includedRegionCodes: request.includedRegionCodes });
         await wait('suggest', query);
         if (control.failSuggestions.includes(query)) throw new Error('Google location search is temporarily unavailable.');
         if (control.emptySuggestions.includes(query)) return { suggestions: [] };
-        return { suggestions: (control.suggestionsByQuery?.[query] || [query]).map(label => ({ placePrediction: {
+        return { suggestions: (control.suggestionsByQuery?.[query] || [query]).filter(label => {
+          const code = fixtureCountry('test-' + encodeURIComponent(label));
+          return control.ignoreCountryRestriction || !request.includedRegionCodes?.length || !code || request.includedRegionCodes.includes(code.toLowerCase());
+        }).map(label => ({ placePrediction: {
           placeId: 'test-' + encodeURIComponent(label), text: { text: label }, mainText: { text: label }, secondaryText: { text: 'Test location' },
           toPlace: () => makePlace('test-' + encodeURIComponent(label), 'details'),
         } })) };

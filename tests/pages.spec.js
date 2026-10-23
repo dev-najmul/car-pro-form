@@ -122,6 +122,6 @@ test('an expired test session blocks new routes without falling back to browser 
     await page.getByLabel(label, { exact: true }).fill(query); await page.getByRole('option', { name: query, exact: true }).click();
   }
   await expect(page.getByRole('alert').filter({ hasText: /temporary test session has ended/i })).toBeVisible();
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
   expect(routeRequests).toEqual([]); expect(await page.evaluate(() => window.__mapsMock.libraries.includes('routes'))).toBe(false);
 });

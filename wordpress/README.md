@@ -1,8 +1,8 @@
-# Tuxano Booking 2.0.1
+# Tuxano Booking 2.1.0
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.0.1.zip) · [SHA-256](../releases/tuxano-booking-2.0.1.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.1.0.zip) · [SHA-256](../releases/tuxano-booking-2.1.0.zip.sha256)
 
 ## Install and configure
 
@@ -18,13 +18,17 @@ Installable WordPress conversion of the existing five-step form. The static prot
 | Menu | Controls |
 | --- | --- |
 | Dashboard | Total/status counts, recent requests, configuration summary |
-| Submissions | Search, status/pickup-date filters, pagination, full details, exact Google point links, private notes, status, deletion and failed/stalled notification retry |
+| Submissions | Search, status/pickup-date filters, page sizes 10/20/50/100, View/Edit, full booking corrections, audit/revision history, exact Google point links, private notes, status, confirmed selected-row deletion and notification retry |
 | Vehicles | Native add/edit/draft/trash, media photo, title/models/features, passenger/bag capacities, category and all six tariff components |
 | Collections | Native category name/description management |
 | Pricing | Meet & greet, first/additional child/booster seat, default gratuity and vehicle tariff overview |
 | Settings | API keys, currency/branding/support, hours/stops, policies, notifications/sender, retention and API/request budgets |
 
-An admin status change does not automatically email the customer. Customer thank-you and new-request admin emails use a basic branded HTML template; custom template design remains deferred. A request is not a confirmed reservation or payment.
+An admin status change does not automatically email the customer. The full editor includes an explicit customer-notification checkbox for the committed update and itemized estimate. Customer thank-you, administrator and update emails use branded responsive HTML with a plain-text alternative. A request is not a confirmed reservation or payment.
+
+Contact-only edits preserve the original fare even after fleet prices change. Changes that affect the fare, route or an explicit Recalculate selection use validated server metrics/tariffs. Historical dates and archived vehicles remain editable. Revision checks reject stale forms instead of overwriting another administrator's work. The immutable original snapshot and change history remain private; an original visitor retry still receives the original receipt.
+
+API cards show a masked configured value and deliberate Replace/Remove controls. Removing a key takes effect on Save. Test connection verifies Routes on the server or Maps/Places in a fresh isolated browser frame; a configured key is not automatically an authorized connection. Candidate tests do not save or echo the private Routes key. Each tariff component can be None/not charged, with explanations and a sample calculation.
 
 ## Pricing and integrity
 
@@ -35,6 +39,8 @@ An admin status change does not automatically email the customer. Customer thank
 - A 15-minute server quote binds exact pickup/destination/ordered stops, measured metrics, session and vehicle/pricing revision. Server validation rejects changed routes, invalid fields/capacities, expired quotes and changed fleet/prices. Client totals are discarded.
 - Persisted requests have unique server references and idempotency keys. Retries cannot duplicate the booking or its normal notifications. Original route, pricing and vehicle/tariff snapshots survive later fleet changes.
 - Device positions require fresh accuracy checks and confirmation. An inaccurate PC estimate cannot become a pickup automatically; users can search and choose an exact map point.
+- Map selection is available for pickup, every stop and drop-off. Choosing an address/POI commits its exact Place ID; arbitrary coordinates still require confirmation. Actual Google country components restrict subsequent suggestions and reject known conflicts. Country hints are a usability check, not independently verified server geographic authority; unknown coordinate countries are not guessed.
+- The public form uses a plain background, a 1200px maximum for steps 2–5, compact responsive controls, secure parent-frame top scrolling and accessible inline validation. All 249 ISO countries are available; State/Province is always text, and region/postal code are optional internationally.
 
 ## Security, personal data and mail
 
@@ -65,8 +71,9 @@ PHP fixture tests require an isolated WordPress installation with `WP_ENVIRONMEN
 ```sh
 wp eval-file /path/to/repo/tests/wordpress-data.php
 wp eval-file /path/to/repo/tests/wordpress-integration.php
+wp eval-file /path/to/repo/tests/wordpress-updates.php
 ```
 
-The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Actual Google-provider/local WordPress evidence is recorded separately in [project.md](../project.md#17-wordpress-plugin-conversion--version-200).
+The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3 and PHP 8.5, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Run fixture suites sequentially on disposable local databases. The complete current scope and concrete verification outcomes are in [UPGRADE-2.1.md](UPGRADE-2.1.md) and [project.md](../project.md#19-full-frontendadmin-upgrade--22-october-2026).
 
 Version 2.0.1 was installed and activated on the authorized PHP 7.4.33 test site. The [live booking test page](https://bdreadyweb.com/carbook/tuxano-booking-test/) passed actual Google route/stop calculations, all six fleet prices, durable submission, responsive thank-you and admin readback. [Direct test-site ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.0.1-1.zip). Full hosted compatibility and live verification evidence is in [project.md Section 18](../project.md#18-php-74-compatibility-and-live-site-installation--21-october-2026).

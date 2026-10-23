@@ -119,8 +119,7 @@ a {
   display: none;
 }
 .form-page {
-  background: #19191b url("assets/lobby-desktop.jpg") center center/cover
-    no-repeat;
+  background: #f5f7fb;
   min-height: 100vh;
 }
 .page-header {
@@ -1450,7 +1449,7 @@ a {
 .thank-hero {
   height: 33.1944vw;
   max-height: 640px;
-  background: #0b1220 url("assets/thank-you-desktop.jpg") center/cover no-repeat;
+  background: #0b1220;
   display: flex;
   align-items: center;
   padding-left: 8.3333vw;
@@ -2129,7 +2128,7 @@ a {
     line-height: 1.5;
   }
   .form-page {
-    background-image: url("assets/lobby-mobile.png");
+    background-image: none;
     background-size: cover;
     background-position: center center;
   }
@@ -3075,7 +3074,7 @@ a {
   .thank-hero {
     height: 352px;
     max-height: none;
-    background-image: url("assets/thank-you-mobile.jpg");
+    background-image: none;
     background-size: 100% auto;
     background-position: top center;
     position: relative;
@@ -3670,19 +3669,19 @@ a {
     letter-spacing: -0.2px;
   }
   .step-1 {
-    background-image: url("assets/lobby-step-1.jpg");
+    background-image: none;
   }
   .step-2 {
-    background-image: url("assets/lobby-step-2.jpg");
+    background-image: none;
   }
   .step-3 {
-    background-image: url("assets/lobby-step-3.jpg");
+    background-image: none;
   }
   .step-4 {
-    background-image: url("assets/lobby-step-4.jpg");
+    background-image: none;
   }
   .step-5 {
-    background-image: url("assets/lobby-step-5.jpg");
+    background-image: none;
   }
 }
 @media (max-width: 639px) {
@@ -3939,3 +3938,105 @@ a {
   .pickup-map-picker { padding: 12px; }
 }
 .location-target[disabled] { opacity: .45; cursor: wait; }
+
+
+/* Version 2.1: calm, compact form layout with accessible field feedback. */
+body { font-size: 15px; }
+body.form-page { background: #f5f7fb; }
+body.form-page .page-header {
+  height: auto; padding: 42px 24px 34px; color: #172642;
+}
+body.form-page .page-header h1 {
+  color: #101e36; font-size: clamp(36px, 4.4vw, 58px); line-height: 1.1;
+  letter-spacing: -1px;
+}
+body.form-page .page-header > p {
+  color: #52617a; font-size: 16px; line-height: 1.6; margin: 10px auto 24px;
+}
+body.form-page .progress { max-width: 830px; }
+body.form-page .progress button { color: #53617a; gap: 9px; }
+body.form-page .step-label { font-size: 13px; line-height: 20px; }
+body.form-page .active .step-label { color: #132d60; }
+body.form-page .step-circle { width: 34px; height: 34px; font-size: 14px; border-color: #ced7e5; }
+body.form-page .active .step-circle { color: white; border-color: #173a7b; box-shadow: 0 0 0 4px #e8eef9; }
+body.form-page .progress li:not(:last-child)::after { top: 17px; background: #d8e0ed; }
+body.form-page main, body.form-page.step-5 main {
+  width: min(1200px, calc(100% - 48px)); max-width: 1200px;
+  margin: 0 auto; padding-bottom: 64px; position: static; left: auto;
+}
+body.form-page .panel {
+  border-color: #dce3ee; border-radius: 10px; box-shadow: 0 10px 35px #142c5710;
+}
+body.form-page .trip-panel, body.form-page .vehicles-panel { padding: 24px; }
+body.form-page .panel-header { gap: 18px; margin-bottom: 22px; }
+body.form-page .panel-header h2, body.form-page .panel-header h2 > span { font-size: 30px; line-height: 1.12; }
+body.form-page .panel-header p { font-size: 14px; line-height: 1.65; }
+body.form-page .tile { width: 48px; height: 48px; border-radius: 6px; }
+body.form-page .tile .icon { width: 25px; height: 25px; }
+body.form-page .label, body.form-page .trip-panel .label { font-size: 13px; line-height: 21px; letter-spacing: .02em; }
+body.form-page .input { min-height: 48px; height: 48px; padding-top: 10px; padding-bottom: 10px; font-size: 15px; line-height: 24px; border-color: #cbd5e4; border-radius: 6px; }
+body.form-page textarea.input { height: 120px; }
+body.form-page .btn { min-height: 48px; padding: 10px 22px; font-size: 14px; border-radius: 6px; }
+body.form-page .segments { min-height: 48px; }
+body.form-page .segments button { min-height: 46px; font-size: 14px; }
+body.form-page .section-heading h3 { font-size: 16px; line-height: 24px; }
+body.form-page .form-section { padding-top: 20px; padding-bottom: 20px; }
+body.form-page .panel-header + .form-section { padding-top: 0; }
+body.form-page .trip-strip { min-height: 72px; padding: 18px; font-size: 14px; }
+body.form-page .vehicle-card > h3 { font-size: 20px; }
+body.form-page .helper { font-size: 12px; line-height: 1.7; }
+.form-field { min-width: 0; width: 100%; }
+.field-caption { display: block; margin: 0 0 6px; color: #34435d; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.field-caption > span { color: #a01f36; }
+.field-caption > .field-optional { color: #6b778b; font-weight: 400; }
+.field-error { margin: 6px 0 0; color: #b4233b; font-size: 12px; line-height: 1.6; text-align: left; }
+.field-error[hidden] { display: none; }
+body.form-page .input.field-invalid, body.form-page select.field-invalid, body.form-page input[aria-invalid="true"] {
+  border-color: #c8314c; background-color: #fffafb; box-shadow: 0 0 0 1px #c8314c15;
+}
+body.form-page .input:focus-visible { outline: 2px solid #315b9b; outline-offset: 2px; }
+body.form-page .form-error { border-radius: 6px; font-size: 13px; }
+.route-loading { display: flex; align-items: center; gap: 9px; }
+.route-loading::before { content: ""; width: 15px; height: 15px; border: 2px solid #d6dfed; border-top-color: #173a7b; border-radius: 50%; animation: route-spin .8s linear infinite; }
+@keyframes route-spin { to { transform: rotate(360deg); } }
+body.thank-page { background: #f5f7fb; }
+body.thank-page .thank-hero { height: 124px; max-height: none; padding: 24px max(24px, calc((100% - 1200px) / 2)); background: #101e36; background-image: none; }
+body.thank-page .brand-logo { display: block; width: 230px; }
+body.thank-page .thank-content { width: min(1200px, calc(100% - 48px)); padding-top: 40px; padding-bottom: 48px; }
+body.thank-page .thank-content > h1 { font-size: 46px; }
+body.thank-page .thank-content > p { font-size: 15px; line-height: 1.7; }
+body.thank-page .thank-section-title { font-size: 18px; }
+.location-country-error { color: #b4233b; font-size: 12px; margin-top: 8px; }
+@media (min-width: 1024px) {
+  body.form-page .contact-columns, body.form-page .passengers-columns { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+  body.form-page .review-panel { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 20px; }
+}
+@media (max-width: 639px) {
+  body.form-page .page-header { padding: 32px 12px 26px; }
+  body.form-page .page-header h1 { font-size: 32px; line-height: 1.1; max-width: 370px; }
+  body.form-page .page-header > p { font-size: 13px; line-height: 1.7; margin: 12px auto 22px; max-width: 330px; }
+  body.form-page .step-label { font-size: 10px; line-height: 15px; white-space: normal; max-width: 68px; }
+  body.form-page .progress button { gap: 9px; }
+  body.form-page .step-circle { width: 30px; height: 30px; font-size: 13px; }
+  body.form-page .progress li:not(:last-child)::after { top: 15px; left: calc(50% + 22px); width: calc(100% - 44px); }
+  body.form-page main, body.form-page.step-5 main { width: calc(100% - 24px); margin: 0 auto; padding-bottom: 36px; }
+  body.form-page .panel, body.form-page .trip-panel, body.form-page .vehicles-panel, body.form-page .review-main { padding: 16px; }
+  body.form-page .review-panel { padding: 0; background: none; box-shadow: none; }
+  body.form-page .panel-header { gap: 12px; }
+  body.form-page .panel-header h2, body.form-page .panel-header h2 > span { font-size: 23px; line-height: 1.12; white-space: normal; }
+  body.form-page .panel-header p { font-size: 12px; line-height: 1.6; }
+  body.form-page .tile { width: 40px; height: 40px; }
+  body.form-page .input, body.form-page .stop-wait-label select { font-size: 16px; }
+  body.form-page .btn { font-size: 12px; padding: 10px 12px; }
+  body.form-page .segments button { font-size: 13px; }
+  body.form-page .section-heading h3 { font-size: 14px; line-height: 22px; }
+  body.form-page .field-grid { gap: 12px; }
+  body.form-page .field-caption { font-size: 11px; }
+  body.form-page .vehicle-card > h3 { font-size: 16px; }
+  body.thank-page .thank-hero { height: 100px; padding: 22px; }
+  body.thank-page .brand-logo { width: 190px; }
+  body.thank-page .thank-content { width: calc(100% - 28px); padding-top: 28px; padding-bottom: 32px; }
+  body.thank-page .thank-content > h1 { font-size: 34px; }
+  body.thank-page .thank-content > p { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .route-loading::before { animation: none; } }

@@ -1,10 +1,10 @@
 === Tuxano Booking ===
-Contributors: tuxano
+Contributors: farhan
 Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.0.1
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ extras and gratuity, private submissions, customer/admin emails and retention.
 No payment gateway is included. Requests require manual availability review.
 
 == Installation ==
-1. Upload tuxano-booking-2.0.1.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.1.0.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
@@ -36,7 +36,34 @@ No payment gateway is included. Requests require manual availability review.
 Seeded tariffs are starter examples from the prototype. Replace them with your
 approved business rates before accepting real requests. Changing currency does
 not convert numeric tariffs. Stored submissions retain their original prices.
-Custom email template design remains a separate later enhancement.
+Customer receipts, administrator notifications and optional booking-update emails
+include the brand, journey and itemized estimate. An estimate is not a payment receipt.
+
+== Administrator workflow ==
+Submissions include search, date/status filters, 10/20/50/100 rows per page,
+View/Edit actions and explicitly confirmed selected-row deletion. Edit contact,
+itinerary, vehicle, passengers, extras and status with an audit history and
+protection against overwriting another administrator's changes. Contact-only
+corrections retain the accepted price; changed routes/options or an explicit
+recalculation use server-validated route metrics and tariffs. Select the customer
+notification checkbox to send the committed update and current itemized estimate.
+API cards distinguish saved configuration from an actual connection test. The
+browser test checks Maps/Places in an isolated browser frame; the Routes test
+uses one server request. Blank inputs preserve saved keys; removal requires Save.
+Each vehicle tariff component can be explicitly None/not charged. Existing
+tariffs and stored requests are retained on upgrade.
+
+== Frontend ==
+A plain background, compact responsive layout and 1200px maximum content width
+keep the form suitable for desktop and laptop pages. Step navigation scrolls
+to the top, including same-origin shortcode embeds. Contact fields show inline
+validation. All 249 ISO countries are available; state/province is always a text
+input, and region/postal code are optional for international addresses.
+Pickup, stops and drop-off support map selection. Selecting a map address or POI
+uses its exact Google place; an arbitrary pin still requires confirmation.
+Country-aware suggestions and known-country checks help prevent accidental
+cross-country selections. Unknown coordinate countries are not guessed; the
+server still requires an actual driving route and calculates authoritative fares.
 
 == External services and privacy ==
 Google Maps JavaScript/Places receive typed location searches and chosen points.
@@ -60,6 +87,12 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+= 2.1.0 =
+Premium admin interface, complete audited booking edits and update emails,
+explicit bulk management, simpler optional tariffs, API connection checks,
+branded notifications, international contact validation and improved map/form UX.
+Author: Farhan. Author website: https://farhanrajnajmul.com/
+
 = 2.0.1 =
 Add tested PHP 7.4 compatibility without changing booking validation or prices.
 

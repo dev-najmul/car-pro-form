@@ -1,63 +1,202 @@
-.tuxano-admin { max-width: 1500px; color: #1d2327; }
-.tuxano-admin .tuxano-intro { max-width: 850px; font-size: 14px; margin: 10px 0 22px; }
-.tuxano-admin .tuxano-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin: 24px 0; }
-.tuxano-admin .tuxano-stat { display: flex; flex-direction: column; gap: 10px; padding: 20px; border: 1px solid #dcdcde; border-top: 3px solid #15326a; border-radius: 4px; background: #fff; text-decoration: none; color: #1d2327; }
-.tuxano-admin .tuxano-stat:hover { border-color: #2271b1; }
-.tuxano-admin .tuxano-stat strong { font-size: 29px; line-height: 1.1; }
-.tuxano-admin .tuxano-card { box-sizing: border-box; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; padding: 20px 24px; margin: 0 0 20px; min-width: 0; }
+/* Tuxano administration: a quiet navy workspace inside native WordPress. */
+.tuxano-admin {
+  --tx-ink: #13213b; --tx-muted: #657187; --tx-navy: #132b56; --tx-gold: #b79a61;
+  --tx-line: #e0e6ee; --tx-surface: #f4f7fb; --tx-danger: #b42318;
+  max-width: 1460px; color: var(--tx-ink); padding: 12px 14px 36px 0;
+}
+.tuxano-admin, .tuxano-admin * { box-sizing: border-box; }
+.tuxano-admin [hidden] { display: none !important; }
+.tuxano-admin .tuxano-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin: 4px 0 24px; }
+.tuxano-admin .tuxano-heading h1 { color: var(--tx-ink); font-size: 28px; line-height: 1.25; font-weight: 650; letter-spacing: -.65px; padding: 0; margin: 12px 0 8px; }
+.tuxano-admin .tuxano-eyebrow { display: flex; align-items: center; gap: 9px; font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #52627d; }
+.tuxano-admin .tuxano-monogram { display: inline-grid; place-items: center; width: 28px; height: 28px; color: #fff; border: 1px solid #a88b51; background: var(--tx-navy); border-radius: 7px; font: 700 18px Georgia,serif; box-shadow: 0 3px 8px #132b5614; }
+.tuxano-admin .tuxano-intro { font-size: 13px; line-height: 1.65; color: var(--tx-muted); max-width: 850px; margin: 0; }
+.tuxano-admin .tuxano-version { background: #fff; border: 1px solid var(--tx-line); border-radius: 20px; color: var(--tx-muted); font-size: 11px; padding: 7px 13px; margin-top: 8px; white-space: nowrap; }
+.tuxano-admin .tuxano-tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 6px; background: #fff; border: 1px solid var(--tx-line); border-radius: 11px; margin: 0 0 26px; box-shadow: 0 3px 10px #13213b03; }
+.tuxano-admin .tuxano-tabs a { text-decoration: none; color: #59667d; font-size: 13px; font-weight: 500; border-radius: 7px; padding: 10px 19px; transition: background .15s,color .15s; }
+.tuxano-admin .tuxano-tabs a:hover { color: var(--tx-navy); background: var(--tx-surface); }
+.tuxano-admin .tuxano-tabs a[aria-current="page"] { color: #fff; background: var(--tx-navy); box-shadow: 0 3px 8px #132b561a; }
+.tuxano-admin .tuxano-stats { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 14px; margin: 0 0 25px; }
+.tuxano-admin .tuxano-stat { position: relative; display: flex; flex-direction: column; gap: 13px; text-decoration: none; color: var(--tx-ink); padding: 22px 20px 20px; background: #fff; border: 1px solid var(--tx-line); border-radius: 11px; box-shadow: 0 5px 18px #13213b04; overflow: hidden; transition: border .15s,transform .15s; }
+.tuxano-admin .tuxano-stat::before { content: ''; position: absolute; left: 20px; right: 20px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: #d6dfed; }
+.tuxano-admin .tuxano-stat:first-child { background: var(--tx-navy); color: #fff; border-color: var(--tx-navy); }
+.tuxano-admin .tuxano-stat:first-child::before { background: var(--tx-gold); }
+.tuxano-admin .tuxano-stat span { font-size: 12px; opacity: .85; }
+.tuxano-admin .tuxano-stat strong { font-size: 32px; line-height: 1; font-weight: 650; letter-spacing: -.6px; }
+.tuxano-admin .tuxano-stat:hover { transform: translateY(-2px); border-color: #a6b6cd; }
+.tuxano-admin .tuxano-card { background: #fff; border: 1px solid var(--tx-line); border-radius: 12px; box-shadow: 0 5px 22px #13213b04; padding: 24px; margin: 0 0 21px; min-width: 0; }
 .tuxano-admin .tuxano-card > h2:first-child { margin-top: 0; }
-.tuxano-admin .tuxano-card h2 { font-size: 17px; }
-.tuxano-admin .tuxano-dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(275px, 1fr); gap: 20px; align-items: start; }
-.tuxano-admin .tuxano-checklist li { margin: 12px 0; }
-.tuxano-admin .tuxano-table-scroll { overflow-x: auto; }
-.tuxano-admin table.widefat { min-width: 650px; }
-.tuxano-admin .widefat td, .tuxano-admin .widefat th { padding: 12px 10px; vertical-align: top; }
-.tuxano-admin .tuxano-reference { font-weight: 600; }
+.tuxano-admin .tuxano-card h2 { font-size: 16px; font-weight: 650; color: var(--tx-ink); margin-bottom: 16px; }
+.tuxano-admin .tuxano-card h3 { font-size: 14px; color: var(--tx-ink); }
+.tuxano-admin .tuxano-card p { line-height: 1.7; }
+.tuxano-admin .description { color: var(--tx-muted); font-size: 12px; line-height: 1.65; }
+.tuxano-admin .tuxano-dashboard-grid { display: grid; grid-template-columns: minmax(0,2fr) minmax(290px,1fr); gap: 22px; align-items: start; }
+.tuxano-admin .tuxano-checklist { padding: 4px 0; }
+.tuxano-admin .tuxano-checklist li { display: flex; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid #edf0f5; margin: 0; font-size: 12px; }
+.tuxano-admin .tuxano-checklist strong { color: var(--tx-navy); }
+.tuxano-admin code { display: inline-block; padding: 9px 12px; border-radius: 6px; background: var(--tx-surface); color: var(--tx-navy); border: 1px solid var(--tx-line); }
+.tuxano-admin .button { border-radius: 7px; border-color: #cdd6e2; color: var(--tx-navy); min-height: 34px; line-height: 32px; padding: 0 13px; background: #fff; font-size: 12px; box-shadow: none; }
+.tuxano-admin .button:hover { border-color: #91a4bf; background: #f7f9fc; color: var(--tx-navy); }
+.tuxano-admin .button.button-primary { background: var(--tx-navy); color: #fff; border-color: var(--tx-navy); }
+.tuxano-admin .button.button-primary:hover { background: #213f72; border-color: #213f72; }
+.tuxano-admin .button.button-small { min-height: 28px; line-height: 26px; padding: 0 9px; font-size: 11px; }
+.tuxano-admin .button:focus-visible, .tuxano-admin a:focus-visible, .tuxano-admin button:focus-visible { outline: 2px solid #b88f43; outline-offset: 2px; box-shadow: none; }
+.tuxano-admin .tuxano-table-scroll { overflow-x: auto; border: 1px solid var(--tx-line); border-radius: 8px; }
+.tuxano-admin table.widefat { min-width: 720px; border: 0; box-shadow: none; }
+.tuxano-admin .widefat thead th, .tuxano-admin .widefat thead td { background: #f5f7fb; color: #617087; border-bottom: 1px solid var(--tx-line); font-size: 10px; letter-spacing: .5px; text-transform: uppercase; font-weight: 650; padding: 12px; }
+.tuxano-admin .widefat tbody td, .tuxano-admin .widefat tbody th { padding: 15px 12px; color: #34435a; vertical-align: middle; font-size: 12px; border-bottom: 1px solid #edf0f5; }
+.tuxano-admin .widefat tbody tr:last-child td, .tuxano-admin .widefat tbody tr:last-child th { border-bottom: 0; }
+.tuxano-admin .widefat.striped > tbody > :nth-child(odd) { background: #fff; }
+.tuxano-admin .widefat tbody tr:hover { background: #fafbfd; }
+.tuxano-admin .widefat .check-column { width: 40px; text-align: center; padding-left: 12px; }
+.tuxano-admin .widefat .check-column input { margin: 0; }
+.tuxano-admin .tuxano-reference { color: var(--tx-navy); text-decoration: none; font-size: 11px; font-weight: 650; }
+.tuxano-admin .tuxano-table-subtitle { display: block; color: var(--tx-muted); font-size: 10px; margin-top: 5px; overflow-wrap: anywhere; }
+.tuxano-admin .tuxano-row-actions { display: flex; flex-wrap: nowrap; gap: 5px; }
 .tuxano-admin .tuxano-nowrap { white-space: nowrap; }
-.tuxano-admin .tuxano-status { display: inline-block; border-radius: 12px; padding: 3px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #15326a; background: #e9eef8; }
-.tuxano-admin .tuxano-status-new { color: #135e96; background: #e9f2fc; }
-.tuxano-admin .tuxano-status-reviewing { color: #755600; background: #fff4cd; }
-.tuxano-admin .tuxano-status-confirmed, .tuxano-admin .tuxano-status-completed { color: #16572d; background: #e4f3e9; }
-.tuxano-admin .tuxano-status-cancelled { color: #8a2424; background: #fbeaea; }
-.tuxano-admin .tuxano-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 18px; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; }
-.tuxano-admin .tuxano-filters label { display: block; margin: 0 0 5px; font-weight: 600; }
-.tuxano-admin .tuxano-filters input, .tuxano-admin .tuxano-filters select { margin: 0; min-height: 32px; }
-.tuxano-admin .tuxano-filters input[type="search"] { width: 265px; }
-.tuxano-admin .tuxano-pagination { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; margin-top: 18px; }
-.tuxano-admin .page-numbers { border: 1px solid #c3c4c7; background: #fff; padding: 6px 11px; text-decoration: none; border-radius: 2px; }
-.tuxano-admin .page-numbers.current { background: #15326a; border-color: #15326a; color: #fff; }
-.tuxano-admin .tuxano-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
-.tuxano-admin .tuxano-contact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.tuxano-admin .tuxano-status { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 4px 9px; font-size: 10px; font-weight: 600; white-space: nowrap; color: #2c4b77; background: #eef3fa; }
+.tuxano-admin .tuxano-status::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.tuxano-admin .tuxano-status-new { color: #285f92; background: #eaf3fc; }
+.tuxano-admin .tuxano-status-reviewing { color: #826223; background: #fbf4e5; }
+.tuxano-admin .tuxano-status-confirmed, .tuxano-admin .tuxano-status-completed { color: #277346; background: #e9f5ee; }
+.tuxano-admin .tuxano-status-cancelled { color: #a33c35; background: #fcefeb; }
+.tuxano-admin .tuxano-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 20px; background: #fff; border: 1px solid var(--tx-line); border-radius: 11px; }
+.tuxano-admin .tuxano-filters label { display: block; color: #526079; margin: 0 0 6px; font-size: 11px; font-weight: 600; }
+.tuxano-admin .tuxano-filter-search { flex: 1 1 240px; }
+.tuxano-admin .tuxano-filters input, .tuxano-admin .tuxano-filters select { margin: 0; min-height: 35px; border-radius: 6px; border-color: #d2dbe7; color: var(--tx-ink); font-size: 12px; }
+.tuxano-admin .tuxano-filters input[type="search"] { width: 100%; min-width: 220px; }
+.tuxano-admin .tuxano-list-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; align-items: center; margin: 18px 0 12px; font-size: 12px; }
+.tuxano-admin .tuxano-list-meta p { margin: 0; font-weight: 600; }
+.tuxano-admin .tuxano-list-meta > span { font-size: 11px; color: var(--tx-muted); }
+.tuxano-admin .tuxano-bulk-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; }
+.tuxano-admin .tuxano-bulk-tools select { border-color: #cdd6e2; min-height: 34px; border-radius: 6px; font-size: 12px; }
+.tuxano-admin [data-tuxano-selected] { color: var(--tx-muted); font-size: 11px; margin-left: 4px; }
+.tuxano-admin .tuxano-pagination { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 19px; }
+.tuxano-admin .page-numbers { border: 1px solid var(--tx-line); background: #fff; color: #5a6c85; padding: 7px 11px; text-decoration: none; border-radius: 6px; font-size: 12px; }
+.tuxano-admin .page-numbers.current { background: var(--tx-navy); border-color: var(--tx-navy); color: #fff; }
+.tuxano-admin .tuxano-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 28px 12px; color: var(--tx-muted); }
+.tuxano-admin .tuxano-empty .dashicons { font-size: 28px; width: 28px; height: 28px; color: #8797b1; }
+.tuxano-admin .tuxano-empty strong { color: #384c69; }
+.tuxano-admin .tuxano-empty p { margin: 0; }
+.tuxano-admin .tuxano-context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: -8px 0 20px; }
+.tuxano-admin .tuxano-revision { font-size: 11px; color: var(--tx-muted); }
+.tuxano-admin .tuxano-detail-grid { display: grid; grid-template-columns: minmax(0,1fr) 310px; gap: 22px; align-items: start; }
+.tuxano-admin .tuxano-detail-main, .tuxano-admin .tuxano-detail-sidebar { min-width: 0; }
+.tuxano-admin .tuxano-contact-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
 .tuxano-admin .tuxano-information { margin: 0; }
-.tuxano-admin .tuxano-information > div { display: grid; grid-template-columns: minmax(120px, 30%) minmax(0, 1fr); gap: 12px; border-bottom: 1px solid #f0f0f1; padding: 10px 0; }
+.tuxano-admin .tuxano-information > div { display: grid; grid-template-columns: minmax(110px,30%) minmax(0,1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef1f6; font-size: 12px; }
 .tuxano-admin .tuxano-information > div:last-child { border-bottom: 0; }
-.tuxano-admin .tuxano-information dt { font-weight: 600; }
-.tuxano-admin .tuxano-information dd { margin: 0; overflow-wrap: anywhere; white-space: normal; }
+.tuxano-admin .tuxano-information dt { color: #68768b; font-size: 11px; font-weight: 500; }
+.tuxano-admin .tuxano-information dd { margin: 0; overflow-wrap: anywhere; line-height: 1.6; color: #263953; }
 .tuxano-admin .tuxano-detail-sidebar .tuxano-information > div { display: block; }
 .tuxano-admin .tuxano-detail-sidebar .tuxano-information dt { margin-bottom: 5px; }
-.tuxano-admin .tuxano-detail-sidebar label { display: block; font-weight: 600; margin-bottom: 6px; }
+.tuxano-admin .tuxano-detail-sidebar label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
 .tuxano-admin .tuxano-detail-sidebar textarea { font-weight: 400; }
-.tuxano-admin .tuxano-danger { border-color: #e0b4b4; }
-.tuxano-admin .tuxano-danger .button.delete { color: #b32d2e; border-color: #b32d2e; }
-.tuxano-admin .tuxano-stops { margin-left: 22px; }
+.tuxano-admin .tuxano-danger { border-color: #ebcfcd; background: #fffdfd; }
+.tuxano-admin .tuxano-danger .button.delete { color: var(--tx-danger); border-color: #dcb6b2; }
+.tuxano-admin .tuxano-stops { margin-left: 20px; }
 .tuxano-admin .form-table { margin-top: 0; }
-.tuxano-admin .form-table th { width: 230px; }
-.tuxano-admin .form-table td .description { max-width: 680px; }
+.tuxano-admin .form-table th { width: 220px; color: #455670; font-size: 12px; }
+.tuxano-admin .form-table td { padding-top: 13px; padding-bottom: 13px; }
+.tuxano-admin .form-table td .description { max-width: 690px; }
 .tuxano-admin .form-table input[type="number"] { max-width: 180px; }
-@media (max-width: 1250px) {
-    .tuxano-admin .tuxano-dashboard-grid { grid-template-columns: minmax(0, 1fr); }
-    .tuxano-admin .tuxano-contact-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.tuxano-admin .form-table input, .tuxano-admin .form-table select { border-color: #ccd6e3; border-radius: 6px; min-height: 36px; font-size: 13px; }
+.tuxano-admin .form-table input[type="checkbox"] { min-height: 16px; border-radius: 3px; }
+.tuxano-admin input:focus, .tuxano-admin select:focus, .tuxano-admin textarea:focus { border-color: #7a91b2; box-shadow: 0 0 0 2px #e4ebf5; outline: none; }
+.tuxano-admin .tuxano-api-key { max-width: 700px; border: 1px solid #e0e6ef; padding: 18px; border-radius: 10px; background: #fcfdff; }
+.tuxano-admin .tuxano-key-status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #796333; margin-bottom: 11px; }
+.tuxano-admin .tuxano-key-status.is-configured { color: #237245; }
+.tuxano-admin .tuxano-key-status .dashicons { font-size: 17px; width: 17px; height: 17px; }
+.tuxano-admin .tuxano-key-current { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.tuxano-admin .tuxano-key-mask { font-size: 17px; letter-spacing: 2px; color: #7b8ca6; }
+.tuxano-admin .tuxano-key-current .button-link-delete { font-size: 11px; }
+.tuxano-admin .tuxano-api-key input[type="password"] { width: 100%; max-width: 470px; margin-bottom: 7px; }
+.tuxano-admin .tuxano-key-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.tuxano-admin .tuxano-key-result { margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; color: #47627f; background: #edf3fa; font-size: 12px; }
+.tuxano-admin .tuxano-key-result[data-state="success"] { color: #226b40; background: #eaf6ee; }
+.tuxano-admin .tuxano-key-result[data-state="error"] { color: #9b2f25; background: #fff0ed; }
+.tuxano-admin .tuxano-section-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 21px; }
+.tuxano-admin .tuxano-section-heading > .dashicons { display: grid; place-items: center; width: 37px; height: 37px; flex: 0 0 37px; border-radius: 10px; background: #eef2f9; color: #48658a; font-size: 19px; }
+.tuxano-admin .tuxano-section-heading h2 { margin: 0 0 4px; }
+.tuxano-admin .tuxano-section-heading p { margin: 0; font-size: 11px; color: var(--tx-muted); }
+.tuxano-admin .tuxano-editor-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 19px; }
+.tuxano-admin .tuxano-editor-field { position: relative; min-width: 0; }
+.tuxano-admin .tuxano-field-wide { grid-column: 1/-1; }
+.tuxano-admin .tuxano-editor-field > label { display: block; font-size: 12px; font-weight: 600; color: #465975; margin-bottom: 7px; }
+.tuxano-admin .tuxano-editor-field > label > span { color: #a16f30; }
+.tuxano-admin .tuxano-editor-field input, .tuxano-admin .tuxano-editor-field select, .tuxano-admin .tuxano-editor-field textarea, .tuxano-admin .tuxano-save-card select, .tuxano-admin .tuxano-save-card textarea { display: block; width: 100%; max-width: none; min-height: 39px; font-size: 13px; border: 1px solid #cdd7e5; border-radius: 7px; padding: 8px 10px; margin: 0; color: var(--tx-ink); background-color: #fff; }
+.tuxano-admin .tuxano-editor-field textarea { resize: vertical; min-height: 90px; }
+.tuxano-admin .tuxano-editor-field > .description { display: block; font-size: 10px; margin-top: 5px; }
+.tuxano-admin .tuxano-editor-field.is-invalid input, .tuxano-admin .tuxano-editor-field.is-invalid select, .tuxano-admin .tuxano-editor-field.is-invalid textarea { border-color: #c45145; background: #fffdfc; }
+.tuxano-admin .tuxano-field-error { display: block; color: #ac362a; font-size: 11px; line-height: 1.5; margin-top: 6px; }
+.tuxano-admin .tuxano-editor-toggles { display: flex; flex-wrap: wrap; gap: 15px 22px; margin-top: 18px; }
+.tuxano-admin .tuxano-editor-toggle { display: flex; align-items: flex-start; gap: 8px; margin: 15px 0; color: #42536d; font-size: 12px; }
+.tuxano-admin .tuxano-editor-toggle input { margin-top: 2px; }
+.tuxano-admin .tuxano-editor-toggle strong { font-weight: 500; }
+.tuxano-admin .tuxano-editor-toggle small { display: block; color: var(--tx-muted); margin-top: 3px; }
+.tuxano-admin .tuxano-admin-stop { background: #f8fafd; border: 1px solid #e2e8f1; padding: 15px; border-radius: 9px; margin: 17px 0; }
+.tuxano-admin .tuxano-stop-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 12px; color: #435875; }
+.tuxano-admin .tuxano-stop-heading button { font-size: 11px; }
+.tuxano-admin .tuxano-save-card { position: sticky; top: 48px; }
+.tuxano-admin .tuxano-editor-total { display: block; font-size: 29px; line-height: 1.2; color: var(--tx-navy); letter-spacing: -.7px; margin: 16px 0; }
+.tuxano-admin .tuxano-save-card > label { margin-top: 18px; }
+.tuxano-admin .tuxano-save-card .tuxano-save-option { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; font-weight: 400; line-height: 1.65; }
+.tuxano-admin .tuxano-save-option input { margin-top: 3px; flex-shrink: 0; }
+.tuxano-admin .tuxano-save-card .button { width: 100%; text-align: center; margin-top: 12px; }
+.tuxano-admin .tuxano-editor-summary-error { font-size: 12px; line-height: 1.6; padding: 10px; margin-top: 14px; border-radius: 6px; background: #fff0ed; color: #a33428; }
+.tuxano-admin .tuxano-history-item { padding: 11px 0; border-bottom: 1px solid #edf0f5; font-size: 12px; }
+.tuxano-admin .tuxano-history-item small { display: block; color: var(--tx-muted); margin-top: 5px; font-size: 10px; }
+.tuxano-admin .tuxano-history-item p { margin-bottom: 0; font-size: 11px; }
+.tuxano-admin .places-dropdown { position: absolute; top: 67px; left: 0; right: 0; z-index: 30; border: 1px solid #cad5e5; border-radius: 8px; box-shadow: 0 14px 30px #13213b1f; background: #fff; overflow: hidden; }
+.tuxano-admin .place-option { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 11px 13px; border: 0; border-bottom: 1px solid #edf0f5; background: #fff; text-align: left; cursor: pointer; font: inherit; }
+.tuxano-admin .place-option strong { font-size: 12px; color: var(--tx-ink); }
+.tuxano-admin .place-option span { margin-top: 4px; font-size: 10px; color: var(--tx-muted); }
+.tuxano-admin .place-option:hover, .tuxano-admin .place-option[aria-selected="true"] { background: #edf3fa; }
+.tuxano-admin .places-message, .tuxano-admin .google-attribution { padding: 9px 12px; font-size: 11px; color: var(--tx-muted); margin: 0; }
+.tuxano-admin .google-maps-attribution { font-family: Arial,sans-serif; color: #5f6368; font-size: 12px; }
+.tuxano-admin form[aria-busy="true"] { cursor: progress; }
+.tuxano-admin .notice { border-radius: 6px; box-shadow: 0 3px 12px #13213b03; margin-left: 0; margin-right: 0; }
+.tuxano-vehicle-pricing { color: #223550; }
+.tuxano-vehicle-pricing .tuxano-rate-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px; margin: 20px 0; }
+.tuxano-vehicle-pricing .tuxano-rate-field { background: #f9fbfe; border: 1px solid #dde5ef; border-radius: 9px; padding: 16px; }
+.tuxano-vehicle-pricing .tuxano-rate-field > label:first-child { display: block; font-weight: 600; color: #344e73; margin-bottom: 8px; }
+.tuxano-vehicle-pricing .tuxano-rate-field p { color: #66768c; font-size: 12px; line-height: 1.6; }
+.tuxano-vehicle-pricing .tuxano-rate-amount { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.tuxano-vehicle-pricing .tuxano-rate-amount input { max-width: 160px; border-color: #cbd6e5; border-radius: 6px; padding: 6px 9px; }
+.tuxano-vehicle-pricing .tuxano-rate-none { display: block; font-size: 12px; color: #536680; }
+.tuxano-vehicle-pricing .tuxano-rate-field.is-disabled { background: #f6f7f9; }
+.tuxano-vehicle-pricing .tuxano-rate-field.is-disabled .tuxano-rate-amount { opacity: .55; }
+.tuxano-vehicle-pricing .tuxano-pricing-guide { border: 1px solid #d9e3ef; border-left: 3px solid #b59a64; background: #f1f5fb; border-radius: 7px; padding: 15px 18px; margin: 18px 0; }
+.tuxano-vehicle-pricing .tuxano-pricing-guide h3 { margin-top: 0; color: #253e64; }
+.tuxano-vehicle-pricing [data-tuxano-rate-preview] { background: #172f58; color: #fff; border-radius: 8px; padding: 15px 18px; margin-top: 18px; }
+.tuxano-vehicle-pricing [data-tuxano-example-total] { font-size: 22px; font-weight: 600; }
+.post-type-tuxano_vehicle .wrap > h1, .taxonomy-tuxano_collection .wrap > h1 { color: #172f58; font-weight: 600; font-size: 25px; }
+@media (max-width: 1300px) {
+  .tuxano-admin .tuxano-stats { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .tuxano-admin .tuxano-dashboard-grid { grid-template-columns: minmax(0,1fr); }
+  .tuxano-admin .tuxano-contact-grid { grid-template-columns: minmax(0,1fr); gap: 0; }
 }
-@media (max-width: 960px) {
-    .tuxano-admin .tuxano-detail-grid { grid-template-columns: minmax(0, 1fr); }
-    .tuxano-admin .tuxano-detail-sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; align-items: start; }
-    .tuxano-admin .tuxano-card { padding: 18px; }
+@media (max-width: 1050px) {
+  .tuxano-admin .tuxano-detail-grid { grid-template-columns: minmax(0,1fr); }
+  .tuxano-admin .tuxano-save-card { position: static; }
+  .tuxano-admin .tuxano-detail-sidebar { display: grid; grid-template-columns: repeat(auto-fit,minmax(270px,1fr)); gap: 18px; }
 }
-@media (max-width: 600px) {
-    .tuxano-admin .tuxano-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .tuxano-admin .tuxano-stat { padding: 15px; }
-    .tuxano-admin .tuxano-information > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-    .tuxano-admin .tuxano-filters > div, .tuxano-admin .tuxano-filters input[type="search"] { width: 100%; }
-    .tuxano-admin .form-table th { width: auto; padding-bottom: 4px; }
-    .tuxano-admin .regular-text { max-width: 100%; }
+@media (max-width: 700px) {
+  .tuxano-admin { padding-right: 0; }
+  .tuxano-admin .tuxano-heading { gap: 12px; }
+  .tuxano-admin .tuxano-heading h1 { font-size: 23px; }
+  .tuxano-admin .tuxano-version { display: none; }
+  .tuxano-admin .tuxano-tabs a { padding: 9px 12px; font-size: 12px; }
+  .tuxano-admin .tuxano-card { padding: 18px; }
+  .tuxano-admin .tuxano-filters > div, .tuxano-admin .tuxano-filters input[type="search"] { width: 100%; min-width: 0; }
+  .tuxano-admin .tuxano-filter-search { flex-basis: 100%; }
+  .tuxano-admin .tuxano-editor-grid { grid-template-columns: minmax(0,1fr); gap: 15px; }
+  .tuxano-admin .tuxano-information > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
+  .tuxano-admin .form-table th { width: auto; padding-bottom: 3px; }
+  .tuxano-admin .regular-text { max-width: 100%; }
+  .tuxano-admin .tuxano-api-key { padding: 14px; }
+  .tuxano-vehicle-pricing .tuxano-rate-grid { grid-template-columns: minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tuxano-admin .tuxano-stat, .tuxano-admin .tuxano-tabs a { transition: none; }
 }

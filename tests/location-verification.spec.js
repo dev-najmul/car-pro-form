@@ -53,7 +53,7 @@ test('full selected addresses and Maps links retain exact pickup and destination
   await expect(selectedPickup(page)).toBeHidden();
   await expect(comparison(page)).toHaveCount(0);
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
 });
 
 test('route comparison preserves stop order and removal replaces the old Maps link', async ({ page }) => {
