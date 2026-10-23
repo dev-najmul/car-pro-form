@@ -1449,7 +1449,7 @@ a {
 .thank-hero {
   height: 33.1944vw;
   max-height: 640px;
-  background: #0b1220;
+  background: #0b1220 url("assets/thank-you-desktop.jpg") center / cover no-repeat;
   display: flex;
   align-items: center;
   padding-left: 8.3333vw;
@@ -3074,7 +3074,7 @@ a {
   .thank-hero {
     height: 352px;
     max-height: none;
-    background-image: none;
+    background-image: url("assets/thank-you-mobile.jpg");
     background-size: 100% auto;
     background-position: top center;
     position: relative;
@@ -3927,6 +3927,8 @@ a {
 .pickup-map-picker .map-search-label { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
 .pickup-map-picker .location-input { position: relative; z-index: 3; }
 .pickup-map-picker .input { padding-left: 12px; font-size: 14px; }
+.pickup-map-picker .places-dropdown { position: static; margin-top: 8px; max-height: 210px; overflow-y: auto; box-shadow: none; }
+.pickup-map-picker .places-dropdown [role="listbox"] { max-height: none; overflow: visible; }
 .pickup-map-frame { position: relative; margin: 10px 0; height: 320px; border: 1px solid #ccd2dc; border-radius: 4px; overflow: hidden; }
 .pickup-map-canvas { width: 100%; height: 100%; }
 .pickup-map-pin { position: absolute; top: 50%; left: 50%; width: 32px; height: 38px; transform: translate(-50%, -100%); pointer-events: none; color: #10265a; filter: drop-shadow(0 1px 2px #fff); }
@@ -3941,8 +3943,8 @@ a {
 
 
 /* Version 2.1: calm, compact form layout with accessible field feedback. */
-body { font-size: 15px; }
-body.form-page { background: #f5f7fb; }
+html { background: transparent; }
+body.form-page { font-size: 15px; background: transparent; }
 body.form-page .page-header {
   height: auto; padding: 42px 24px 34px; color: #172642;
 }
@@ -3999,13 +4001,6 @@ body.form-page .form-error { border-radius: 6px; font-size: 13px; }
 .route-loading { display: flex; align-items: center; gap: 9px; }
 .route-loading::before { content: ""; width: 15px; height: 15px; border: 2px solid #d6dfed; border-top-color: #173a7b; border-radius: 50%; animation: route-spin .8s linear infinite; }
 @keyframes route-spin { to { transform: rotate(360deg); } }
-body.thank-page { background: #f5f7fb; }
-body.thank-page .thank-hero { height: 124px; max-height: none; padding: 24px max(24px, calc((100% - 1200px) / 2)); background: #101e36; background-image: none; }
-body.thank-page .brand-logo { display: block; width: 230px; }
-body.thank-page .thank-content { width: min(1200px, calc(100% - 48px)); padding-top: 40px; padding-bottom: 48px; }
-body.thank-page .thank-content > h1 { font-size: 46px; }
-body.thank-page .thank-content > p { font-size: 15px; line-height: 1.7; }
-body.thank-page .thank-section-title { font-size: 18px; }
 .location-country-error { color: #b4233b; font-size: 12px; margin-top: 8px; }
 @media (min-width: 1024px) {
   body.form-page .contact-columns, body.form-page .passengers-columns { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
@@ -4033,10 +4028,5 @@ body.thank-page .thank-section-title { font-size: 18px; }
   body.form-page .field-grid { gap: 12px; }
   body.form-page .field-caption { font-size: 11px; }
   body.form-page .vehicle-card > h3 { font-size: 16px; }
-  body.thank-page .thank-hero { height: 100px; padding: 22px; }
-  body.thank-page .brand-logo { width: 190px; }
-  body.thank-page .thank-content { width: calc(100% - 28px); padding-top: 28px; padding-bottom: 32px; }
-  body.thank-page .thank-content > h1 { font-size: 34px; }
-  body.thank-page .thank-content > p { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) { .route-loading::before { animation: none; } }

@@ -51,6 +51,7 @@ final class Settings
             'route_minute_limit' => 30,
             'session_hourly_limit' => 120,
             'booking_hourly_limit' => 20,
+            'dashboard_recent_limit' => 3,
         ];
     }
 
@@ -77,7 +78,7 @@ final class Settings
         $next = self::get();
         $errors = new \WP_Error();
         $price_fields = ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity'];
-        $integer_bounds = ['max_stops' => [0, 5], 'min_hours' => [1, 24], 'max_hours' => [1, 24], 'retention_days' => [0, 3650], 'route_daily_limit' => [1, 100000], 'route_minute_limit' => [1, 120], 'session_hourly_limit' => [1, 1000], 'booking_hourly_limit' => [1, 1000]];
+        $integer_bounds = ['max_stops' => [0, 5], 'min_hours' => [1, 24], 'max_hours' => [1, 24], 'retention_days' => [0, 3650], 'route_daily_limit' => [1, 100000], 'route_minute_limit' => [1, 120], 'session_hourly_limit' => [1, 1000], 'booking_hourly_limit' => [1, 1000], 'dashboard_recent_limit' => [1, 20]];
         $text_bounds = ['company_name' => 120, 'support_phone' => 60, 'sender_name' => 120, 'currency_symbol' => 12];
 
         foreach (self::defaults() as $key => $_default) {

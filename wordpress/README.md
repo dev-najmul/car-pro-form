@@ -1,8 +1,8 @@
-# Tuxano Booking 2.1.0
+# Tuxano Booking 2.1.1
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.1.0.zip) · [SHA-256](../releases/tuxano-booking-2.1.0.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.1.1.zip) · [SHA-256](../releases/tuxano-booking-2.1.1.zip.sha256)
 
 ## Install and configure
 
@@ -10,14 +10,14 @@ Installable WordPress conversion of the existing five-step form. The static prot
 2. **Tuxano Booking → Settings**: add the Maps JavaScript/Places browser key and separate Routes server key. The latter stays on the WordPress server. Saved keys are write-only; empty inputs preserve them, explicit Clear removes them. Use suitable domain/API restrictions and enabled Google billing/APIs.
 3. Review **Vehicles**, **Collections** and **Pricing**. Six existing vehicles and sample tariffs are seeded once. Replace the sample amounts with approved business prices. Currency changes do not perform foreign-exchange conversion.
 4. Set business/contact details, public terms/privacy URLs, email recipient/sender, optional retention, route budgets and booking limits. Set the WordPress site timezone; the form displays that timezone for pickup date/time.
-5. Add `[tuxano_booking]` to a page. It embeds a responsive same-origin form isolated from theme CSS. For the original complete page design, choose the **Tuxano Booking — full page** template. A standalone form is also available at `/?tuxano_booking_form=1`.
+5. Add `[tuxano_booking]` to a page. It embeds a responsive same-origin form isolated from theme CSS. For the complete page, choose the **Tuxano Booking — full page** template. Its WordPress/Elementor host preserves page backgrounds while the transparent isolated form keeps theme CSS from changing its controls. A standalone form is also available at `/?tuxano_booking_form=1`.
 6. Test a request, inspect its submission and confirm delivery to both intended inboxes. The plugin uses `wp_mail`; configure a WordPress SMTP/mail transport when needed. Local tests intercept mail rather than sending it to real recipients.
 
 ## Admin controls
 
 | Menu | Controls |
 | --- | --- |
-| Dashboard | Total/status counts, recent requests, configuration summary |
+| Dashboard | Total/status counts, newest three requests by default, configuration summary; change recent count (1–20) under Settings → Dashboard |
 | Submissions | Search, status/pickup-date filters, page sizes 10/20/50/100, View/Edit, full booking corrections, audit/revision history, exact Google point links, private notes, status, confirmed selected-row deletion and notification retry |
 | Vehicles | Native add/edit/draft/trash, media photo, title/models/features, passenger/bag capacities, category and all six tariff components |
 | Collections | Native category name/description management |
@@ -39,8 +39,8 @@ API cards show a masked configured value and deliberate Replace/Remove controls.
 - A 15-minute server quote binds exact pickup/destination/ordered stops, measured metrics, session and vehicle/pricing revision. Server validation rejects changed routes, invalid fields/capacities, expired quotes and changed fleet/prices. Client totals are discarded.
 - Persisted requests have unique server references and idempotency keys. Retries cannot duplicate the booking or its normal notifications. Original route, pricing and vehicle/tariff snapshots survive later fleet changes.
 - Device positions require fresh accuracy checks and confirmation. An inaccurate PC estimate cannot become a pickup automatically; users can search and choose an exact map point.
-- Map selection is available for pickup, every stop and drop-off. Choosing an address/POI commits its exact Place ID; arbitrary coordinates still require confirmation. Actual Google country components restrict subsequent suggestions and reject known conflicts. Country hints are a usability check, not independently verified server geographic authority; unknown coordinate countries are not guessed.
-- The public form uses a plain background, a 1200px maximum for steps 2–5, compact responsive controls, secure parent-frame top scrolling and accessible inline validation. All 249 ISO countries are available; State/Province is always text, and region/postal code are optional internationally.
+- Map selection is available for pickup, every stop and drop-off. Choosing an address/POI inside the map previews its real location and keeps the map open for inspection. Confirm to retain its exact Place ID, or move the pin and explicitly confirm the actual coordinates. Main address autocomplete remains direct. Actual Google country components restrict subsequent suggestions and reject known conflicts. Country hints are a usability check, not independently verified server geographic authority; unknown coordinate countries are not guessed.
+- The public form uses a transparent background, a 1200px maximum for steps 2–5, compact responsive controls, secure parent-frame top scrolling and accessible inline validation. All 249 ISO countries are available; State/Province is always text, and region/postal code are optional internationally. The thank-you page restores the supplied original desktop/phone photographic hero and white receipt layout.
 
 ## Security, personal data and mail
 
@@ -74,8 +74,8 @@ wp eval-file /path/to/repo/tests/wordpress-integration.php
 wp eval-file /path/to/repo/tests/wordpress-updates.php
 ```
 
-The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3 and PHP 8.5, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Run fixture suites sequentially on disposable local databases. The complete current scope and concrete verification outcomes are in [UPGRADE-2.1.md](UPGRADE-2.1.md) and [project.md](../project.md#19-full-frontendadmin-upgrade--22-october-2026).
+The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3 and PHP 8.5, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Run fixture suites sequentially on disposable local databases. The seven current refinements are in [UPGRADE-2.1.1.md](UPGRADE-2.1.1.md). The previous major upgrade and its verification outcomes are in [UPGRADE-2.1.md](UPGRADE-2.1.md) and [project.md](../project.md#19-full-frontendadmin-upgrade--22-october-2026).
 
-Version **2.1.0** is installed and active on the authorized PHP 7.4.33 / WordPress 7.1.3 test site. The [live booking form](https://bdreadyweb.com/carbook/tuxano-booking-test/) passed actual Google map selection for drop-off/stop, route/wait calculations, all six fleet prices, durable submission and responsive thank-you. Native admin contact editing preserved the fare, recorded revision 2 and sent the explicitly selected customer update. Both saved API connections passed real authorization checks. Existing pages, settings and tariffs were preserved.
+Version **2.1.0** was installed and verified before these refinements on the authorized PHP 7.4.33 / WordPress 7.1.3 test site. The [live booking form](https://bdreadyweb.com/carbook/tuxano-booking-test/) passed actual Google map selection for drop-off/stop, route/wait calculations, all six fleet prices, durable submission and responsive thank-you. Native admin contact editing preserved the fare, recorded revision 2 and sent the explicitly selected customer update. Both saved API connections passed real authorization checks. Existing pages, settings and tariffs were preserved.
 
-[Direct plugin ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.0.zip) · [Live booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking). The downloaded ZIP matches the committed SHA-256. Customer/admin/update messages were accepted by WordPress mail transport; actual inbox delivery still needs the owner's test with a real address. Replace the seeded example tariffs with approved business rates before customer quoting. Full verification evidence is in [project.md Section 19](../project.md#19-full-frontendadmin-upgrade--22-october-2026); the previous 2.0.1 ZIP remains available for rollback.
+[Direct plugin ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.1.zip) · [Live booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking). The downloaded ZIP matches the committed SHA-256. Customer/admin/update messages were accepted by WordPress mail transport; actual inbox delivery still needs the owner's test with a real address. Replace the seeded example tariffs with approved business rates before customer quoting. Full verification evidence is in [project.md Section 19](../project.md#19-full-frontendadmin-upgrade--22-october-2026); the previous 2.0.1 ZIP remains available for rollback.

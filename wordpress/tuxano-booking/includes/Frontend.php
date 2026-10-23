@@ -25,7 +25,7 @@ final class Frontend
         $id = wp_unique_id('tuxano-frame-');
         $url = add_query_arg(['tuxano_booking_form' => '1', 'frame_id' => $id], home_url('/'));
         wp_enqueue_script('tuxano-booking-embed', TUXANO_BOOKING_URL . 'assets/embed.js', [], TUXANO_BOOKING_VERSION, true);
-        return '<div class="tuxano-booking-embed" style="width:100%;max-width:none"><iframe id="' . esc_attr($id) . '" data-tuxano-booking-frame src="' . esc_url($url) . '" title="' . esc_attr__('Transportation reservation request', 'tuxano-booking') . '" allow="geolocation" style="display:block;width:100%;height:1300px;border:0;max-width:100%" loading="eager"></iframe><noscript>' . esc_html__('Enable JavaScript to use the reservation form.', 'tuxano-booking') . '</noscript></div>';
+        return '<div class="tuxano-booking-embed" style="width:100%;max-width:none"><iframe id="' . esc_attr($id) . '" data-tuxano-booking-frame src="' . esc_url($url) . '" title="' . esc_attr__('Transportation reservation request', 'tuxano-booking') . '" allow="geolocation" style="display:block;width:100%;height:1300px;border:0;max-width:100%;background:transparent" loading="eager"></iframe><noscript>' . esc_html__('Enable JavaScript to use the reservation form.', 'tuxano-booking') . '</noscript></div>';
     }
 
     public static function frame(): void
@@ -45,10 +45,31 @@ final class Frontend
         $boot = ['restUrl' => rest_url('tuxano-booking/v1/'), 'nonce' => wp_create_nonce('wp_rest'), 'assetUrl' => $assets, 'frameId' => $frame, 'timezone' => wp_timezone_string()];
         $settings = Settings::get();
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'HEAD') { exit; }
+        if ($full_page && !$standalone) {
+            self::full_page($settings);
+            exit;
+        }
         ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title><?php echo esc_html($settings['company_name']); ?> Reservation Request</title><link rel="stylesheet" href="<?php echo esc_url($assets . 'styles.css'); ?>"></head>
-<body><a href="#main" class="skip-link">Skip to form</a><div id="app"><p class="route-status" role="status">Loading reservation form…</p></div><div id="announcement" class="sr-only" role="status" aria-live="polite"></div><noscript><p>Please enable JavaScript to use this reservation request form.</p></noscript>
+<body class="form-page"><a href="#main" class="skip-link">Skip to form</a><div id="app"><p class="route-status" role="status">Loading reservation form…</p></div><div id="announcement" class="sr-only" role="status" aria-live="polite"></div><noscript><p>Please enable JavaScript to use this reservation request form.</p></noscript>
 <script>globalThis.TuxanoBookingBoot=<?php echo wp_json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script><script type="module" src="<?php echo esc_url(TUXANO_BOOKING_URL . 'assets/bootstrap.js?ver=' . TUXANO_BOOKING_VERSION); ?>"></script></body></html><?php
         exit;
+    }
+
+    /** Keep page/background styling outside the isolated booking document. */
+    private static function full_page(array $settings): void
+    {
+        $page_id = get_queried_object_id();
+        // Elementor stores page-level backgrounds in its generated post CSS.
+        // Enqueue that public stylesheet when Elementor is active; no builder
+        // dependency or document modification is required for ordinary themes.
+        if (class_exists(\Elementor\Core\Files\CSS\Post::class) && get_post_meta($page_id, '_elementor_edit_mode', true) === 'builder') {
+            $css = new \Elementor\Core\Files\CSS\Post($page_id);
+            $css->enqueue();
+        }
+        $embed = self::shortcode();
+        ?><!doctype html>
+<html <?php language_attributes(); ?>><head><meta charset="<?php bloginfo('charset'); ?>"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><?php if (!current_theme_supports('title-tag')) { ?><title><?php echo esc_html($settings['company_name']); ?> Reservation Request</title><?php } wp_head(); ?><style>.tuxano-booking-host{margin:0;min-width:0;min-height:100vh}.tuxano-booking-host>.tuxano-booking-embed{margin:0;width:100%;max-width:none}.tuxano-booking-host [data-tuxano-booking-frame]{background:transparent}</style></head>
+<body <?php body_class('tuxano-booking-host'); ?>><?php wp_body_open(); echo $embed; wp_footer(); ?></body></html><?php
     }
 }

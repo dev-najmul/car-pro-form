@@ -12,6 +12,8 @@ final class Admin {
         add_action('admin_menu', [self::class, 'menus']);
         add_action('admin_menu', [self::class, 'order_menu'], 99);
         add_action('admin_enqueue_scripts', [self::class, 'assets']);
+        add_action('admin_notices', [self::class, 'native_header'], 1);
+        add_filter('admin_body_class', [self::class, 'body_class']);
         add_action('admin_post_tuxano_save_settings', [self::class, 'save_settings']);
         add_action('admin_post_tuxano_update_booking', [self::class, 'update_booking']);
         add_action('admin_post_tuxano_delete_booking', [self::class, 'delete_booking']);
@@ -50,6 +52,27 @@ final class Admin {
         if ($screen && $screen->post_type === 'tuxano_vehicle' && $screen->base === 'post') { wp_enqueue_media(); }
     }
 
+    private static function native_screen(): bool {
+        $screen = get_current_screen();
+        return $screen && ($screen->post_type === 'tuxano_vehicle' || $screen->taxonomy === 'tuxano_collection');
+    }
+
+    public static function body_class(string $classes): string {
+        if (self::native_screen()) { return $classes . ' tuxano-admin-screen tuxano-native-screen'; }
+        $page = self::get_query('page');
+        return in_array($page, [self::PAGE, 'tuxano-submissions', 'tuxano-pricing', 'tuxano-settings'], true) ? $classes . ' tuxano-admin-screen' : $classes;
+    }
+
+    /** Add the same navigation to native fleet screens without wrapping WP forms. */
+    public static function native_header(): void {
+        if (!self::native_screen() || !current_user_can('manage_options')) { return; }
+        $screen = get_current_screen();
+        $collections = $screen && $screen->taxonomy === 'tuxano_collection';
+        echo '<div class="wrap tuxano-admin tuxano-native-header"><header class="tuxano-heading"><p class="tuxano-intro">' . esc_html($collections ? __('Organize your fleet into collections shown in the booking form.', 'tuxano-booking') : __('Manage vehicle details, photos, capacities and transportation rates.', 'tuxano-booking')) . '</p><span class="tuxano-version">' . esc_html__('Version', 'tuxano-booking') . ' ' . esc_html(TUXANO_BOOKING_VERSION) . '</span></header>';
+        self::tabs($collections ? 'collections' : 'vehicles');
+        echo '</div>';
+    }
+
     public static function order_menu(): void {
         global $submenu;
         if (empty($submenu[self::PAGE])) { return; }
@@ -81,9 +104,15 @@ final class Admin {
 
     private static function open(string $title, string $description = ''): void {
         self::authorize();
-        echo '<div class="wrap tuxano-admin"><header class="tuxano-heading"><div><div class="tuxano-eyebrow"><span class="tuxano-monogram" aria-hidden="true">T</span> ' . esc_html__('TUXANO · BOOKING WORKSPACE', 'tuxano-booking') . '</div><h1>' . esc_html($title) . '</h1>';
+        echo '<div class="wrap tuxano-admin"><header class="tuxano-heading"><div><h1>' . esc_html($title) . '</h1>';
         if ($description !== '') { echo '<p class="tuxano-intro">' . esc_html($description) . '</p>'; }
-        echo '</div><span class="tuxano-version">' . esc_html__('Version', 'tuxano-booking') . ' ' . esc_html(TUXANO_BOOKING_VERSION) . '</span></header><nav class="tuxano-tabs" aria-label="' . esc_attr__('Booking administration', 'tuxano-booking') . '">';
+        echo '</div><span class="tuxano-version">' . esc_html__('Version', 'tuxano-booking') . ' ' . esc_html(TUXANO_BOOKING_VERSION) . '</span></header>';
+        self::tabs(self::get_query('page'));
+        self::notices();
+    }
+
+    private static function tabs(string $current): void {
+        echo '<nav class="tuxano-tabs" aria-label="' . esc_attr__('Booking administration', 'tuxano-booking') . '">';
         $links = [
             [self::PAGE, __('Overview', 'tuxano-booking'), self::url(self::PAGE)],
             ['tuxano-submissions', __('Submissions', 'tuxano-booking'), self::url('tuxano-submissions')],
@@ -93,10 +122,9 @@ final class Admin {
             ['tuxano-settings', __('Settings', 'tuxano-booking'), self::url('tuxano-settings')],
         ];
         foreach ($links as [$key, $label, $url]) {
-            echo '<a href="' . esc_url($url) . '"' . (self::get_query('page') === $key ? ' aria-current="page"' : '') . '>' . esc_html($label) . '</a>';
+            echo '<a href="' . esc_url($url) . '"' . ($current === $key ? ' aria-current="page"' : '') . '>' . esc_html($label) . '</a>';
         }
         echo '</nav>';
-        self::notices();
     }
 
     private static function notices(): void {
@@ -177,10 +205,10 @@ final class Admin {
             echo '<a class="tuxano-stat" href="' . esc_url(self::url('tuxano-submissions', $args)) . '"><span>' . esc_html($label) . '</span><strong>' . esc_html(number_format_i18n((int) ($counts[$status] ?? 0))) . '</strong></a>';
         }
         echo '</div><div class="tuxano-dashboard-grid"><section class="tuxano-card"><h2>' . esc_html__('Recent submissions', 'tuxano-booking') . '</h2>';
-        $recent = Database::listing(['page' => 1, 'per_page' => 5]);
+        $settings = Settings::get();
+        $recent = Database::listing(['page' => 1, 'per_page' => max(1, min(20, (int) $settings['dashboard_recent_limit']))]);
         self::submission_table($recent['items']);
         echo '<p><a class="button" href="' . esc_url(self::url('tuxano-submissions')) . '">' . esc_html__('View all submissions', 'tuxano-booking') . '</a></p></section><section class="tuxano-card"><h2>' . esc_html__('Booking setup', 'tuxano-booking') . '</h2><p>' . esc_html__('Add the shortcode below to a WordPress page to display the booking form.', 'tuxano-booking') . '</p><p><code>[tuxano_booking]</code></p>';
-        $settings = Settings::get();
         echo '<ul class="tuxano-checklist"><li>' . esc_html__('Google Maps browser key:', 'tuxano-booking') . ' <strong>' . esc_html($settings['browser_key'] !== '' ? __('Configured', 'tuxano-booking') : __('Not configured', 'tuxano-booking')) . '</strong></li><li>' . esc_html__('Routes server key:', 'tuxano-booking') . ' <strong>' . esc_html($settings['routes_key'] !== '' ? __('Configured', 'tuxano-booking') : __('Not configured', 'tuxano-booking')) . '</strong></li><li>' . esc_html__('Published vehicles:', 'tuxano-booking') . ' <strong>' . esc_html((string) count(Vehicles::all())) . '</strong></li></ul><p><a class="button" href="' . esc_url(self::url('tuxano-settings')) . '">' . esc_html__('Manage settings', 'tuxano-booking') . '</a> <a class="button" href="' . esc_url(admin_url('edit.php?post_type=tuxano_vehicle')) . '">' . esc_html__('Manage fleet', 'tuxano-booking') . '</a></p><p class="description">' . esc_html__('Submissions are reservation requests. Confirmation and payment arrangements are handled by your team.', 'tuxano-booking') . '</p></section></div></div>';
     }
 
@@ -659,6 +687,8 @@ final class Admin {
         self::field($settings, 'website', __('Company website', 'tuxano-booking'), 'url', '', ['maxlength' => 2048]);
         self::field($settings, 'currency', __('Currency code', 'tuxano-booking'), 'text', __('Three-letter code, for example USD or BDT. Changing it does not convert existing numeric tariff amounts.', 'tuxano-booking'), ['maxlength' => 3, 'pattern' => '[A-Za-z]{3}', 'required' => 'required']);
         self::field($settings, 'currency_symbol', __('Currency symbol', 'tuxano-booking'), 'text', __('Displayed with amounts in the booking form.', 'tuxano-booking'), ['maxlength' => 12, 'required' => 'required']);
+        echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Dashboard', 'tuxano-booking') . '</h2><table class="form-table" role="presentation">';
+        self::field($settings, 'dashboard_recent_limit', __('Recent submissions to display', 'tuxano-booking'), 'number', __('Show the newest requests on the dashboard. Choose 1–20; the default is 3. All requests remain available in Submissions.', 'tuxano-booking'), ['min' => 1, 'max' => 20, 'step' => 1, 'required' => 'required']);
         echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
         self::key_field($settings, 'browser_key', __('Maps browser API key', 'tuxano-booking'), __('Enable Maps JavaScript API and Places API (New). Restrict this browser key to the domains where this form is embedded.', 'tuxano-booking'));
         self::key_field($settings, 'routes_key', __('Routes server API key', 'tuxano-booking'), __('Enable Routes API. This key is used only for server-to-server route requests and is never returned to the form.', 'tuxano-booking'));
@@ -704,7 +734,7 @@ final class Admin {
         check_admin_referer('tuxano_save_settings_' . $section);
         $keys = $section === 'pricing'
             ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
-            : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit'];
+            : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit'];
         $values = [];
         foreach ($keys as $key) {
             if (!isset($_POST[$key])) {

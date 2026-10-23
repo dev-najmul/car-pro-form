@@ -1733,3 +1733,18 @@ The single clearly labelled release QA submission saved booking **3**, reference
 **Boundaries retained:** Google duration is a labelled baseline excluding live/pickup-date traffic. Browser country components restrict suggestions and reject known conflicts; server validation checks shape/ISO consistency but does not independently authenticate geographic country hints, and unknown coordinates are not guessed. No extra client API/account was requested. The seeded tariffs still require replacement/approval for real business quoting. Actual inbox delivery and the owner's final manual acceptance remain the final delivery checks. Detailed machine-readable reports/screenshots are in ignored `wordpress-test-results/live-210/`, `admin-210/` and `email-210/`.
 
 **Handoff:** source and release are saved on GitHub `main`, 2.1.0 is active on the supplied site, and all thirteen checklist groups are complete. Reusable cloud startup instructions were saved as a configuration draft while preserving the existing install script, network policy, secret bindings and repositories. A draft still needs environment Publish before it becomes future-session configuration; no fresh-machine restoration claim is made. The owner can now perform final manual review using the live form/dashboard/download links above.
+
+
+## 20. Final design refinements — 23 October 2026
+
+The owner requested seven further changes and authorized implementation, testing and direct live plugin update, followed by another manual review. Target **2.1.1**, retaining the complete 2.1.0 ZIP as rollback and preserving existing bookings, tariffs, keys and content.
+
+1. Make the main form document/background transparent so the page/Elementor background can show. Verify the same-origin shortcode frame and full-page integration rather than changing only one CSS declaration.
+2. Remove the decorative T monogram and “TUXANO · BOOKING WORKSPACE” line from every booking admin screen.
+3. Increase undersized administrator text to standard readable sizing and refine the existing design's typography, hierarchy, spacing and controls.
+4. Dashboard Recent submissions defaults to the newest **three**. Add a bounded private Settings control (1–20) to increase/decrease this count; retain full-list pagination and current saved settings.
+5. Give native Vehicles and Collections list/edit screens the same coherent booking administration design/navigation while retaining WordPress CRUD, notices, media, capabilities and nonces. Scope styling to the plugin's screens.
+6. In Choose on map, selecting a search suggestion previews its real location on the live map and keeps the map open for inspecting nearby streets/places. Confirm an exact Place ID deliberately, or refine the pin and explicitly confirm its actual coordinates. Keep ordinary address autocomplete direct; never auto-accept the first prediction or fabricate a GPS position. Preserve country and late-response guards; ensure suggestions do not obscure the whole map.
+7. Restore the thank-you page's original desktop/phone reference design (`thank you.png`, `thank you phone.png`), including the supplied photographic hero, original white content and appropriate layout/typography. Keep actual receipt/contact/route/pricing data dynamic. This supersedes the 2.1 plain/compact thank-you styling.
+
+Implementation order is tracked by these numbered points. Check the affected UI, settings validation, map preview/confirmation and races, responsive layouts and actual Google route/submission behavior; build/install the actual 2.1.1 ZIP on the supplied site and record concrete results before handing back for owner review.

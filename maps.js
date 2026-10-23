@@ -392,5 +392,10 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
   };
   const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); } }, 150); };
   input.addEventListener('input', search); input.addEventListener('keydown', keydown); input.addEventListener('blur', blur);
-  return () => { alive = false; ++generation; clearTimeout(timer); close(); client.discardSession(fieldId); input.removeEventListener('input', search); input.removeEventListener('keydown', keydown); input.removeEventListener('blur', blur); };
+  // A map interaction may supersede a pending search without unmounting the
+  // search box. Cancel its stale provider response and close its suggestions.
+  const cancel = () => { selecting = false; ++generation; clearTimeout(timer); close(); client.discardSession(fieldId); };
+  const cleanup = () => { alive = false; cancel(); input.removeEventListener('input', search); input.removeEventListener('keydown', keydown); input.removeEventListener('blur', blur); };
+  cleanup.cancel = cancel;
+  return cleanup;
 }

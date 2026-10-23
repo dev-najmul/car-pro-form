@@ -110,7 +110,7 @@ test('a 100 km PC estimate offers an exact map correction without accepting its 
   await expect(page.getByTestId('route-distance')).toBeVisible();
 });
 
-test('map search is keyboard accessible and immediately commits the explicitly selected Google address', async ({ page }) => {
+test('map search shows the selected area and requires confirmation before replacing the pickup', async ({ page }) => {
   await originalTrip(page);
   const before = controls.get(page).requests.length;
   await openMap(page);
@@ -129,6 +129,12 @@ test('map search is keyboard accessible and immediately commits the explicitly s
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
   expect(controls.get(page).requests).toHaveLength(before);
   await search.press('ArrowDown'); await search.press('Enter');
+  await expect(mapPicker(page)).toBeVisible();
+  await expect(mapConfirm(page)).toBeEnabled();
+  await expect(pickup(page)).toHaveValue('Original confirmed pickup');
+  expect(controls.get(page).requests).toHaveLength(before);
+  await expect.poll(() => page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.7095);
+  await mapConfirm(page).click();
   await expect(pickup(page)).toHaveValue(query);
   await expect(mapPicker(page)).toHaveCount(0);
   await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ placeId: pointId(query) });
@@ -201,6 +207,8 @@ test('map load failure retains manual address search and an obsolete map import 
   });
   await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
   await expect.poll(() => page.evaluate(() => typeof window.__releaseMapImport)).toBe('function');
+  await expect(page.getByLabel('Search map for pickup', { exact: true })).not.toBeEditable();
+  await expect(page.getByLabel('Search map for pickup', { exact: true })).toHaveAttribute('aria-busy', 'true');
   await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
   await page.evaluate(() => window.__releaseMapImport());
   await settle(page);
@@ -435,4 +443,26 @@ test('rerendering keeps the detector busy and a newer request rejects the cancel
   await respond(page);
   await expect(confirm(page)).toBeVisible();
   await expect(detect(page)).toBeEnabled();
+});
+
+
+test('a drop-off map search stays open for pin refinement and commits the refined coordinates only on confirmation', async ({ page }) => {
+  await originalTrip(page);
+  const count=controls.get(page).requests.length;
+  await page.getByRole('button',{name:'Choose drop-off on map',exact:true}).click();
+  const panel=page.locator('[data-map-picker]');
+  await expect(panel.getByTestId('google-map-mock-canvas')).toBeVisible();
+  const query='Different destination area';
+  await page.evaluate(id=>{window.__mapsMock.locations={[id]:{lat:22.75,lng:90.40}};},pointId(query));
+  await page.getByLabel('Search map for drop-off',{exact:true}).fill(query);
+  await page.getByRole('option',{name:query,exact:true}).click();
+  await expect(mapConfirm(page)).toBeEnabled();
+  await expect(page.getByLabel('Drop-off location',{exact:true})).toHaveValue('Patuakhali, Bangladesh');
+  await expect.poll(() => page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.75);
+  expect(controls.get(page).requests).toHaveLength(count);
+  await page.evaluate(() => window.__mapPickerMock.drag(22.751,90.402));
+  await expect(panel).toContainText('22.75100, 90.40200');
+  await mapConfirm(page).click();
+  await expect(panel).toHaveCount(0);
+  await expect.poll(() => controls.get(page).requests.at(-1)?.destination).toEqual({latitude:22.751,longitude:90.402});
 });

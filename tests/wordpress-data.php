@@ -53,12 +53,24 @@ wp_set_current_user((int) $admin[0]);
 try {
     $defaults = Settings::defaults();
     $check($defaults['meet_price'] === 50.0 && $defaults['first_seat_price'] === 75.0 && $defaults['additional_seat_price'] === 50.0, 'Original extras defaults must match the form.');
+    $check($defaults['dashboard_recent_limit'] === 3, 'The dashboard defaults to the three newest submissions.');
+    $legacy = Settings::get();
+    unset($legacy['dashboard_recent_limit']);
+    update_option(Settings::OPTION, $legacy, false);
+    $check(Settings::get()['dashboard_recent_limit'] === 3, 'Existing settings without the new dashboard option use its default.');
+    $rate_revision = Settings::revision();
+    foreach ([1, 20, 3] as $recent_limit) {
+        $check(Settings::save(['dashboard_recent_limit' => (string) $recent_limit]) === true && Settings::get()['dashboard_recent_limit'] === $recent_limit, 'Dashboard recent submission bounds save as integers: ' . $recent_limit);
+    }
+    $check(Settings::revision() === $rate_revision, 'Changing only dashboard display preferences must not expire valid route quotes.');
     $check(Settings::save(['browser_key' => 'test_browser_key_123456789012345', 'routes_key' => 'test_routes_key_123456789012345', 'meet_price' => '64.75']) === true, 'Valid settings should save.');
     $check(Settings::save(['meet_price' => '80', 'browser_key' => '', 'routes_key' => '']) === true, 'A partial form should preserve blank API keys.');
     $settings = Settings::get();
     $check($settings['browser_key'] === 'test_browser_key_123456789012345' && $settings['routes_key'] === 'test_routes_key_123456789012345' && $settings['meet_price'] === 80.0, 'API keys and partial-save merge must be preserved.');
     $public = Settings::public_data();
     $check(!array_key_exists('routes_key', $public) && !array_key_exists('routesKey', $public) && !array_key_exists('admin_email', $public) && !array_key_exists('browser_key', $public), 'Private config must not leak into public settings.');
+    $check(!array_key_exists('dashboard_recent_limit', $public) && !array_key_exists('dashboardRecentLimit', $public), 'Administrator dashboard preferences are not exposed in public form settings.');
+    $check(Settings::get()['dashboard_recent_limit'] === 3, 'Unrelated partial price/key updates preserve dashboard preferences.');
     $check($public['meetPrice'] === 80.0 && $public['minHours'] === $settings['min_hours'], 'Public config must use the camelCase contract.');
     global $wpdb;
     $autoload = $wpdb->get_var($wpdb->prepare("SELECT autoload FROM {$wpdb->options} WHERE option_name=%s", Settings::OPTION));
@@ -70,6 +82,9 @@ try {
         ['admin_email' => "client@example.test\r\nBcc: victim@example.test"],
         ['sender_name' => "Name\nBcc: victim@example.test"], ['website' => 'javascript:alert(1)'],
         ['browser_key' => "unsafe\nkey"], ['currency' => 'USDD'], ['email_customer' => 'true'],
+        ['dashboard_recent_limit' => '0'], ['dashboard_recent_limit' => '21'],
+        ['dashboard_recent_limit' => '-1'], ['dashboard_recent_limit' => '1.5'],
+        ['dashboard_recent_limit' => ['3']], ['dashboard_recent_limit' => 'INF'],
     ] as $invalid) {
         $before = Settings::get();
         $result = Settings::save(array_merge(['company_name' => 'Must not partially save'], $invalid));

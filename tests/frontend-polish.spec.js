@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 // Demo state supplies complete trip data; these cases exercise new layout and
 // field behaviour through the real controls without a live provider dependency.
-test('plain background and a true 1200px content limit apply to every later step', async ({ page }) => {
+test('transparent background and a true 1200px content limit apply to every later step', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   for (const route of ['vehicles', 'passengers', 'contact', 'review']) {
     await page.goto('/?demo=1#' + route);
@@ -11,6 +11,8 @@ test('plain background and a true 1200px content limit apply to every later step
     expect(Math.round(box.width)).toBe(1200);
     expect(Math.round(box.x)).toBe(360);
     await expect(page.locator('body')).toHaveCSS('background-image', 'none');
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(page.locator('html')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(page.locator('.page-header')).toHaveCSS('color', 'rgb(23, 38, 66)');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   }
@@ -116,3 +118,37 @@ test('embedded navigation reveals the frame only for its exact same-origin sourc
   await expect(child.getByRole('heading', { name: /CONTACT & BILLING/ })).toBeVisible();
   await expect.poll(() => page.locator('iframe').evaluate(frame => Math.round(frame.getBoundingClientRect().top))).toBe(44);
 });
+
+
+// A parent theme/Elementor owns its page background; the child booking canvas
+// must remain transparent even after step navigation changes its body classes.
+test('embedded form keeps the parent background visible across step changes', async ({ page }) => {
+  await page.goto('/?demo=1#trip');
+  await page.setContent(`<style>html,body{margin:0;background:linear-gradient(90deg,#1a4b38,#bca77d)}iframe{display:block;width:100%;height:2200px;border:0;background:transparent}</style><iframe title="Booking on a custom background" src="/?demo=1#passengers"></iframe>`);
+  const child = page.frameLocator('iframe');
+  await expect(child.getByRole('button', { name: /continue to contact/i })).toBeVisible();
+  await expect(child.locator('html')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(child.locator('body')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(page.locator('body')).toHaveCSS('background-image', /linear-gradient/);
+  await child.getByRole('button', { name: /continue to contact/i }).click();
+  await expect(child.locator('body')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(child.getByRole('heading', { name: /CONTACT & BILLING/ })).toBeVisible();
+});
+
+for (const [width, height, image, heading] of [[1440, 478, 'thank-you-desktop.jpg', '56px'], [390, 352, 'thank-you-mobile.jpg', '36px']]) {
+  test(`thank-you restores the original ${width}px reference hero and white receipt`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto('/?demo=1#review');
+    await page.getByRole('checkbox', { name: /I agree to the Terms/i }).check();
+    await page.getByRole('button', { name: 'SUBMIT RESERVATION REQUEST', exact: true }).click();
+    await expect(page).toHaveURL(/#thank-you$/);
+    expect(Math.round((await page.locator('.thank-hero').boundingBox()).height)).toBe(height);
+    await expect(page.locator('.thank-hero')).toHaveCSS('background-image', new RegExp(image.replaceAll('.', '\\.')));
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(page.locator('.thank-content > h1')).toHaveCSS('font-size', heading);
+    await expect(page.getByText('Reservation Request Received', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(image => image.decode().catch(() => {}))); });
+    await page.screenshot({ path: `wordpress-test-results/frontend-211/thank-you-${width}.png`, fullPage: true });
+  });
+}
