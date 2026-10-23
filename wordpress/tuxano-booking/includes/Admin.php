@@ -689,6 +689,21 @@ final class Admin {
         self::field($settings, 'currency_symbol', __('Currency symbol', 'tuxano-booking'), 'text', __('Displayed with amounts in the booking form.', 'tuxano-booking'), ['maxlength' => 12, 'required' => 'required']);
         echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Dashboard', 'tuxano-booking') . '</h2><table class="form-table" role="presentation">';
         self::field($settings, 'dashboard_recent_limit', __('Recent submissions to display', 'tuxano-booking'), 'number', __('Show the newest requests on the dashboard. Choose 1–20; the default is 3. All requests remain available in Submissions.', 'tuxano-booking'), ['min' => 1, 'max' => 20, 'step' => 1, 'required' => 'required']);
+        echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Form appearance', 'tuxano-booking') . '</h2><p>' . esc_html__('Choose the colors above the white form cards to suit your page background. Use light text on a dark photo and dark text on a light background. These controls affect the form heading and five-step navigation only; thank-you pages and emails keep their own design.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
+        foreach ([
+            'form_title_color' => __('Reservation heading', 'tuxano-booking'),
+            'form_subtitle_color' => __('Heading subtitle', 'tuxano-booking'),
+            'form_step_label_color' => __('Step labels', 'tuxano-booking'),
+            'form_active_step_label_color' => __('Active step label', 'tuxano-booking'),
+            'form_connector_color' => __('Step connecting lines', 'tuxano-booking'),
+            'form_circle_background' => __('Inactive step circle background', 'tuxano-booking'),
+            'form_circle_text_color' => __('Inactive step numbers', 'tuxano-booking'),
+            'form_circle_border_color' => __('Inactive step circle border', 'tuxano-booking'),
+            'form_active_circle_background' => __('Active step circle background', 'tuxano-booking'),
+            'form_active_circle_text_color' => __('Active step number', 'tuxano-booking'),
+        ] as $name => $label) {
+            self::field($settings, $name, $label, 'color', sprintf(__('Saved color: %1$s. Default: %2$s.', 'tuxano-booking'), $settings[$name], Settings::FORM_COLORS[$name]), ['required' => 'required']);
+        }
         echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
         self::key_field($settings, 'browser_key', __('Maps browser API key', 'tuxano-booking'), __('Enable Maps JavaScript API and Places API (New). Restrict this browser key to the domains where this form is embedded.', 'tuxano-booking'));
         self::key_field($settings, 'routes_key', __('Routes server API key', 'tuxano-booking'), __('Enable Routes API. This key is used only for server-to-server route requests and is never returned to the form.', 'tuxano-booking'));
@@ -735,6 +750,7 @@ final class Admin {
         $keys = $section === 'pricing'
             ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
             : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit'];
+        if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS)); }
         $values = [];
         foreach ($keys as $key) {
             if (!isset($_POST[$key])) {

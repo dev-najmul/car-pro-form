@@ -63,6 +63,24 @@ try {
         $check(Settings::save(['dashboard_recent_limit' => (string) $recent_limit]) === true && Settings::get()['dashboard_recent_limit'] === $recent_limit, 'Dashboard recent submission bounds save as integers: ' . $recent_limit);
     }
     $check(Settings::revision() === $rate_revision, 'Changing only dashboard display preferences must not expire valid route quotes.');
+    $legacy_colors = Settings::get();
+    foreach (array_keys(Settings::FORM_COLORS) as $key) { unset($legacy_colors[$key]); }
+    update_option(Settings::OPTION, $legacy_colors, false);
+    $check(count(Settings::FORM_COLORS) === 10 && array_intersect_key(Settings::get(), Settings::FORM_COLORS) === Settings::FORM_COLORS, 'Old installations receive the ten original form color defaults.');
+    $appearance_revision = Settings::revision();
+    $appearance = array_fill_keys(array_keys(Settings::FORM_COLORS), '#AaBbCc');
+    $check(Settings::save($appearance) === true, 'All supported form colors save through the validated settings contract.');
+    $check(array_unique(array_values(array_intersect_key(Settings::get(), Settings::FORM_COLORS))) === ['#aabbcc'], 'Saved colors normalize to canonical lowercase six-digit hex.');
+    $public_colors = Settings::public_data()['formColors'];
+    $check(count($public_colors) === 10 && $public_colors['title'] === '#aabbcc' && $public_colors['activeCircleText'] === '#aabbcc', 'The public appearance contract contains the supported display colors.');
+    $check(Settings::revision() === $appearance_revision, 'Appearance-only saves must not invalidate an accepted route quote.');
+    foreach (['#fff', '#12345678', 'red', 'url(https://example.test/image)', '#ffffff;display:none', "#fff\nfff", ['#ffffff'], ''] as $invalid_color) {
+        $before = Settings::get();
+        $result = Settings::save(['company_name' => 'Must not partially save', 'form_title_color' => $invalid_color]);
+        $check(is_wp_error($result) && Settings::get() === $before, 'Invalid CSS/color input must reject the entire partial save.');
+    }
+    $check(Settings::save(['form_title_color' => '#123456']) === true && Settings::get()['form_subtitle_color'] === '#aabbcc', 'Changing one appearance control preserves every omitted color.');
+    $check(Settings::save(Settings::FORM_COLORS) === true && Settings::revision() === $appearance_revision, 'Original appearance may be restored without changing fares.');
     $check(Settings::save(['browser_key' => 'test_browser_key_123456789012345', 'routes_key' => 'test_routes_key_123456789012345', 'meet_price' => '64.75']) === true, 'Valid settings should save.');
     $check(Settings::save(['meet_price' => '80', 'browser_key' => '', 'routes_key' => '']) === true, 'A partial form should preserve blank API keys.');
     $settings = Settings::get();

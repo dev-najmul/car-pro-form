@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { installPlacesStub } from './helpers/google-places-stub.js';
 
 // Demo state supplies complete trip data; these cases exercise new layout and
 // field behaviour through the real controls without a live provider dependency.
@@ -150,5 +151,69 @@ for (const [width, height, image, heading] of [[1440, 478, 'thank-you-desktop.jp
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(image => image.decode().catch(() => {}))); });
     await page.screenshot({ path: `wordpress-test-results/frontend-211/thank-you-${width}.png`, fullPage: true });
+  });
+}
+
+test('configured header and navigation colors suit a dark parent background without recoloring form cards', async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.TuxanoBooking = {
+      vehicles: [{ id: '1', capacity: 6, luggageCapacity: 6 }],
+      settings: { formColors: { title: '#ffffff', subtitle: '#eeeeee', stepLabel: '#dddddd', activeStepLabel: '#cccccc', connector: '#bbbbbb', circleBackground: '#aaaaaa', circleText: '#111111', circleBorder: '#999999', activeCircleBackground: '#222222', activeCircleText: '#ffffff' } },
+    };
+  });
+  await page.goto('/');
+  await expect(page.locator('.page-header h1')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(page.locator('.page-header > p')).toHaveCSS('color', 'rgb(238, 238, 238)');
+  await expect(page.locator('.progress li').nth(1).locator('.step-label')).toHaveCSS('color', 'rgb(221, 221, 221)');
+  await expect(page.locator('.active .step-label')).toHaveCSS('color', 'rgb(204, 204, 204)');
+  expect(await page.locator('.progress li').first().evaluate(element => getComputedStyle(element, '::after').backgroundColor)).toBe('rgb(187, 187, 187)');
+  const inactive = page.locator('.progress li').nth(1).locator('.step-circle');
+  await expect(inactive).toHaveCSS('background-color', 'rgb(170, 170, 170)');
+  await expect(inactive).toHaveCSS('color', 'rgb(17, 17, 17)');
+  await expect(inactive).toHaveCSS('border-top-color', 'rgb(153, 153, 153)');
+  await expect(page.locator('.active .step-circle')).toHaveCSS('background-color', 'rgb(34, 34, 34)');
+  await expect(page.locator('.active .step-circle')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(page.locator('.trip-panel')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(page.locator('.panel-header h2')).not.toHaveCSS('color', 'rgb(255, 255, 255)');
+});
+
+test('untrusted appearance values cannot inject CSS or replace unrelated properties', async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.TuxanoBooking = {
+      vehicles: [{ id: '1', capacity: 6, luggageCapacity: 6 }],
+      settings: { formColors: { title: '#ffffff;display:none', subtitle: 'url(https://example.test/track)', stepLabel: '#fff', unknown: '#abcdef' } },
+    };
+  });
+  await page.goto('/');
+  await expect(page.locator('.page-header h1')).toHaveCSS('color', 'rgb(16, 30, 54)');
+  await expect(page.locator('.page-header > p')).toHaveCSS('color', 'rgb(82, 97, 122)');
+  await expect(page.locator('.page-header h1')).toBeVisible();
+  expect(await page.locator('html').getAttribute('style')).toBeNull();
+});
+
+for (const width of [1440, 390]) {
+  test(`map predictions occupy a full row below the search field at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.addInitScript(() => {
+      window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [] };
+    });
+    await page.route('**/maps-config.json', route => route.fulfill({ json: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true, providerMode: 'server' } }));
+    await page.route('https://maps.googleapis.com/maps/api/js?**', route => {
+      const callback = new URL(route.request().url()).searchParams.get('callback');
+      return route.fulfill({ contentType: 'text/javascript', body: `(${installPlacesStub.toString()})();window[${JSON.stringify(callback)}]?.();` });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+    const search = page.getByLabel('Search map for pickup', { exact: true });
+    await search.fill('Selected hotel address');
+    await expect(page.getByRole('option', { name: 'Selected hotel address', exact: true })).toBeVisible();
+    const input = await search.boundingBox();
+    const dropdown = await page.locator('.pickup-map-picker .places-dropdown').boundingBox();
+    const map = await page.locator('.pickup-map-frame').boundingBox();
+    expect(Math.abs(dropdown.x - input.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(dropdown.width - input.width)).toBeLessThanOrEqual(1);
+    expect(dropdown.y).toBeGreaterThanOrEqual(input.y + input.height);
+    expect(dropdown.y + dropdown.height).toBeLessThanOrEqual(map.y);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   });
 }

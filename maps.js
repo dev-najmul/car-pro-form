@@ -317,7 +317,7 @@ export class MapsClient {
 
 // Suggestions are transient DOM/memory data. Every input owns its own session,
 // keyboard selection, and generation guard for both predictions and details.
-export function mountAutocomplete(input, { client, fieldId, onSelect, onError, countryCode }) {
+export function mountAutocomplete(input, { client, fieldId, onSelect, onError, countryCode, onSuggestions, onSelectStart, onCancel }) {
   let alive = true, selecting = false, generation = 0, timer, suggestions = [], active = -1, list;
   const owner = input.closest('.location-input');
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false');
@@ -330,6 +330,7 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
   };
   const select = async index => {
     const suggestion = suggestions[index]; if (!suggestion) return;
+    onSelectStart?.();
     const id = ++generation, query = input.value; selecting = true; close(); showMessage('Selecting location…');
     try {
       const country = restrictionCountry(countryCode);
@@ -370,11 +371,12 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
         const attribution = document.createElement('div'); attribution.className = 'google-attribution';
         const brand = document.createElement('span'); brand.className = 'google-maps-attribution'; brand.textContent = 'Google Maps'; brand.setAttribute('translate', 'no');
         attribution.append(brand); list.append(options, attribution); owner.append(list); input.setAttribute('aria-expanded', 'true');
+        onSuggestions?.(suggestions, query);
       } catch (error) { if (alive && id === generation) { showMessage(error.message); onError?.(error.message); } }
     }, 300);
   };
   const keydown = event => {
-    if (event.key === 'Escape') { selecting = false; ++generation; clearTimeout(timer); close(); return; }
+    if (event.key === 'Escape') { selecting = false; ++generation; clearTimeout(timer); close(); onCancel?.(); return; }
     if (!list || !suggestions.length || !list.querySelector('[role="option"]')) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -390,11 +392,11 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
       }
     }
   };
-  const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); } }, 150); };
+  const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); onCancel?.(); } }, 150); };
   input.addEventListener('input', search); input.addEventListener('keydown', keydown); input.addEventListener('blur', blur);
   // A map interaction may supersede a pending search without unmounting the
   // search box. Cancel its stale provider response and close its suggestions.
-  const cancel = () => { selecting = false; ++generation; clearTimeout(timer); close(); client.discardSession(fieldId); };
+  const cancel = () => { selecting = false; ++generation; clearTimeout(timer); close(); client.discardSession(fieldId); onCancel?.(); };
   const cleanup = () => { alive = false; cancel(); input.removeEventListener('input', search); input.removeEventListener('keydown', keydown); input.removeEventListener('blur', blur); };
   cleanup.cancel = cancel;
   return cleanup;

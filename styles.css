@@ -3925,9 +3925,10 @@ a {
 .pickup-map-open { display: inline-block; margin-top: 9px; font-size: 13px; }
 .pickup-map-open[hidden] { display: none; }
 .pickup-map-picker .map-search-label { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
-.pickup-map-picker .location-input { position: relative; z-index: 3; }
+.pickup-map-picker .location-input { position: relative; z-index: 3; display: block; width: 100%; min-width: 0; }
 .pickup-map-picker .input { padding-left: 12px; font-size: 14px; }
-.pickup-map-picker .places-dropdown { position: static; margin-top: 8px; max-height: 210px; overflow-y: auto; box-shadow: none; }
+.pickup-map-picker .location-input > .input { display: block; width: 100%; max-width: 100%; min-width: 0; }
+.pickup-map-picker .places-dropdown { position: static; width: 100%; max-width: 100%; min-width: 0; margin-top: 8px; max-height: 210px; overflow-y: auto; box-shadow: none; }
 .pickup-map-picker .places-dropdown [role="listbox"] { max-height: none; overflow: visible; }
 .pickup-map-frame { position: relative; margin: 10px 0; height: 320px; border: 1px solid #ccd2dc; border-radius: 4px; overflow: hidden; }
 .pickup-map-canvas { width: 100%; height: 100%; }
@@ -3949,19 +3950,19 @@ body.form-page .page-header {
   height: auto; padding: 42px 24px 34px; color: #172642;
 }
 body.form-page .page-header h1 {
-  color: #101e36; font-size: clamp(36px, 4.4vw, 58px); line-height: 1.1;
+  color: var(--form-title-color, #101e36); font-size: clamp(36px, 4.4vw, 58px); line-height: 1.1;
   letter-spacing: -1px;
 }
 body.form-page .page-header > p {
-  color: #52617a; font-size: 16px; line-height: 1.6; margin: 10px auto 24px;
+  color: var(--form-subtitle-color, #52617a); font-size: 16px; line-height: 1.6; margin: 10px auto 24px;
 }
 body.form-page .progress { max-width: 830px; }
-body.form-page .progress button { color: #53617a; gap: 9px; }
+body.form-page .progress button { color: var(--form-step-label-color, #53617a); gap: 9px; }
 body.form-page .step-label { font-size: 13px; line-height: 20px; }
-body.form-page .active .step-label { color: #132d60; }
-body.form-page .step-circle { width: 34px; height: 34px; font-size: 14px; border-color: #ced7e5; }
-body.form-page .active .step-circle { color: white; border-color: #173a7b; box-shadow: 0 0 0 4px #e8eef9; }
-body.form-page .progress li:not(:last-child)::after { top: 17px; background: #d8e0ed; }
+body.form-page .active .step-label { color: var(--form-active-step-label-color, #132d60); }
+body.form-page .step-circle { width: 34px; height: 34px; font-size: 14px; color: var(--form-circle-text-color, #666666); background: var(--form-circle-background, #ffffff); border-color: var(--form-circle-border-color, #ced7e5); }
+body.form-page .active .step-circle { color: var(--form-active-circle-text-color, #ffffff); background: var(--form-active-circle-background, #173a7b); border-color: var(--form-active-circle-background, #173a7b); box-shadow: 0 0 0 4px #e8eef9; }
+body.form-page .progress li:not(:last-child)::after { top: 17px; background: var(--form-connector-color, #d8e0ed); }
 body.form-page main, body.form-page.step-5 main {
   width: min(1200px, calc(100% - 48px)); max-width: 1200px;
   margin: 0 auto; padding-bottom: 64px; position: static; left: auto;

@@ -2,6 +2,7 @@
 const boot = globalThis.TuxanoBookingBoot;
 const app = document.querySelector('#app');
 let previousHeight = 0;
+let previousView = '';
 let pendingResize = false;
 
 function reportSize() {
@@ -12,9 +13,10 @@ function reportSize() {
     // Measure content rather than the viewport, so reducing the iframe height
     // cannot create a resize loop or prevent a shorter form step from shrinking.
     const height = Math.max(240, Math.min(30000, Math.ceil(app.getBoundingClientRect().height)));
-    if (height === previousHeight) return;
-    previousHeight = height;
-    window.parent.postMessage({ type: 'tuxano-booking:resize', frameId: boot.frameId, height }, location.origin);
+    const view = document.body.classList.contains('thank-page') ? 'thank-you' : 'form';
+    if (height === previousHeight && view === previousView) return;
+    previousHeight = height; previousView = view;
+    window.parent.postMessage({ type: 'tuxano-booking:resize', frameId: boot.frameId, height, view }, location.origin);
   });
 }
 
@@ -48,6 +50,7 @@ try {
     app.style.display = 'flow-root';
     document.body.style.minHeight = '0';
     new ResizeObserver(reportSize).observe(app);
+    new MutationObserver(reportSize).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     document.fonts?.ready.then(reportSize);
   }
   const headers = { 'Content-Type': 'application/json' };

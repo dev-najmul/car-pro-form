@@ -1,12 +1,13 @@
-# WordPress plugin — Tuxano Booking 2.1.1
+# WordPress plugin — Tuxano Booking 2.1.2
 
 The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
 
-- [Direct plugin ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.1.zip) · [repository ZIP](releases/tuxano-booking-2.1.1.zip) · [checksum](releases/tuxano-booking-2.1.1.zip.sha256)
-- [Live booking form](https://bdreadyweb.com/carbook/tuxano-booking-test/) · [WordPress booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking)
+- [Direct plugin ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.2.zip) · [repository ZIP](releases/tuxano-booking-2.1.2.zip) · [checksum](releases/tuxano-booking-2.1.2.zip.sha256)
+- [Live home-page form](https://bdreadyweb.com/carbook/) · [WordPress booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking)
 - [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
 - Shortcode: `[tuxano_booking]`. For the full reference design choose **Tuxano Booking — full page** as the page template.
 - Build: `npm run build:wordpress`. Existing static setup and historical prototype notes follow below.
+- [Four 2.1.2 refinements](wordpress/UPGRADE-2.1.2.md): configurable header colors, US map defaults/typing previews, clean thank-you embedding and full-width refined administration.
 - [Seven 2.1.1 refinements](wordpress/UPGRADE-2.1.1.md): transparent page backgrounds, unified readable admin, configurable recent requests, map preview/confirmation and the original thank-you design.
 - [Full 2.1 upgrade checklist](wordpress/UPGRADE-2.1.md): all eight admin/trip points plus five frontend groups from the owner's documents. Author: [Farhan](https://farhanrajnajmul.com/).
 

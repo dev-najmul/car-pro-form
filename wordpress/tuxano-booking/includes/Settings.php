@@ -13,6 +13,20 @@ final class Settings
 {
     public const OPTION = 'tuxano_booking_settings';
 
+    /** Form header/navigation only. These preferences never affect a fare. */
+    public const FORM_COLORS = [
+        'form_title_color' => '#101e36',
+        'form_subtitle_color' => '#52617a',
+        'form_step_label_color' => '#53617a',
+        'form_active_step_label_color' => '#132d60',
+        'form_connector_color' => '#d8e0ed',
+        'form_circle_background' => '#ffffff',
+        'form_circle_text_color' => '#666666',
+        'form_circle_border_color' => '#ced7e5',
+        'form_active_circle_background' => '#173a7b',
+        'form_active_circle_text_color' => '#ffffff',
+    ];
+
     /** @return array<string,mixed> */
     public static function defaults(): array
     {
@@ -23,7 +37,7 @@ final class Settings
             $from = (string) get_option('admin_email', '');
         }
 
-        return [
+        return array_merge([
             'currency' => 'USD',
             'currency_symbol' => '$',
             'meet_price' => 50.0,
@@ -52,7 +66,7 @@ final class Settings
             'session_hourly_limit' => 120,
             'booking_hourly_limit' => 20,
             'dashboard_recent_limit' => 3,
-        ];
+        ], self::FORM_COLORS);
     }
 
     /** @return array<string,mixed> */
@@ -109,6 +123,12 @@ final class Settings
                     continue;
                 }
                 $next[$key] = $value;
+            } elseif (array_key_exists($key, self::FORM_COLORS)) {
+                if (!preg_match('/^#[A-Fa-f0-9]{6}$/D', $value)) {
+                    $errors->add('tuxano_invalid_settings', __('Choose a six-digit hexadecimal form color, such as #ffffff.', 'tuxano-booking'));
+                } else {
+                    $next[$key] = strtolower($value);
+                }
             } elseif (in_array($key, $price_fields, true)) {
                 $number = self::decimal($value, $key === 'default_gratuity' ? 100 : 1000000);
                 if ($number === null) {
@@ -193,6 +213,17 @@ final class Settings
         $public = [];
         foreach ($mapping as $private_key => $public_key) {
             $public[$public_key] = $settings[$private_key];
+        }
+        $public['formColors'] = [];
+        foreach ([
+            'form_title_color' => 'title', 'form_subtitle_color' => 'subtitle',
+            'form_step_label_color' => 'stepLabel', 'form_active_step_label_color' => 'activeStepLabel',
+            'form_connector_color' => 'connector', 'form_circle_background' => 'circleBackground',
+            'form_circle_text_color' => 'circleText', 'form_circle_border_color' => 'circleBorder',
+            'form_active_circle_background' => 'activeCircleBackground', 'form_active_circle_text_color' => 'activeCircleText',
+        ] as $private_key => $public_key) {
+            $color = $settings[$private_key];
+            $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
         $public['timezone'] = wp_timezone_string();
         return $public;

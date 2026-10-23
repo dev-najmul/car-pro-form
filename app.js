@@ -13,6 +13,22 @@ import { COUNTRY_NAMES } from "./countries.js";
     website: "https://tuxano.com", termsUrl: "", privacyUrl: "",
     maxStops: 5, minHours: 2, maxHours: 12, ...runtime?.settings,
   };
+  // A fixed property whitelist and strict hex validation keep administrator
+  // preferences out of arbitrary CSS. Only form-page selectors consume them.
+  const formColors = settings.formColors;
+  if (formColors && typeof formColors === "object" && !Array.isArray(formColors)) {
+    for (const [key, property] of Object.entries({
+      title: "--form-title-color", subtitle: "--form-subtitle-color",
+      stepLabel: "--form-step-label-color", activeStepLabel: "--form-active-step-label-color",
+      connector: "--form-connector-color", circleBackground: "--form-circle-background",
+      circleText: "--form-circle-text-color", circleBorder: "--form-circle-border-color",
+      activeCircleBackground: "--form-active-circle-background", activeCircleText: "--form-active-circle-text-color",
+    })) {
+      if (typeof formColors[key] === "string" && /^#[\da-f]{6}$/i.test(formColors[key])) {
+        document.documentElement.style.setProperty(property, formColors[key]);
+      }
+    }
+  }
   const STORAGE = "tuxano-booking-v1";
   let DEMO_MODE = !runtime && new URLSearchParams(location.search).get("demo") === "1";
   let receipt = null, requestKey = "", submitting = false;
@@ -559,7 +575,7 @@ import { COUNTRY_NAMES } from "./countries.js";
     if (deviceLocation.status === "idle" || (deviceLocation.status === "map" ? mapTarget() !== fieldId : fieldId !== "pickup")) return "";
     if (deviceLocation.status === "map") {
       const label = mapFieldLabel(fieldId), searchId = fieldId === "pickup" ? "pickup-map-search" : "map-search-" + fieldId.replace(/[^a-zA-Z0-9_-]/g, "-");
-      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Choose a search result to show the location on the live map. Inspect the area or move the pin to your exact point, then confirm.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
+      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Type to preview an area on the map. Choose an address or click the map to select your exact point, then confirm.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
     }
     const candidate = deviceLocation.candidate;
     const url = candidate ? googlePlaceUrl(candidate) : "";

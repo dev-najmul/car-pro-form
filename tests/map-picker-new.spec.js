@@ -4,7 +4,7 @@ async function picker(page, options = {}) {
   await page.goto('/?demo=1');
   await page.evaluate(async options => {
     document.body.innerHTML = '<section id="picker"><div class="location-input"><input data-map-search aria-label="Search chosen location"></div><p data-map-status role="status"></p><div data-location-map style="height:280px"></div></section>';
-    const state = window.__genericPicker = { maps: [], picks: [], failures: [], requests: [], country: options.country || '', pending: [], pendingSearch: [], fixtures: {
+    const state = window.__genericPicker = { maps: [], picks: [], failures: [], requests: [], restores: [], selected: 0, country: options.country || '', pending: [], pendingSearch: [], fixtures: {
       hotel: { placeId: 'hotel', text: 'Selected Hotel, Dhaka, Bangladesh', latitude: 23.7, longitude: 90.4, countryCode: 'BD', countryName: 'Bangladesh', attributions: [] },
       foreign: { placeId: 'foreign', text: 'Foreign Hotel, USA', latitude: 41, longitude: -87, countryCode: 'US', countryName: 'United States', attributions: [] },
     } };
@@ -20,8 +20,8 @@ async function picker(page, options = {}) {
     const client = {
       ready: async () => ({}),
       async suggest(query, fieldId, request) { state.requests.push({ query, fieldId, request }); return [{ placeId: 'hotel', text: 'Hotel suggestion', main: 'Hotel suggestion', secondary: 'Dhaka, Bangladesh' }]; },
-      async select() { if (options.holdSearch) await new Promise(resolve => state.pendingSearch.push(resolve)); return state.fixtures.hotel; },
-      async restore(id) { if (options.hold) await new Promise(resolve => state.pending.push(resolve)); return state.fixtures[id]; },
+      async select() { state.selected++; if (options.holdSearch) await new Promise(resolve => state.pendingSearch.push(resolve)); return state.fixtures.hotel; },
+      async restore(id) { state.restores.push(id); if (options.hold) await new Promise(resolve => state.pending.push(resolve)); return state.fixtures[id]; },
       async describeDeviceLocation(point) { state.nearbyRequests = (state.nearbyRequests || 0) + 1; return { nearbyName: 'Nearby hotel', nearbyAddress: 'Approximate landmark', attributions: [] }; },
       discardSession() {},
     };
@@ -33,6 +33,84 @@ async function picker(page, options = {}) {
   }, options);
   await expect.poll(() => page.evaluate(() => window.__genericPicker.maps.length)).toBe(1);
 }
+
+test('an untouched map starts over the United States without selecting a location', async ({ page }) => {
+  await picker(page);
+  expect(await page.evaluate(() => window.__genericPicker.maps[0].settings)).toMatchObject({center:{lat:39.8283,lng:-98.5795},zoom:4});
+  expect(await page.evaluate(() => window.__genericPicker.picks)).toEqual([]);
+});
+
+test('typing previews the best predicted area while leaving address selection and confirmation unchosen', async ({ page }) => {
+  await picker(page,{country:'BD'});
+  const input=page.getByLabel('Search chosen location');
+  await input.fill('Hotel');
+  await expect(page.getByRole('option',{name:'Hotel suggestion',exact:true})).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.maps[0].center)).toEqual({lat:23.7,lng:90.4});
+  expect(await page.evaluate(() => window.__genericPicker.maps[0].zoom)).toBe(15);
+  expect(await page.evaluate(() => window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+  expect(await page.evaluate(() => window.__genericPicker.selected)).toBe(0);
+  await expect(input).toHaveValue('Hotel');
+  await expect(page.locator('[data-map-status]')).toContainText('Area preview:');
+  await expect(page.getByRole('option',{name:'Hotel suggestion',exact:true})).toBeVisible();
+  await input.fill('Hotel Dhaka');
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.requests.length)).toBe(2);
+  await expect(page.locator('[data-map-status]')).toContainText('Area preview:');
+  expect(await page.evaluate(() => window.__genericPicker.restores)).toEqual(['hotel']);
+});
+
+test('short queries do not trigger details lookups and repeated current predictions share one pending lookup', async ({ page }) => {
+  await picker(page,{hold:true});
+  const input=page.getByLabel('Search chosen location');
+  await input.fill('Ho');
+  await expect(page.getByRole('option',{name:'Hotel suggestion',exact:true})).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => window.__genericPicker.restores)).toEqual([]);
+  await input.fill('Hotel');
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.pending.length)).toBe(1);
+  await input.fill('Hotel Dhaka');
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.requests.length)).toBe(3);
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => window.__genericPicker.restores)).toEqual(['hotel']);
+  await page.evaluate(() => window.__genericPicker.pending.shift()());
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.maps[0].center)).toEqual({lat:23.7,lng:90.4});
+  expect(await page.evaluate(() => window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+});
+
+test('typing preview displays safe provider attributions and clears them on cancellation', async ({ page }) => {
+  await picker(page);
+  await page.evaluate(() => { window.__genericPicker.fixtures.hotel.attributions=[
+    {displayName:'<img src=x onerror=alert(1)>',uri:'javascript:alert(1)'},
+    {displayName:'Example provider',uri:'https://example.com/attribution'},
+  ]; });
+  const input=page.getByLabel('Search chosen location');
+  await input.fill('Hotel');
+  const providers=page.locator('[data-map-preview-attribution]');
+  await expect(providers).toContainText('<img src=x onerror=alert(1)>');
+  await expect(providers.locator('img')).toHaveCount(0);
+  await expect(providers.locator('a')).toHaveCount(1);
+  await expect(providers.getByRole('link',{name:'Example provider'})).toHaveAttribute('href','https://example.com/attribution');
+  await input.press('Escape');
+  await expect(providers).toHaveCount(0);
+  expect(await page.evaluate(() => window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+});
+
+test('a delayed typing preview cannot overwrite a newer explicit pin or a changed country', async ({ page }) => {
+  await picker(page,{country:'BD',hold:true});
+  await page.getByLabel('Search chosen location').fill('Hotel');
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.pending.length)).toBe(1);
+  await page.evaluate(() => window.__genericPicker.maps[0].emit('click',{latLng:{lat:()=>22.7095,lng:()=>90.3667}}));
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.picks.at(-1)?.source)).toBe('map');
+  await page.evaluate(() => window.__genericPicker.pending.shift()());
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+  expect(await page.evaluate(() => window.__genericPicker.maps[0].center)).toEqual({lat:22.7095,lng:90.3667});
+  await page.getByLabel('Search chosen location').fill('Hotel again');
+  // A resolved preview lookup may be reused, but it still cannot bypass a
+  // country change before the debounced preview runs.
+  await expect.poll(() => page.evaluate(() => window.__genericPicker.requests.length)).toBe(2);
+  await page.evaluate(() => { window.__genericPicker.country='US'; });
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => window.__genericPicker.maps[0].center)).toEqual({lat:22.7095,lng:90.3667});
+});
 
 test('clicking a named Google place previews its exact identity and centers the map without closing it', async ({ page }) => {
   await picker(page, { country: 'BD' });

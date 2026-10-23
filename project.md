@@ -1774,3 +1774,15 @@ One clearly marked synthetic booking saved as **ID 5**, **`TUX-2026-93B046D54DC4
 The [seven-point checklist](wordpress/UPGRADE-2.1.1.md), installation guide and current ZIP links are updated. The final owner review follows the live update; seeded business tariffs, policy URLs and actual inbox delivery remain owner acceptance items from the preceding release.
 
 **Final handoff:** 2.1.1 is installed/active, all seven requested changes and live checks are complete, source/release/documentation are saved on GitHub `main`, and the owner can now review the live page/dashboard again. Updated cloud startup instructions were saved as a draft with all existing network/secret/install/repository settings retained; Publish is required only to apply that future-session draft.
+
+
+## 21. Header appearance, live map typing and final admin refinements — 24 October 2026
+
+The owner requested four further changes and authorized continuing the existing update/test/live-deployment workflow. Target **2.1.2**, keeping 2.1.1 for rollback and preserving all current records, prices, keys and owner page content.
+
+1. Add Settings controls for the marked form heading/subtitle/progress text, connectors and step-circle colors so the transparent form is readable on the owner's dark background at `https://bdreadyweb.com/carbook/`. Accept only specific validated hex colors, expose a bounded public palette and apply CSS variables only to the outer form header/progress; no arbitrary CSS and no effect on fares, receipt or emails. Retain current palette defaults; configure the actual dark live section's text to a suitable light palette after verifying controls.
+2. Fix map-search predictions into a full-width professional list below the input. Start an unselected map in the United States. While typing, debounce a nonbinding preview of the current best prediction on the live map. That preview must not populate the main address, create a confirmed point or quote, or silently accept the first result. Only deliberate result/map-pin selection and confirmation commit a location. Bound preview details requests and reject stale responses after edits, map interactions, country changes or unmounting.
+3. Remove the marked background strip after the thank-you footer. Preserve the navy footer itself. Diagnose iframe resize/host spacing and fix only booking-owned layout or safely scoped integration; preserve owner page content and restore any temporary thank-you host state on reset.
+4. Use the available WordPress content width for all booking admin screens instead of the 1500px cap, retain readable fonts, and refine the premium hierarchy/cards/navigation/table details without changing existing CRUD or data.
+
+Verify new color validation/public/revision boundaries, typing-preview races and confirmation safety, US initial map, prediction geometry, thank-you footer/iframe geometry and full-width responsive admin. Then build/install the actual ZIP on the supplied site, test the owner's home-page form and native controls, save concrete results here and return it for another manual review.
