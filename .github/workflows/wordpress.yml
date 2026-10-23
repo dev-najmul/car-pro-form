@@ -49,7 +49,10 @@ jobs:
           coverage: none
       - run: npm ci && npm run check && npm run test:unit && npm run build:wordpress
       - name: Lint all plugin PHP
-        run: rg --files wordpress/tuxano-booking -g '*.php' | xargs -n 1 php -l
+        shell: bash
+        run: |
+          set -euo pipefail
+          find wordpress/tuxano-booking -type f -name '*.php' -print0 | xargs -0 -r -n 1 php -l
       - name: Install WordPress and activate the actual packaged ZIP
         env:
           WP_TEST_VERSION: ${{ matrix.wordpress }}
