@@ -102,6 +102,50 @@ test('phone controls stay readable without horizontal scrolling', async ({ page 
   await page.screenshot({ path: 'test-results/frontend-polish-contact-phone.png', fullPage: true });
 });
 
+for (const width of [320, 390]) {
+  test(`phone billing and review content align with their section icons at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/?demo=1#contact');
+    const billing = await page.locator('.contact-panel .form-section').evaluateAll(sections => sections.map(section => {
+      const icon = section.querySelector('.round-icon').getBoundingClientRect();
+      const body = section.querySelector('.section-body').getBoundingClientRect();
+      return { offset: body.left - icon.left, width: body.width };
+    }));
+    expect(billing).toHaveLength(4);
+    for (const section of billing) {
+      expect(Math.abs(section.offset)).toBeLessThanOrEqual(1);
+      expect(section.width).toBeGreaterThan(width - 64);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: `wordpress-test-results/frontend-213/contact-alignment-${width}.png`, fullPage: true });
+
+    await page.goto('/?demo=1#review');
+    const review = await page.locator('.review-block').evaluateAll(sections => sections.flatMap(section => {
+      const icon = section.querySelector('.review-heading > .tile').getBoundingClientRect();
+      return [...section.querySelectorAll(':scope > .detail-rows, :scope > .review-vehicle, :scope > .contact-review, :scope > .billing-review')]
+        .map(content => content.getBoundingClientRect().left - icon.left);
+    }));
+    expect(review).toHaveLength(5);
+    for (const offset of review) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: `wordpress-test-results/frontend-213/review-alignment-${width}.png`, fullPage: true });
+
+    // The owner's request concerns steps four/five; passenger indentation stays.
+    await page.goto('/?demo=1#passengers');
+    await expect(page.locator('.passengers-panel .section-body').first()).toHaveCSS('margin-left', '44px');
+  });
+}
+
+test('desktop billing and review retain their existing heading-text indentation', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/?demo=1#contact');
+  await expect(page.locator('.contact-panel .section-body').first()).toHaveCSS('margin-left', '52px');
+  await page.goto('/?demo=1#review');
+  for (const selector of ['.review-block > .detail-rows', '.review-vehicle', '.contact-review']) {
+    await expect(page.locator(selector).first()).toHaveCSS('margin-left', '72px');
+  }
+});
+
 test('embedded navigation reveals the frame only for its exact same-origin source and ID', async ({ page }) => {
   await page.addInitScript(() => { if (window.parent !== window) globalThis.TuxanoBookingBoot = { frameId: 'booking-embed-test' }; });
   await page.goto('/?demo=1#trip');

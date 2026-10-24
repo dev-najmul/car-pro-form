@@ -376,7 +376,7 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
     }, 300);
   };
   const keydown = event => {
-    if (event.key === 'Escape') { selecting = false; ++generation; clearTimeout(timer); close(); onCancel?.(); return; }
+    if (event.key === 'Escape') { selecting = false; ++generation; clearTimeout(timer); close(); onCancel?.('escape'); return; }
     if (!list || !suggestions.length || !list.querySelector('[role="option"]')) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -392,7 +392,7 @@ export function mountAutocomplete(input, { client, fieldId, onSelect, onError, c
       }
     }
   };
-  const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); onCancel?.(); } }, 150); };
+  const blur = () => { setTimeout(() => { if (alive && !selecting && !owner.contains(document.activeElement)) { ++generation; clearTimeout(timer); close(); onCancel?.('blur'); } }, 150); };
   input.addEventListener('input', search); input.addEventListener('keydown', keydown); input.addEventListener('blur', blur);
   // A map interaction may supersede a pending search without unmounting the
   // search box. Cancel its stale provider response and close its suggestions.

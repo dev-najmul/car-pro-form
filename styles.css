@@ -2725,7 +2725,7 @@ a {
     font-size: 14px;
   }
   .contact-panel .section-body {
-    margin-left: 40px;
+    margin-left: 0;
   }
   .input-stack {
     gap: 16px;
@@ -2931,7 +2931,7 @@ a {
     gap: 16px;
   }
   .review-block > .detail-rows {
-    margin-left: 44px;
+    margin-left: 0;
   }
   .review-block > .detail-rows > div {
     display: block;
@@ -2942,7 +2942,7 @@ a {
   .review-vehicle {
     display: block;
     min-height: 0;
-    margin-left: 44px;
+    margin-left: 0;
   }
   .review-vehicle > img {
     width: 200px;
@@ -2972,7 +2972,7 @@ a {
   }
   .contact-review {
     display: block;
-    margin-left: 44px;
+    margin-left: 0;
   }
   .contact-review > div + div {
     border: 0;
@@ -3430,12 +3430,6 @@ a {
   .review-heading button {
     font-size: 10px;
   }
-  .contact-review {
-    margin-left: 0;
-  }
-  .review-vehicle {
-    margin-left: 0;
-  }
   .review-vehicle .capacities {
     justify-content: center;
   }
@@ -3741,7 +3735,7 @@ a {
   }
 }
 
-/* Match the phone reference's subsection typography and indentation. */
+/* Phone subsection sizing; passenger content retains its reference indentation. */
 @media (max-width: 639px) {
   .passengers-panel .round-icon,
   .contact-panel .round-icon {
@@ -3755,7 +3749,6 @@ a {
     font-weight: 600;
   }
   .passengers-panel .section-body,
-  .contact-panel .section-body,
   .gratuity-section .section-body,
   .gratuity-result {
     margin-left: 44px;
@@ -3936,6 +3929,9 @@ a {
 .pickup-map-pin .icon { width: 32px; height: 38px; stroke-width: 2.5; fill: white; }
 .pickup-map-picker [data-map-selection] > a { text-decoration: underline; text-underline-offset: 3px; }
 .pickup-map-picker [data-map-status] { min-height: 40px; }
+.pickup-map-picker [data-action="use-map-location"]:disabled {
+  background: #e0e5ed; color: #657189; border-color: #d0d8e4; box-shadow: none; cursor: not-allowed;
+}
 @media (max-width: 600px) {
   .pickup-map-frame { height: 290px; }
   .pickup-map-picker { padding: 12px; }

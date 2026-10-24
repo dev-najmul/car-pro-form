@@ -575,7 +575,7 @@ import { COUNTRY_NAMES } from "./countries.js";
     if (deviceLocation.status === "idle" || (deviceLocation.status === "map" ? mapTarget() !== fieldId : fieldId !== "pickup")) return "";
     if (deviceLocation.status === "map") {
       const label = mapFieldLabel(fieldId), searchId = fieldId === "pickup" ? "pickup-map-search" : "map-search-" + fieldId.replace(/[^a-zA-Z0-9_-]/g, "-");
-      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Type to preview an area on the map. Choose an address or click the map to select your exact point, then confirm.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
+      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Search to preview an address, then use this map point to add it. You can also choose a suggestion or move the pin before confirming.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
     }
     const candidate = deviceLocation.candidate;
     const url = candidate ? googlePlaceUrl(candidate) : "";
@@ -592,9 +592,10 @@ import { COUNTRY_NAMES } from "./countries.js";
   function refreshMapSelection() {
     const panel = app.querySelector('[data-map-picker]');
     if (!panel || deviceLocation.status !== "map") return;
-    const candidate = deviceLocation.candidate;
+    const candidate = deviceLocation.candidate || deviceLocation.mapPreview;
+    const previewOnly = !deviceLocation.candidate && Boolean(deviceLocation.mapPreview);
     panel.querySelector('[data-action="use-map-location"]').disabled = !candidate;
-    panel.querySelector('[data-map-selection]').innerHTML = candidate ? `<p class="device-location-context">${e(candidate.text)}</p><p>${candidate.placeId ? "Address shown on map" : "Selected pin"}: ${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}. Check the surroundings before confirming.</p><a href="${e(googlePlaceUrl(candidate))}" target="_blank" rel="noopener noreferrer">View selected ${candidate.placeId ? "place" : "pin"} in Google Maps</a>${candidate.nearbyName ? `<p>Nearby landmark, not an exact address.</p>${attributionsMarkup(candidate.attributions || [])}` : ""}${candidate.placeId ? attributionsMarkup(candidate.attributions || []) : ""}` : '<p>No point selected yet. Choose an address or place the pin on the map.</p>';
+    panel.querySelector('[data-map-selection]').innerHTML = candidate ? `<p class="device-location-context">${e(candidate.text)}</p><p>${previewOnly ? "Previewed address — not yet added" : candidate.placeId ? "Address shown on map" : "Selected pin"}: ${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}. Check the surroundings, then use this map point to confirm.</p><a href="${e(googlePlaceUrl(candidate))}" target="_blank" rel="noopener noreferrer">View ${previewOnly ? "previewed" : "selected"} ${candidate.placeId ? "place" : "pin"} in Google Maps</a>${candidate.nearbyName ? `<p>Nearby landmark, not an exact address.</p>${attributionsMarkup(candidate.attributions || [])}` : ""}${candidate.placeId && !previewOnly ? attributionsMarkup(candidate.attributions || []) : ""}` : '<p>No point selected yet. Search for an address, choose a suggestion, or tap the map.</p>';
   }
   function assignLocation(fieldId, place) {
     if (fieldId.startsWith("stop:")) {
@@ -626,6 +627,9 @@ import { COUNTRY_NAMES } from "./countries.js";
   function mountDeviceMap() {
     const panel = app.querySelector('[data-map-picker]');
     if (!panel || deviceLocation.status !== "map") return;
+    // A remounted picker must resolve its own preview before enabling use;
+    // an old search area does not describe the new map's visible center.
+    deviceLocation.mapPreview = null;
     const generation = locationGeneration, fieldId = mapTarget();
     pickupMapCleanup = mountPickupMap(panel, {
       client: maps, fieldId, label: mapFieldLabel(fieldId),
@@ -633,7 +637,15 @@ import { COUNTRY_NAMES } from "./countries.js";
       initial: deviceLocation.candidate || deviceLocation.mapInitial,
       onPick: candidate => {
         if (generation !== locationGeneration || deviceLocation.status !== "map" || mapTarget() !== fieldId) return;
-        deviceLocation.candidate = candidate; refreshMapSelection();
+        deviceLocation.candidate = candidate;
+        if (candidate) deviceLocation.mapPreview = null;
+        refreshMapSelection();
+      },
+      onPreview: preview => {
+        if (generation !== locationGeneration || deviceLocation.status !== "map" || mapTarget() !== fieldId) return;
+        deviceLocation.mapPreview = preview;
+        if (preview) deviceLocation.candidate = null;
+        refreshMapSelection();
       },
     });
     refreshMapSelection();
@@ -646,7 +658,9 @@ import { COUNTRY_NAMES } from "./countries.js";
     refreshDeviceLocation();
   }
   function useMapLocation() {
-    const candidate = deviceLocation.candidate, fieldId = mapTarget(), generation = locationGeneration;
+    if (deviceLocation.status !== "map") return;
+    const candidate = pickupMapCleanup?.confirmSelection?.(), fieldId = mapTarget(), generation = locationGeneration;
+    if (!candidate) { announce("Wait for the map to finish moving, then confirm the displayed address or choose a map point."); return; }
     if (deviceLocation.status !== "map" || !["map", "map-place"].includes(candidate?.source) || !Number.isFinite(candidate.latitude) || Math.abs(candidate.latitude) > 90 || !Number.isFinite(candidate.longitude) || Math.abs(candidate.longitude) > 180) return;
     commitMapPlace(fieldId, candidate, generation);
   }

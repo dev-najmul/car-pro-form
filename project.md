@@ -1810,3 +1810,12 @@ One clearly labelled synthetic request saved as **ID 7**, reference **`TUX-2026-
 **Release/download:** [tuxano-booking-2.1.2.zip](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.2.zip), Media Library attachment **51**, **11,494,792 bytes**, **47 files**, SHA-256 **`8b872a0f7e5467e581ad81859ee4591079b7b56261ac0ef7212e4899bf3d870c`**. An unauthenticated HTTPS download returned **200/application-zip** and exact bytes/hash; archive integrity and complete plugin/shared-source parity passed. Version 2.1.1 remains available for rollback. Credentials, keys, cookies, private helpers and test reports are excluded. Detailed evidence is in ignored `wordpress-test-results/live-212/`, `admin-212/` and `full-browser-212/`.
 
 The [four-point upgrade checklist](wordpress/UPGRADE-2.1.2.md) and installation/download guidance are updated. Source/release/documentation are saved on GitHub `main`, the live update is complete, and the owner can perform the final manual review. Existing business-rate/policy approval and actual inbox delivery remain owner acceptance items.
+
+## 22. Phone map confirmation and content alignment — 24 October 2026
+
+The owner found two phone issues and authorized a tested live plugin update. Target **2.1.3**; retain 2.1.2 as rollback and preserve current page content, prices, API keys, appearance and existing submissions.
+
+1. Reproduce map search/preview/confirmation using touch-enabled mobile interaction. The supplied screenshot says “No point selected yet” while the confirmation button looks active. Ensure a deliberate confirmation can add the intended displayed address/point on phone, including after scrolling/dismissing the keyboard, while retaining exact Place identity, known-country checks and late-response guards. Typing must never silently change the booking address. Verify pickup, drop-off and stops, retaining desktop behavior.
+2. On phone, align step 4 Contact & Billing section bodies and step 5 Review content with their section icons' left edge. Remove the unnecessary mobile indent from billing fields and review details/vehicle/other content, matching the existing contact review example. Preserve heading layout, desktop spacing, readable controls and responsive containment.
+
+Implement and verify the two points separately, then build/install the actual ZIP, test the ordinary live homepage with touch-enabled mobile interaction and desktop, and record results before owner review.
