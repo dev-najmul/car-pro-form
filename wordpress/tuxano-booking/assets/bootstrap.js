@@ -60,7 +60,22 @@ try {
   try { session = await response.json(); } catch { throw new Error('The booking service is temporarily unavailable. Please try again.'); }
   if (!response.ok) throw new Error(session.message || 'The booking service is temporarily unavailable. Please try again.');
   if (!session || typeof session.token !== 'string' || !session.token || !Array.isArray(session.vehicles) || !session.settings || !session.maps) throw new Error('The booking service returned an incomplete configuration. Please try again.');
-  globalThis.TuxanoBooking = Object.freeze({ ...session, restUrl: boot.restUrl, assetUrl: assets.href, nonce: boot.nonce || '' });
+  let quickTrip = null, quickTripError = '';
+  // The fragment carries only an opaque reference. Same-origin sessionStorage
+  // holds a bounded, short-lived trip intent, never a price or booking token.
+  // Reading the parent directly keeps this compatible with cached embed HTML.
+  try {
+    const host = window.parent === window ? window : window.parent;
+    if (host.location.origin === location.origin && host.location.hash.startsWith('#tuxano-trip=')) {
+      const reference = host.location.hash.slice('#tuxano-trip='.length);
+      try {
+        const { consumeQuickHandoff } = await import(new URL('quick-handoff.js', assets));
+        quickTrip = consumeQuickHandoff(sessionStorage, reference, host.location.href);
+      } catch (failure) { quickTripError = failure.message || 'Your quick booking details could not be restored. Please enter your trip again.'; }
+      host.history.replaceState(host.history.state, '', host.location.pathname + host.location.search);
+    }
+  } catch { /* Cross-origin parents cannot transfer a quick booking intent. */ }
+  globalThis.TuxanoBooking = Object.freeze({ ...session, restUrl: boot.restUrl, assetUrl: assets.href, nonce: boot.nonce || '', quickTrip, quickTripError });
   await import(new URL('app.js', assets));
   reportSize();
 } catch (failure) {

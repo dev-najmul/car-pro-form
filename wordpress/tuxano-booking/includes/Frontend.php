@@ -8,6 +8,7 @@ final class Frontend
     public static function register(): void
     {
         add_shortcode('tuxano_booking', [self::class, 'shortcode']);
+        add_shortcode('tuxano_quick_booking', [self::class, 'quick_shortcode']);
         add_filter('theme_page_templates', static function (array $templates): array {
             $templates['tuxano-booking-full-page.php'] = __('Tuxano Booking — full page', 'tuxano-booking');
             return $templates;
@@ -26,6 +27,18 @@ final class Frontend
         $url = add_query_arg(['tuxano_booking_form' => '1', 'frame_id' => $id], home_url('/'));
         wp_enqueue_script('tuxano-booking-embed', TUXANO_BOOKING_URL . 'assets/embed.js', [], TUXANO_BOOKING_VERSION, true);
         return '<div class="tuxano-booking-embed" style="width:100%;max-width:none"><iframe id="' . esc_attr($id) . '" data-tuxano-booking-frame src="' . esc_url($url) . '" title="' . esc_attr__('Transportation reservation request', 'tuxano-booking') . '" allow="geolocation" style="display:block;width:100%;height:1300px;border:0;max-width:100%;background:transparent" loading="eager"></iframe><noscript>' . esc_html__('Enable JavaScript to use the reservation form.', 'tuxano-booking') . '</noscript></div>';
+    }
+
+    /** The quick card stays inline so its glass background can blur the hero. */
+    public static function quick_shortcode(): string
+    {
+        $id = wp_unique_id('tuxano-quick-');
+        $assets = TUXANO_BOOKING_URL . 'public/' . TUXANO_BOOKING_VERSION . '/';
+        wp_enqueue_style('tuxano-booking-quick', $assets . 'quick-booking.css', [], TUXANO_BOOKING_VERSION);
+        wp_enqueue_script_module('tuxano-booking-quick', $assets . 'quick-booking.js', [], TUXANO_BOOKING_VERSION);
+        // No session token, nonce or key is cached in the page. JavaScript asks
+        // the public session endpoint for current settings before rendering.
+        return '<div id="' . esc_attr($id) . '" data-tuxano-quick-booking data-rest-url="' . esc_url(rest_url('tuxano-booking/v1/')) . '" data-asset-url="' . esc_url($assets) . '" data-booking-url="' . esc_url(Settings::booking_page_url()) . '"><p role="status">' . esc_html__('Loading trip planner…', 'tuxano-booking') . '</p><noscript><p>' . esc_html__('Enable JavaScript to plan your ride.', 'tuxano-booking') . '</p></noscript></div>';
     }
 
     public static function frame(): void

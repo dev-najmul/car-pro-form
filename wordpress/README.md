@@ -1,8 +1,8 @@
-# Tuxano Booking 2.1.3
+# Tuxano Booking 2.2.0
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.1.3.zip) · [SHA-256](../releases/tuxano-booking-2.1.3.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.2.0.zip) · [SHA-256](../releases/tuxano-booking-2.2.0.zip.sha256)
 
 ## Install and configure
 
@@ -12,6 +12,16 @@ Installable WordPress conversion of the existing five-step form. The static prot
 4. Set business/contact details, public terms/privacy URLs, email recipient/sender, optional retention, route budgets and booking limits. Set the WordPress site timezone; the form displays that timezone for pickup date/time.
 5. Add `[tuxano_booking]` to a page. It embeds a responsive same-origin form isolated from theme CSS. For the complete page, choose the **Tuxano Booking — full page** template. Its WordPress/Elementor host preserves page backgrounds while the transparent isolated form keeps theme CSS from changing its controls. A standalone form is also available at `/?tuxano_booking_form=1`.
 6. Test a request, inspect its submission and confirm delivery to both intended inboxes. The plugin uses `wp_mail`; configure a WordPress SMTP/mail transport when needed. Local tests intercept mail rather than sending it to real recipients.
+
+## Home quick booking
+
+Place `[tuxano_quick_booking]` in your home hero or page-builder section, and `[tuxano_booking]` on the main booking page. Under **Tuxano Booking → Settings → Quick booking**, select the published main booking page. The destination can change on another site without editing code. Protected, unpublished and external destinations are rejected.
+
+The inline quick card has a dark glass/blurred desktop background and a white phone background, scoped controls, Google-selected pickup/drop-off, Transfer/Hourly, hourly duration, date/time and CHECK PRICE. Its host section supplies the hero photograph; the plugin does not add marketing text or a background image. Multiple cards keep their selections independent.
+
+CHECK PRICE transfers only trip intent within the same browser tab. The destination restores canonical Google places and obtains a fresh server quote before opening vehicle selection (step 2). A malformed, expired or unresolvable transfer stays on step 1 with feedback. It does not create a booking, send an email or carry contact details, consent, a trusted price or an old quote. Handoff data expires after ten minutes and is consumed once; only an opaque random reference appears in the URL fragment. Browser session storage must be available.
+
+Use the current-location button only after granting permission and checking its detected pickup. A fresh accurate reading requires explicit confirmation; an approximate PC position cannot silently become a pickup. Address suggestions remain available.
 
 ## Admin controls
 
@@ -74,8 +84,8 @@ wp eval-file /path/to/repo/tests/wordpress-integration.php
 wp eval-file /path/to/repo/tests/wordpress-updates.php
 ```
 
-The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3 and PHP 8.5, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Run fixture suites sequentially on disposable local databases. The current phone fixes are in [UPGRADE-2.1.3.md](UPGRADE-2.1.3.md). The preceding four refinements are in [UPGRADE-2.1.2.md](UPGRADE-2.1.2.md); the preceding seven refinements are in [UPGRADE-2.1.1.md](UPGRADE-2.1.1.md). The previous major upgrade and its verification outcomes are in [UPGRADE-2.1.md](UPGRADE-2.1.md) and [project.md](../project.md#19-full-frontendadmin-upgrade--22-october-2026).
+The **Verify WordPress plugin** workflow installs the actual ZIP into WordPress 6.6/PHP 7.4 and PHP 8.1, plus current WordPress/PHP 8.3 and PHP 8.5, verifies core checksums, checks PHP syntax, runs PHP fixtures and the shared browser suite. No real Maps key or SMTP account is needed for deterministic CI tests. Run fixture suites sequentially on disposable local databases. The new feature and fixes are in [UPGRADE-2.2.0.md](UPGRADE-2.2.0.md). The preceding phone fixes are in [UPGRADE-2.1.3.md](UPGRADE-2.1.3.md). The preceding four refinements are in [UPGRADE-2.1.2.md](UPGRADE-2.1.2.md); the preceding seven refinements are in [UPGRADE-2.1.1.md](UPGRADE-2.1.1.md). The previous major upgrade and its verification outcomes are in [UPGRADE-2.1.md](UPGRADE-2.1.md) and [project.md](../project.md#19-full-frontendadmin-upgrade--22-october-2026).
 
 Version **2.1.3** is installed and verified on the authorized site, currently PHP 8.5.12 / WordPress 7.1.3. The [live home-page form](https://bdreadyweb.com/carbook/) passed touch-enabled map preview confirmation after keyboard dismissal/scrolling for pickup, drop-off and stops. Phone billing/review content aligns with its icons at 320px/393px, with no overflow; desktop confirmation and layout remain correct. Actual Google US routes, waiting and all six fares matched. Existing pages, all settings/appearance colors, keys and tariffs were preserved. All four CI PHP targets, including PHP 7.4 compatibility, passed **600 distinct automated checks** with **122 browser cases**. This release's live QA submitted no booking and requested no email.
 
-[Direct plugin ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.1.3.zip) · [Live booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking). The unauthenticated downloaded ZIP matches the committed SHA-256. Prior customer/admin QA notifications were accepted by mail transport; actual inbox delivery still needs the owner's test with a real address. Full current evidence is in [project.md Section 22](../project.md#22-phone-map-confirmation-and-content-alignment--24-october-2026); version 2.1.2 is retained for rollback. Set approved business rates and published policy URLs before customer quoting.
+[Direct plugin ZIP download](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.2.0.zip) · [Live booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking). The unauthenticated downloaded ZIP matches the committed SHA-256. Prior customer/admin QA notifications were accepted by mail transport; actual inbox delivery still needs the owner's test with a real address. Full current evidence is in [project.md Section 22](../project.md#22-phone-map-confirmation-and-content-alignment--24-october-2026); version 2.1.2 is retained for rollback. Set approved business rates and published policy URLs before customer quoting.

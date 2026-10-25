@@ -3,7 +3,7 @@ import { dirname, extname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
-const publicFiles = ['index.html', 'styles.css', 'app.js', 'maps.js', 'pickup-map.js', 'pricing.js', 'countries.js', 'terms.html', 'privacy.html'];
+const publicFiles = ['index.html', 'styles.css', 'app.js', 'maps.js', 'pickup-map.js', 'pricing.js', 'countries.js', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css', 'terms.html', 'privacy.html'];
 const assetExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.ttf', '.woff', '.woff2', '.txt', '.md']);
 const marker = '.car-pro-form-pages-build';
 const markerValue = 'car-pro-form static Pages build v1\n';

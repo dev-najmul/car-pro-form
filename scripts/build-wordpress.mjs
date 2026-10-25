@@ -20,7 +20,7 @@ await writeFile(join(output, marker), 'Tuxano Booking build\n');
 await cp(source, output, { recursive: true, dereference: false });
 const publicDirectory = join(output, 'public', version);
 await mkdir(publicDirectory, { recursive: true });
-for (const file of ['app.js', 'maps.js', 'pricing.js', 'pickup-map.js', 'countries.js', 'styles.css']) {
+for (const file of ['app.js', 'maps.js', 'pricing.js', 'pickup-map.js', 'countries.js', 'styles.css', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css']) {
   await cp(join(root, file), join(publicDirectory, file));
 }
 await cp(join(root, 'assets'), join(publicDirectory, 'assets'), { recursive: true, dereference: false });

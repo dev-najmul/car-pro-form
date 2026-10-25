@@ -7,6 +7,7 @@
 use Tuxano\Booking\Pricing;
 use Tuxano\Booking\Settings;
 use Tuxano\Booking\Vehicles;
+use Tuxano\Booking\Frontend;
 
 if (!defined('WP_CLI') || !WP_CLI) {
     exit('Run this file using WP-CLI in the isolated test installation.');
@@ -15,7 +16,7 @@ if (wp_get_environment_type() !== 'local') {
     WP_CLI::error('These fixture tests run only in an isolated local WordPress installation.');
 }
 
-foreach (['Settings', 'Vehicles', 'Pricing'] as $class) {
+foreach (['Settings', 'Vehicles', 'Pricing', 'Frontend'] as $class) {
     if (!class_exists('Tuxano\\Booking\\' . $class)) {
         require_once dirname(__DIR__) . '/wordpress/tuxano-booking/includes/' . $class . '.php';
     }
@@ -81,6 +82,55 @@ try {
     }
     $check(Settings::save(['form_title_color' => '#123456']) === true && Settings::get()['form_subtitle_color'] === '#aabbcc', 'Changing one appearance control preserves every omitted color.');
     $check(Settings::save(Settings::FORM_COLORS) === true && Settings::revision() === $appearance_revision, 'Original appearance may be restored without changing fares.');
+    $check($defaults['booking_page_id'] === 0, 'Quick booking has no assumed destination on a new installation.');
+    $legacy_quick = Settings::get();
+    unset($legacy_quick['booking_page_id']);
+    update_option(Settings::OPTION, $legacy_quick, false);
+    $check(Settings::get()['booking_page_id'] === 0 && Settings::public_data()['bookingPageUrl'] === '', 'Older settings resolve an unset quick destination without inventing a URL.');
+    $quick_pages = [];
+    foreach ([['page', 'publish', ''], ['page', 'draft', ''], ['page', 'private', ''], ['page', 'publish', 'private-test-password'], ['post', 'publish', '']] as $index => $definition) {
+        [$type, $status, $password] = $definition;
+        $page_id = wp_insert_post(['post_type' => $type, 'post_status' => $status, 'post_title' => 'Quick booking fixture ' . $index, 'post_content' => '[tuxano_booking]', 'post_password' => $password], true);
+        if (is_wp_error($page_id)) { throw new RuntimeException('Could not create an isolated quick-booking page fixture.'); }
+        $quick_pages[] = (int) $page_id;
+        $created_posts[] = (int) $page_id;
+    }
+    $quick_revision = Settings::revision();
+    $check(Settings::save(['booking_page_id' => (string) $quick_pages[0]]) === true && Settings::get()['booking_page_id'] === $quick_pages[0], 'A published public page saves as an integer quick destination.');
+    $check(Settings::public_data()['bookingPageUrl'] === get_permalink($quick_pages[0]) && !array_key_exists('booking_page_id', Settings::public_data()), 'Public quick configuration exposes only the resolved public destination URL.');
+    $check(Settings::revision() === $quick_revision, 'Selecting a quick destination does not invalidate route quotes.');
+    $check(Settings::save(['company_name' => Settings::get()['company_name']]) === true && Settings::get()['booking_page_id'] === $quick_pages[0], 'Omitted destination fields survive unrelated partial saves.');
+    foreach (array_merge(array_slice($quick_pages, 1), ['-1', '1.5', '2147483648', '999999999', 'https://external.example/booking/', ['1']]) as $invalid_page) {
+        $before = Settings::get();
+        $result = Settings::save(['company_name' => 'Must not partially save', 'booking_page_id' => $invalid_page]);
+        $check(is_wp_error($result) && Settings::get() === $before, 'Invalid, private, protected or non-page quick destinations reject the whole settings save.');
+    }
+    $home = wp_parse_url(home_url('/'));
+    $origin = $home['scheme'] . '://' . $home['host'] . (isset($home['port']) ? ':' . $home['port'] : '');
+    foreach (['https://external.example/booking/', $home['scheme'] . '://user:pass@' . $home['host'] . '/booking/', $origin . '/booking/#unexpected', ($home['scheme'] === 'https' ? 'http' : 'https') . substr($origin, strpos($origin, ':')) . '/booking/'] as $unsafe_link) {
+        $filter = static function ($link, $id) use ($quick_pages, $unsafe_link) { return (int) $id === $quick_pages[0] ? $unsafe_link : $link; };
+        add_filter('page_link', $filter, 10, 2);
+        $check(Settings::booking_page_url() === '' && Settings::public_data()['bookingPageUrl'] === '', 'A permalink filter cannot turn the selected page into an external, credentialled, fragmented or different-origin destination.');
+        remove_filter('page_link', $filter, 10);
+    }
+    wp_update_post(['ID' => $quick_pages[0], 'post_status' => 'draft']);
+    $check(Settings::booking_page_url() === '' && Settings::public_data()['bookingPageUrl'] === '', 'Unpublishing the saved page immediately disables quick redirection.');
+    wp_update_post(['ID' => $quick_pages[0], 'post_status' => 'publish']);
+    $check(Settings::booking_page_url() === get_permalink($quick_pages[0]), 'Republishing the configured public page restores its validated URL.');
+    Frontend::register();
+    $quick_markup = do_shortcode('[tuxano_quick_booking]');
+    $second_markup = do_shortcode('[tuxano_quick_booking]');
+    preg_match('/id="([^"]+)"/', $quick_markup, $quick_id);
+    preg_match('/id="([^"]+)"/', $second_markup, $second_id);
+    $check(!empty($quick_id[1]) && !empty($second_id[1]) && $quick_id[1] !== $second_id[1] && strpos($quick_markup, '<iframe') === false, 'Each quick shortcode renders a unique native inline card rather than an iframe.');
+    $check(strpos($quick_markup, 'data-tuxano-quick-booking') !== false && strpos($quick_markup, 'data-rest-url="' . esc_url(rest_url('tuxano-booking/v1/')) . '"') !== false && strpos($quick_markup, 'data-booking-url="' . esc_url(get_permalink($quick_pages[0])) . '"') !== false, 'The quick shortcode exposes the escaped same-origin bootstrap attributes.');
+    $check(strpos($quick_markup, '<noscript>') !== false && strpos($quick_markup, 'data-asset-url="' . esc_url(TUXANO_BOOKING_URL . 'public/' . TUXANO_BOOKING_VERSION . '/') . '"') !== false && strpos($quick_markup, 'nonce') === false && strpos($quick_markup, 'token') === false, 'Cached quick markup includes versioned assets and no visitor token or REST nonce.');
+    $check(wp_style_is('tuxano-booking-quick', 'enqueued') && strpos(wp_styles()->registered['tuxano-booking-quick']->src, '/public/' . TUXANO_BOOKING_VERSION . '/quick-booking.css') !== false, 'Quick styles are enqueued from the current versioned public assets.');
+    ob_start();
+    wp_script_modules()->print_enqueued_script_modules();
+    $quick_modules = (string) ob_get_clean();
+    $check(strpos($quick_modules, 'type="module"') !== false && strpos($quick_modules, '/public/' . TUXANO_BOOKING_VERSION . '/quick-booking.js') !== false, 'The quick frontend is enqueued through the native WordPress module API.');
+    $check(Settings::save(['booking_page_id' => '0']) === true && Settings::booking_page_url() === '' && Settings::revision() === $quick_revision, 'An administrator can clear the destination without altering any fare.');
     $check(Settings::save(['browser_key' => 'test_browser_key_123456789012345', 'routes_key' => 'test_routes_key_123456789012345', 'meet_price' => '64.75']) === true, 'Valid settings should save.');
     $check(Settings::save(['meet_price' => '80', 'browser_key' => '', 'routes_key' => '']) === true, 'A partial form should preserve blank API keys.');
     $settings = Settings::get();

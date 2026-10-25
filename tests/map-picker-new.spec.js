@@ -4,20 +4,40 @@ import { installPlacesStub } from './helpers/google-places-stub.js';
 async function picker(page, options = {}) {
   await page.goto('/?demo=1');
   await page.evaluate(async options => {
-    document.body.innerHTML = '<section id="picker"><div class="location-input"><input data-map-search aria-label="Search chosen location"></div><p data-map-status role="status"></p><div data-location-map style="height:280px"></div></section>';
+    document.body.innerHTML = '<section id="picker"><div class="location-input"><input data-map-search aria-label="Search chosen location"></div><p data-map-status role="status"></p><div data-location-map style="height:280px;position:relative"></div><span class="pickup-map-pin" aria-hidden="true"></span></section>';
     const state = window.__genericPicker = { maps: [], picks: [], previews: [], failures: [], requests: [], restores: [], selected: 0, country: options.country || '', pending: [], pendingSearch: [], pendingNearby: [], fixtures: {
       hotel: { placeId: 'hotel', text: 'Selected Hotel, Dhaka, Bangladesh', latitude: 23.7, longitude: 90.4, countryCode: 'BD', countryName: 'Bangladesh', attributions: [] },
       foreign: { placeId: 'foreign', text: 'Foreign Hotel, USA', latitude: 41, longitude: -87, countryCode: 'US', countryName: 'United States', attributions: [] },
     } };
     class Map {
-      constructor(_container, settings) { this.settings = settings; this.listeners = new globalThis.Map(); this.center = settings.center; state.maps.push(this); }
+      constructor(container, settings) { this.container = container; this.settings = settings; this.listeners = new globalThis.Map(); this.center = settings.center; this.zoom = settings.zoom; state.maps.push(this); queueMicrotask(()=>this.emit('idle')); }
       addListener(name, callback) { if (!this.listeners.has(name)) this.listeners.set(name, new Set()); this.listeners.get(name).add(callback); return { remove: () => this.listeners.get(name)?.delete(callback) }; }
       emit(name, value) { for (const callback of this.listeners.get(name) || []) callback(value); }
-      panTo(center) { if (options.holdPan) { this.pendingCenter = center; return; } this.center = center; queueMicrotask(() => this.emit('idle')); }
-      setZoom(zoom) { this.zoom = zoom; }
+      panTo(center) {
+        const framed = {lat:center.lat+(options.cameraOffset?.lat||0),lng:center.lng+360*(options.cameraWrapTurns||0)+(options.cameraOffset?.lng||0)};
+        if (options.holdPan) { this.pendingCenter = framed; this.emit('bounds_changed'); return; }
+        const changed=this.center.lat!==framed.lat||this.center.lng!==framed.lng;
+        this.center=framed;
+        const notify=()=>{
+          if(changed){this.emit('center_changed');this.emit('bounds_changed');}
+          if(changed||this.zoomChanged)queueMicrotask(()=>this.emit('idle'));
+          this.zoomChanged=false;
+        };
+        if(options.asyncCameraEvents)queueMicrotask(notify);else notify();
+      }
+      moveCamera({center,zoom}) { if(zoom!==undefined)this.setZoom(zoom);this.panTo(center); }
+      setZoom(zoom) { if(zoom===this.zoom)return;this.zoom=zoom;this.zoomChanged=true;this.emit('zoom_changed'); }
+      getZoom() { return this.zoom; }
       getCenter() { return this.center; }
+      getBounds() { return {contains:point=>Math.abs(point.lat-this.center.lat)<.1&&Math.abs(((point.lng-this.center.lng+180)%360+360)%360-180)<.1}; }
     }
-    window.google = { maps: { importLibrary: async () => ({ Map }), event: { clearInstanceListeners: map => map.listeners.clear() } } };
+    class LatLng {constructor(lat,lng,noWrap){this.latitude=lat;this.longitude=noWrap?lng:((lng+180)%360+360)%360-180;}lat(){return this.latitude;}lng(){return this.longitude;}}
+    class OverlayView {
+      setMap(map){if(!map){this.onRemove();this.map=null;return;}this.map=map;this.onAdd();this.draw();}
+      getPanes(){return{overlayLayer:this.map.container};}
+      getProjection(){return{fromLatLngToDivPixel:point=>{const scale=256*2**this.map.zoom/360,rect=this.map.container.getBoundingClientRect();return{x:rect.width/2+(point.lng()-this.map.center.lng)*scale,y:rect.height/2-(point.lat()-this.map.center.lat)*scale};}};}
+    }
+    window.google = { maps: { LatLng, importLibrary: async () => ({ Map, OverlayView }), event: { clearInstanceListeners: map => map.listeners.clear() } } };
     const client = {
       ready: async () => ({}),
       async suggest(query, fieldId, request) { state.requests.push({ query, fieldId, request }); return [{ placeId: 'hotel', text: 'Hotel suggestion', main: 'Hotel suggestion', secondary: 'Dhaka, Bangladesh' }]; },
@@ -78,9 +98,116 @@ test('confirmation rejects a moving map and never substitutes intermediate coord
   await page.evaluate(() => {const map=window.__genericPicker.maps[0];map.center=map.pendingCenter;map.emit('idle');});
   await expect.poll(() => page.evaluate(() => window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
   expect(await page.evaluate(() => window.__genericPicker.cleanup.confirmSelection())).toMatchObject({placeId:'hotel',source:'map-place'});
-  await page.evaluate(() => { window.__genericPicker.maps[0].center={lat:23.701,lng:90.402}; });
+  await page.evaluate(() => { const map=window.__genericPicker.maps[0];map.center={lat:23.701,lng:90.402};map.emit('center_changed'); });
   expect(await page.evaluate(() => window.__genericPicker.cleanup.confirmSelection())).toBeNull();
+  await page.evaluate(() => window.__genericPicker.maps[0].emit('idle'));
+  expect(await page.evaluate(() => window.__genericPicker.cleanup.confirmSelection())).toMatchObject({placeId:'hotel',source:'map-place'});
   expect(await page.evaluate(() => window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+});
+
+for (const [name, camera] of [
+  ['the adjacent wrapped world copy returned for the Bangladesh location', {cameraWrapTurns:-1}],
+  ['a settled camera with a subpixel coordinate offset', {cameraOffset:{lat:.00002,lng:.00003}}],
+]) {
+  test(`a named address remains confirmable with ${name}`, async ({page}) => {
+    await picker(page,{country:'BD',...camera});
+    await page.getByLabel('Search chosen location').fill('Hotel');
+    await expect.poll(()=>page.evaluate(()=>window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
+    const preview=await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection());
+    expect(preview).toMatchObject({placeId:'hotel',latitude:23.7,longitude:90.4,countryCode:'BD',source:'map-place'});
+    expect(await page.evaluate(()=>window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+    await page.getByRole('option',{name:'Hotel suggestion',exact:true}).click();
+    await expect.poll(()=>page.evaluate(()=>window.__genericPicker.picks.at(-1)?.placeId)).toBe('hotel');
+    expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toMatchObject(preview);
+    const geometry=await page.locator('[data-map-pin]').evaluate(pin=>({longitude:Number(pin.dataset.mapPinLongitude),latitude:Number(pin.dataset.mapPinLatitude),source:pin.dataset.mapPinSource,left:parseFloat(pin.style.left),center:pin.parentElement.getBoundingClientRect().width/2}));
+    expect(geometry).toMatchObject({longitude:90.4,latitude:23.7,source:'map-place'});
+    // The marker follows the selected coordinates, not the rounded camera.
+    if(camera.cameraOffset) expect(Math.abs(geometry.left-geometry.center)).toBeGreaterThan(1);
+    else expect(Math.abs(geometry.left-geometry.center)).toBeLessThan(.01);
+  });
+}
+
+test('a manually selected wrapped SDK point is canonicalized without changing its position or inventing a Place ID', async ({page}) => {
+  await picker(page,{cameraWrapTurns:-1,country:'BD'});
+  await page.evaluate(()=>window.__genericPicker.maps[0].emit('click',{latLng:{lat:()=>22.7127099,lng:()=>-269.6457791}}));
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.picks.at(-1)?.nearbyName)).toBe('Nearby hotel');
+  const point=await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection());
+  expect(point.latitude).toBeCloseTo(22.7127099,7);
+  expect(point.longitude).toBeCloseTo(90.3542209,7);
+  expect(point.source).toBe('map');
+  expect(point).not.toHaveProperty('placeId');
+  expect(point).not.toHaveProperty('countryCode');
+  await expect(page.locator('[data-map-pin]')).toHaveAttribute('data-map-pin-source','map');
+});
+
+test('page scrolling and a single pointer interaction do not discard a named address when the cooperative map does not move', async ({page}) => {
+  await picker(page,{country:'BD'});
+  await page.getByLabel('Search chosen location').fill('Hotel');
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
+  await page.evaluate(()=>{
+    const canvas=document.querySelector('[data-location-map]');
+    canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true}));
+    canvas.dispatchEvent(new PointerEvent('pointerdown',{pointerId:1,pointerType:'touch',bubbles:true}));
+    window.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,pointerType:'touch',bubbles:true}));
+  });
+  expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toMatchObject({placeId:'hotel',source:'map-place'});
+  expect(await page.evaluate(()=>window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+});
+
+for(const releaseBeforeMovement of [false,true]) {
+  test(`a real pinch chooses only its stable raw point when fingers leave ${releaseBeforeMovement?'before':'after'} the SDK camera update`, async ({page})=>{
+    await picker(page,{country:'BD'});
+    await page.getByLabel('Search chosen location').fill('Hotel');
+    await expect.poll(()=>page.evaluate(()=>window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
+    await page.evaluate(releaseFirst=>{
+      const canvas=document.querySelector('[data-location-map]'),map=window.__genericPicker.maps[0];
+      for(const id of[1,2])canvas.dispatchEvent(new PointerEvent('pointerdown',{pointerId:id,pointerType:'touch',bubbles:true}));
+      const release=()=>{for(const id of[1,2])window.dispatchEvent(new PointerEvent('pointerup',{pointerId:id,pointerType:'touch',bubbles:true}));};
+      if(releaseFirst)release();
+      map.center={lat:23.702,lng:90.405};map.emit('center_changed');map.emit('idle');
+      if(!releaseFirst)window.__genericPicker.release=release;
+    },releaseBeforeMovement);
+    if(!releaseBeforeMovement){
+      expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toBeNull();
+      await page.evaluate(()=>window.__genericPicker.release());
+    }
+    await expect.poll(()=>page.evaluate(()=>window.__genericPicker.picks.at(-1)?.source)).toBe('map');
+    const selected=await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection());
+    expect(selected).toMatchObject({latitude:23.702,longitude:90.405,source:'map'});
+    expect(selected).not.toHaveProperty('placeId');
+  });
+}
+
+test('a new explicit address overrides prior wheel intent even when SDK camera events are delivered asynchronously', async ({page})=>{
+  await picker(page,{country:'BD',asyncCameraEvents:true});
+  await page.getByLabel('Search chosen location').fill('Hotel');
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
+  await page.evaluate(()=>{
+    document.querySelector('[data-location-map]').dispatchEvent(new WheelEvent('wheel',{deltaY:120,ctrlKey:true,bubbles:true}));
+    window.__genericPicker.fixtures.hotel={...window.__genericPicker.fixtures.hotel,latitude:23.702,longitude:90.405};
+  });
+  await page.getByRole('option',{name:'Hotel suggestion',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.picks.at(-1)?.placeId)).toBe('hotel');
+  expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toMatchObject({placeId:'hotel',latitude:23.702,longitude:90.405,source:'map-place'});
+});
+
+test('a selected address outside the settled map view cannot turn into an unrelated camera point', async ({page})=>{
+  await picker(page,{country:'BD'});
+  await page.getByLabel('Search chosen location').fill('Hotel');
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.previews.at(-1)?.placeId)).toBe('hotel');
+  await page.evaluate(()=>{const map=window.__genericPicker.maps[0];map.center={lat:25,lng:92};map.emit('center_changed');map.emit('idle');});
+  expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toBeNull();
+  expect(await page.evaluate(()=>window.__genericPicker.picks.filter(Boolean))).toEqual([]);
+  await expect(page.locator('[data-map-status]')).toContainText('outside the map view');
+});
+
+test('SDK world normalization cannot legitimize an invalid stored provider longitude', async ({page})=>{
+  await picker(page,{country:'BD'});
+  await page.evaluate(()=>window.__genericPicker.fixtures.hotel.longitude=450.4);
+  await page.getByLabel('Search chosen location').fill('Hotel');
+  await expect.poll(()=>page.evaluate(()=>window.__genericPicker.restores.length)).toBe(1);
+  await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,100)));
+  expect(await page.evaluate(()=>window.__genericPicker.cleanup.confirmSelection())).toBeNull();
 });
 
 test('editing, Escape, country changes and unmounting invalidate a previously confirmable preview', async ({ page }) => {

@@ -1,0 +1,331 @@
+@font-face {
+  font-family: "Tuxano Quick Sans";
+  src: url("./assets/plus-jakarta-sans.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Native shortcode card: backdrop blur must see the parent hero, outside an iframe. */
+[data-tuxano-quick-booking] {
+  --tq-ink: #ffffff;
+  --tq-muted: #edf0f6;
+  --tq-line: rgba(233, 239, 251, .64);
+  --tq-control: rgba(5, 11, 20, .23);
+  --tq-focus: #a8c5ff;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 0 0 auto;
+  padding: 28px 24px 24px;
+  border: 1px solid rgba(203, 216, 243, .82);
+  border-radius: 10px;
+  color: var(--tq-ink);
+  background: linear-gradient(150deg, rgba(11, 19, 34, .72), rgba(3, 8, 17, .82));
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .16), inset 0 1px rgba(255, 255, 255, .08);
+  font: 400 14px/1.5 "Tuxano Quick Sans", Arial, sans-serif;
+  text-align: left;
+  color-scheme: dark;
+}
+[data-tuxano-quick-booking],
+[data-tuxano-quick-booking] * { box-sizing: border-box; }
+[data-tuxano-quick-booking] [hidden] { display: none !important; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-form { margin: 0; padding: 0; border: 0; background: none; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-title {
+  margin: 0 0 24px;
+  padding: 0;
+  color: var(--tq-ink);
+  font: 400 24px/1.3 "Tuxano Quick Sans", Arial, sans-serif;
+  letter-spacing: -.6px;
+}
+[data-tuxano-quick-booking] button,
+[data-tuxano-quick-booking] input,
+[data-tuxano-quick-booking] select {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 18px;
+  border: 1px solid var(--tq-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  margin: 0;
+  padding: 12px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tq-ink);
+  box-shadow: none;
+  cursor: pointer;
+  text-align: center;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button[aria-pressed="true"] {
+  color: #fff;
+  background: radial-gradient(ellipse at 50% 0, #1e438e, transparent 110%), linear-gradient(#142c63, #0b1837);
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-field { position: relative; display: block; min-width: 0; margin: 0 0 16px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-label {
+  position: absolute;
+  z-index: 2;
+  left: 46px;
+  top: 27px;
+  display: block;
+  max-width: calc(100% - 66px);
+  margin: 0;
+  padding: 0;
+  color: var(--tq-muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.3;
+  transform: translateY(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: top .15s, font-size .15s, transform .15s;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-field.has-value > .tuxano-quick-booking-label,
+[data-tuxano-quick-booking] .tuxano-quick-booking-field:focus-within > .tuxano-quick-booking-label { top: 5px; transform: none; font-size: 10px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-control {
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+  min-height: 54px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tq-line);
+  border-radius: 3px;
+  background: var(--tq-control);
+  color: var(--tq-ink);
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-control:focus-within {
+  border-color: var(--tq-focus);
+  box-shadow: 0 0 0 2px rgba(164, 195, 255, .22);
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-icon {
+  display: inline-flex;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  margin: 0 10px 0 14px;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  pointer-events: none;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-icon svg,
+[data-tuxano-quick-booking] .tuxano-quick-booking-locate svg,
+[data-tuxano-quick-booking] .tuxano-quick-booking-note svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-control > .input {
+  display: block;
+  flex: 1 1 0%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 52px;
+  min-height: 52px;
+  margin: 0;
+  padding: 12px 12px 12px 0;
+  border: 0;
+  border-radius: 3px;
+  outline: 0;
+  background: transparent;
+  color: var(--tq-ink);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-control > .input::placeholder { color: transparent; opacity: 0; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-field.has-value .tuxano-quick-booking-control > .input,
+[data-tuxano-quick-booking] .tuxano-quick-booking-field:focus-within .tuxano-quick-booking-control > .input { padding-top: 20px; padding-bottom: 4px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-control > .input:focus { outline: 0; box-shadow: none; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-control > select.input {
+  cursor: pointer;
+  padding-right: 28px;
+  appearance: auto;
+}
+[data-tuxano-quick-booking] option { background: #fff; color: #14223a; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-locate {
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 48px;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--tq-ink);
+  box-shadow: none;
+  cursor: pointer;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-locate:hover { background: rgba(255, 255, 255, .1); }
+[data-tuxano-quick-booking] .tuxano-quick-booking-locate:disabled { opacity: .45; cursor: wait; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-locate .tuxano-quick-booking-icon { margin: 0; flex: 0 0 auto; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-date-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-date-time .tuxano-quick-booking-icon { margin-left: 12px; margin-right: 8px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-date-time .input { font-size: 13px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-native-picker { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; min-width: 0; opacity: 0; cursor: pointer; }
+[data-tuxano-quick-booking] [data-quick-display] { min-width: 0; overflow: hidden; padding-right: 10px; color: var(--tq-ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-field:not(.has-value) [data-quick-display] { visibility: hidden; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-field.has-value [data-quick-display] { padding-top: 14px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  margin: 0;
+  padding: 13px 12px;
+  border: 1px solid #142f6c;
+  border-radius: 2px;
+  background: radial-gradient(ellipse at 50% 0, #234a9a, transparent 110%), linear-gradient(#142c63, #0b1837);
+  color: #fff;
+  box-shadow: none;
+  text-align: center;
+  cursor: pointer;
+  transition: filter .15s;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit:hover { filter: brightness(1.13); color: #fff; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit:disabled { background: #bdc5d3; border-color: #b2bdce; color: #3b4960; cursor: not-allowed; filter: none; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  color: var(--tq-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-note .tuxano-quick-booking-icon { margin: 0; flex-basis: 20px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-note svg { width: 20px; height: 20px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-device {
+  margin: -4px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--tq-line);
+  border-radius: 4px;
+  background: var(--tq-control);
+  color: var(--tq-ink);
+  font-size: 12px;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-device p { margin: 0 0 10px; color: inherit; font-size: 12px; line-height: 1.6; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-device button { min-height: 40px; width: 100%; margin: 0; padding: 9px 12px; border: 1px solid var(--tq-line); border-radius: 3px; color: var(--tq-ink); background: var(--tq-control); box-shadow: none; cursor: pointer; font-size: 12px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-error {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #eab9ba;
+  border-radius: 4px;
+  color: #fff;
+  background: #6e1a26d9;
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-tuxano-quick-booking] [aria-invalid="true"] { outline: 1px solid #efa0ab; outline-offset: 1px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-control:has([aria-invalid="true"]) { border-color: #efa0ab; box-shadow: 0 0 0 1px #efa0ab; }
+[data-tuxano-quick-booking] button:focus-visible,
+[data-tuxano-quick-booking] a:focus-visible { outline: 2px solid var(--tq-focus); outline-offset: 3px; }
+
+/* Google-owned suggestions remain readable above the hero and nearby widgets. */
+[data-tuxano-quick-booking] .places-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -1px;
+  right: -1px;
+  z-index: 30;
+  max-height: 290px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #cbd4e4;
+  border-radius: 5px;
+  background: #fff;
+  color: #14223a;
+  box-shadow: 0 12px 26px #07142f30;
+}
+[data-tuxano-quick-booking] .places-dropdown [role="listbox"] { max-height: 235px; overflow-y: auto; }
+[data-tuxano-quick-booking] .place-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding: 11px 13px;
+  border: 0;
+  border-bottom: 1px solid #edf0f5;
+  border-radius: 0;
+  background: #fff;
+  color: #14223a;
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+[data-tuxano-quick-booking] .place-option strong { font-size: 13px; font-weight: 600; line-height: 1.5; color: #14223a; }
+[data-tuxano-quick-booking] .place-option span { font-size: 11px; line-height: 1.5; color: #586780; }
+[data-tuxano-quick-booking] .place-option:hover,
+[data-tuxano-quick-booking] .place-option[aria-selected="true"] { background: #edf3ff; }
+[data-tuxano-quick-booking] .places-message,
+[data-tuxano-quick-booking] .google-attribution { margin: 0; padding: 9px 12px; color: #586780; font-size: 11px; line-height: 1.6; }
+[data-tuxano-quick-booking] .google-maps-attribution { font: 13px/1.5 Arial, sans-serif; color: #5f6368; }
+
+@media (max-width: 639px) {
+  [data-tuxano-quick-booking] {
+    --tq-ink: #111d32;
+    --tq-muted: #40506a;
+    --tq-line: #c8d0df;
+    --tq-control: #fff;
+    --tq-focus: #1e488d;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 24px 20px 20px;
+    border-color: #cfd7e5;
+    background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 8px 28px #10284912;
+    color-scheme: light;
+  }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-title { font-size: 21px; margin-bottom: 20px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-segments > button { min-height: 50px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-control > .input,
+  [data-tuxano-quick-booking] .tuxano-quick-booking-date-time .input { font-size: 16px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-date-time { gap: 12px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-control > .input { min-height: 52px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-error { color: #8b2436; background: #fff2f4; border-color: #f0c5cd; }
+}
+@media (max-width: 359px) {
+  [data-tuxano-quick-booking] { padding-left: 16px; padding-right: 16px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-icon { margin-left: 10px; margin-right: 7px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-date-time { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-tuxano-quick-booking] .tuxano-quick-booking-submit { transition: none; }
+}

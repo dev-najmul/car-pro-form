@@ -839,13 +839,13 @@ a {
   border-radius: 50%;
   transition: transform 0.15s;
 }
-.toggle input:checked + span {
+.toggle input:checked ~ span {
   background: var(--ink);
 }
-.toggle input:checked + span::after {
+.toggle input:checked ~ span::after {
   transform: translateX(20px);
 }
-.toggle input:focus-visible + span {
+.toggle input:focus-visible ~ span {
   outline: 3px solid #5079c4;
   outline-offset: 3px;
 }
@@ -2592,7 +2592,7 @@ a {
     top: 2px;
     left: 2px;
   }
-  .toggle input:checked + span::after {
+  .toggle input:checked ~ span::after {
     transform: translateX(14px);
   }
   .seat-area {

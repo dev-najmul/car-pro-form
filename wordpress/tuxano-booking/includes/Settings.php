@@ -66,6 +66,7 @@ final class Settings
             'session_hourly_limit' => 120,
             'booking_hourly_limit' => 20,
             'dashboard_recent_limit' => 3,
+            'booking_page_id' => 0,
         ], self::FORM_COLORS);
     }
 
@@ -123,6 +124,12 @@ final class Settings
                     continue;
                 }
                 $next[$key] = $value;
+            } elseif ($key === 'booking_page_id') {
+                if (!preg_match('/^\d{1,10}$/D', $value) || (float) $value > 2147483647 || ((int) $value > 0 && self::booking_page_url((int) $value) === '')) {
+                    $errors->add('tuxano_invalid_settings', __('Choose a published, public booking page on this website.', 'tuxano-booking'));
+                } else {
+                    $next[$key] = (int) $value;
+                }
             } elseif (array_key_exists($key, self::FORM_COLORS)) {
                 if (!preg_match('/^#[A-Fa-f0-9]{6}$/D', $value)) {
                     $errors->add('tuxano_invalid_settings', __('Choose a six-digit hexadecimal form color, such as #ffffff.', 'tuxano-booking'));
@@ -226,7 +233,28 @@ final class Settings
             $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
         $public['timezone'] = wp_timezone_string();
+        $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
         return $public;
+    }
+
+    /** Only an existing public page on this origin can receive quick trips. */
+    public static function booking_page_url(?int $page_id = null): string
+    {
+        if ($page_id === null) { $page_id = (int) self::get()['booking_page_id']; }
+        if ($page_id < 1) { return ''; }
+        $page = get_post($page_id);
+        if (!$page || $page->post_type !== 'page' || $page->post_status !== 'publish' || $page->post_password !== '') { return ''; }
+        $url = get_permalink($page);
+        if (!is_string($url) || strlen($url) > 2048) { return ''; }
+        $target = wp_parse_url($url);
+        $home = wp_parse_url(home_url('/'));
+        if (!is_array($target) || !is_array($home) || isset($target['user']) || isset($target['pass']) || isset($target['fragment'])) { return ''; }
+        $scheme = strtolower((string) ($target['scheme'] ?? ''));
+        $home_scheme = strtolower((string) ($home['scheme'] ?? ''));
+        $port = (int) ($target['port'] ?? ($scheme === 'https' ? 443 : 80));
+        $home_port = (int) ($home['port'] ?? ($home_scheme === 'https' ? 443 : 80));
+        if (!in_array($scheme, ['http', 'https'], true) || $scheme !== $home_scheme || strtolower((string) ($target['host'] ?? '')) !== strtolower((string) ($home['host'] ?? '')) || $port !== $home_port) { return ''; }
+        return esc_url_raw($url, ['http', 'https']);
     }
 
     /** Pricing changes invalidate previously issued route quotes. */

@@ -2,6 +2,7 @@ import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE
 import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
 import { COUNTRY_NAMES } from "./countries.js";
+import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js";
 /* The shared frontend supports both the static prototype and WordPress runtime. */
 (() => {
   "use strict";
@@ -37,7 +38,7 @@ import { COUNTRY_NAMES } from "./countries.js";
   const maps = new MapsClient();
   let currentRoute = null, routeStatus = "idle", routeMessage = "", routeGeneration = 0, routeController = null, routePromise = null;
   let autocompleteCleanups = [];
-  let advancing = false, locationGeneration = 0, navigationGeneration = 0;
+  let advancing = false, locationGeneration = 0, navigationGeneration = 0, editGeneration = 0;
   let restoringPlaces = false;
   let deviceLocation = { status: "idle", candidate: null, message: "" };
   let pickupMapCleanup;
@@ -447,6 +448,7 @@ import { COUNTRY_NAMES } from "./countries.js";
     }
   };
   const dirty = () => {
+    ++editGeneration;
     const hadReceipt = Boolean(receipt);
     receipt = null; requestKey = "";
     state.submitted = false;
@@ -863,6 +865,65 @@ import { COUNTRY_NAMES } from "./countries.js";
       if (step !== 0) go(0); else render();
       error("Your saved locations could not be restored. Please select them again from the Google Maps suggestions.");
     } else { save(); render(); calculateRoute(); }
+  }
+  async function initializeQuickTrip(value) {
+    let trip;
+    try { trip = normalizeQuickTrip(value); }
+    catch (failure) { error(failure.message || "Your quick booking details are invalid. Please enter your trip again."); return; }
+    const originalState = state, navigation = navigationGeneration, edits = editGeneration, locationIntent = locationGeneration;
+    const unchanged = () => state === originalState && navigationGeneration === navigation && editGeneration === edits && locationGeneration === locationIntent && step === 0;
+    const adjustedHours = Math.min(settings.maxHours, Math.max(settings.minHours, trip.hours));
+    const hoursChanged = trip.service === "hourly" && adjustedHours !== trip.hours;
+    state.trip = {
+      ...state.trip, service: trip.service, hours: adjustedHours, date: trip.date, time: trip.time, stops: [],
+      pickup: trip.pickup.query, pickupQuery: trip.pickup.query,
+      dropoff: trip.dropoff.query, dropoffQuery: trip.dropoff.query,
+      pickupPlace: { ...trip.pickup, text: trip.pickup.query },
+      dropoffPlace: { ...trip.dropoff, text: trip.dropoff.query },
+    };
+    state.completed = 0;
+    restoringPlaces = true;
+    render();
+    announce("Restoring your quick booking locations and checking the driving route.");
+    let failed = false;
+    await Promise.all(["pickup", "dropoff"].map(async key => {
+      const original = state.trip[key + "Place"];
+      if (!original.placeId) return;
+      try {
+        const place = await maps.restore(original.placeId);
+        if (state === originalState && state.trip[key + "Place"] === original) {
+          state.trip[key + "Place"] = place; state.trip[key] = place.text;
+        }
+      } catch {
+        if (state === originalState && state.trip[key + "Place"] === original) { state.trip[key + "Place"] = null; failed = true; }
+      }
+    }));
+    restoringPlaces = false;
+    if (state !== originalState) return;
+    if (!unchanged()) {
+      // A visitor may already be correcting the trip or using the map. Update
+      // untouched restored fields without replacing their active controls.
+      for (const key of ["pickup", "dropoff"]) {
+        const input = app.querySelector(`[data-place-field="${key}"]`);
+        if (input && state.trip[key + "Place"]) input.value = state.trip[key];
+      }
+      refreshSelectedLocations(); refreshRoutePanel(); updateValidity(); calculateRoute();
+      return;
+    }
+    render();
+    if (failed) { error("Your quick booking locations could not be verified. Select them again from the Google Maps suggestions."); return; }
+    try {
+      if (hoursChanged) throw new Error(`Service hours changed. Choose between ${settings.minHours} and ${settings.maxHours} hours before continuing.`);
+      validateQuickPickupTime(trip, settings.timezone);
+      assertSameCountry([state.trip.pickupPlace, state.trip.dropoffPlace]);
+    } catch (failure) { error(failure.message); return; }
+    if (!validate()) return;
+    const ready = await calculateRoute();
+    if (!unchanged()) return;
+    if (!ready) { error(routeMessage || "Your route could not be calculated. Check your trip and try again."); return; }
+    if (!validate()) return;
+    state.completed = 1;
+    go(1, true);
   }
   // Step 1: selected Google places, ordered stopovers, separate pickup clock time,
   // and an automatic driving + waiting duration.
@@ -1627,5 +1688,7 @@ import { COUNTRY_NAMES } from "./countries.js";
   history.replaceState(null, "", "#" + routes[step]);
   save();
   render();
-  if (!DEMO_MODE) restoreLocations();
+  if (runtime?.quickTrip) initializeQuickTrip(runtime.quickTrip);
+  else if (runtime?.quickTripError) error(runtime.quickTripError);
+  else if (!DEMO_MODE) restoreLocations();
 })();
