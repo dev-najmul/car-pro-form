@@ -194,8 +194,11 @@
 [data-tuxano-quick-booking] .tuxano-quick-booking-date-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-date-time .tuxano-quick-booking-icon { margin-left: 12px; margin-right: 8px; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-date-time .input { font-size: 13px; }
-[data-tuxano-quick-booking] .tuxano-quick-booking-native-picker { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; min-width: 0; opacity: 0; cursor: pointer; }
-[data-tuxano-quick-booking] [data-quick-display] { min-width: 0; overflow: hidden; padding-right: 10px; color: var(--tq-ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+[data-tuxano-quick-booking] [data-quick-picker]:not(.has-native-picker) > .tuxano-quick-booking-label { top: 5px; transform: none; font-size: 10px; }
+[data-tuxano-quick-booking] [data-quick-picker]:not(.has-native-picker) .input { padding-top: 20px; padding-bottom: 4px; }
+[data-tuxano-quick-booking] .has-native-picker .tuxano-quick-booking-native-picker { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; min-width: 0; opacity: 0; cursor: pointer; }
+[data-tuxano-quick-booking] [data-quick-display] { display: none; min-width: 0; overflow: hidden; padding-right: 10px; color: var(--tq-ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+[data-tuxano-quick-booking] .has-native-picker [data-quick-display] { display: block; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-field:not(.has-value) [data-quick-display] { visibility: hidden; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-field.has-value [data-quick-display] { padding-top: 14px; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-submit {

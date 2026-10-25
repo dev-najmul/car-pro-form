@@ -50,7 +50,7 @@ async function initialize(container) {
     const initialHours = Math.min(maximum, Math.max(minimum, 3));
     const today = quickWebsiteClock(session.settings.timezone).slice(0, 10);
     const locationField = (key, title, locate = false) => `<label class="tuxano-quick-booking-field" for="${id}-${key}"><span class="tuxano-quick-booking-label">${title}</span><span class="tuxano-quick-booking-control location-input">${icon('pin')}<input id="${id}-${key}" class="input" type="text" data-quick-place="${key}" aria-label="${title}" placeholder="${title}" autocomplete="off" maxlength="256" required>${locate ? `<button type="button" class="tuxano-quick-booking-locate" data-quick-locate aria-label="Use current location">${icon('target')}</button>` : ''}</span></label>`;
-    const picker = (key, title, type, symbol) => `<label class="tuxano-quick-booking-field" for="${id}-${key}"><span class="tuxano-quick-booking-label">${title}</span><span class="tuxano-quick-booking-control">${icon(symbol)}<span data-quick-display="${key}">${title}</span><input id="${id}-${key}" class="input tuxano-quick-booking-native-picker" data-quick-field="${key}" aria-label="${key === 'time' ? 'Pickup time' : title}" type="${type}" ${key === 'date' ? `min="${today}"` : ''} required></span></label>`;
+    const picker = (key, title, type, symbol) => `<label class="tuxano-quick-booking-field" data-quick-picker for="${id}-${key}"><span class="tuxano-quick-booking-label">${title}</span><span class="tuxano-quick-booking-control">${icon(symbol)}<span data-quick-display="${key}" aria-hidden="true">${title}</span><input id="${id}-${key}" class="input tuxano-quick-booking-native-picker" data-quick-field="${key}" aria-label="${key === 'time' ? 'Pickup time' : title}" type="${type}" ${key === 'date' ? `min="${today}"` : ''} required></span></label>`;
     container.innerHTML = `<form class="tuxano-quick-booking-form" novalidate><h2 class="tuxano-quick-booking-title">PLAN YOUR RIDE</h2><div class="tuxano-quick-booking-segments" role="group" aria-label="Service type"><button type="button" data-quick-service="transfer" aria-pressed="true">TRANSFER</button><button type="button" data-quick-service="hourly" aria-pressed="false">HOURLY</button></div>${locationField('pickup', 'Pickup Location', true)}<div class="tuxano-quick-booking-device" data-quick-device hidden></div>${locationField('dropoff', 'Drop-off Location')}<label class="tuxano-quick-booking-field tuxano-quick-booking-hours" data-quick-hours hidden for="${id}-hours"><span class="tuxano-quick-booking-label">Number of hours</span><span class="tuxano-quick-booking-control">${icon('clock')}<select id="${id}-hours" class="input" aria-label="Hours" data-quick-field="hours" disabled>${Array.from({ length: maximum - minimum + 1 }, (_, index) => minimum + index).map(hours => `<option value="${hours}" ${hours === initialHours ? 'selected' : ''}>${hours} ${hours === 1 ? 'hour' : 'hours'}</option>`).join('')}</select></span></label><div class="tuxano-quick-booking-date-time">${picker('date', 'Date', 'date', 'calendar')}${picker('time', 'Time', 'time', 'clock')}</div><p class="tuxano-quick-booking-error" role="alert" hidden></p><button type="submit" class="tuxano-quick-booking-submit">CHECK PRICE</button><p class="tuxano-quick-booking-note">${icon('shield')}<span>Estimated pricing shown before reservation request.</span></p></form>`;
     const form = container.querySelector('form');
     const fields = Object.fromEntries(['pickup', 'dropoff'].map(key => [key, form.querySelector(`[data-quick-place="${key}"]`)]));
@@ -69,6 +69,27 @@ async function initialize(container) {
       const locate = form.querySelector('[data-quick-locate]'); locate.disabled = false; locate.removeAttribute('aria-busy');
     };
     window.addEventListener('pageshow', event => { if (event.persisted) restoreNavigation(); });
+    for (const input of form.querySelectorAll('[data-quick-picker] input')) {
+      const field = input.closest('[data-quick-picker]');
+      if (typeof input.showPicker !== 'function') continue;
+      field.classList.add('has-native-picker');
+      const openPicker = event => {
+        if (navigating || input.disabled || input.readOnly || !field.classList.contains('has-native-picker')) return;
+        if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
+        // Keep the trusted click/tap/keyboard activation: awaiting anything here
+        // prevents native pickers from opening in browsers that require it.
+        input.focus({ preventScroll: true });
+        try {
+          input.showPicker();
+          event.preventDefault();
+        } catch {
+          // Unsupported/embedded browsers still get an editable native field.
+          field.classList.remove('has-native-picker');
+        }
+      };
+      input.addEventListener('click', openPicker);
+      input.addEventListener('keydown', openPicker);
+    }
     for (const [key, input] of Object.entries(fields)) {
       input.addEventListener('input', () => {
         points[key] = null; queries[key] = input.value;
@@ -120,14 +141,16 @@ async function initialize(container) {
       } catch (failure) { if (alive() && generation === locating) showError(failure.message || 'Your location could not be detected. Search for your pickup address.'); }
       finally { if (alive()) { button.disabled = false; button.removeAttribute('aria-busy'); } }
     });
-    form.addEventListener('change', event => {
+    const syncPicker = event => {
       const key = event.target.dataset.quickField;
       if (!['date', 'time'].includes(key)) return;
       const output = form.querySelector(`[data-quick-display="${key}"]`);
       output.textContent = event.target.value || (key === 'date' ? 'Date' : 'Time');
       syncField(event.target);
       event.target.removeAttribute('aria-invalid'); showError('');
-    });
+    };
+    form.addEventListener('input', syncPicker);
+    form.addEventListener('change', syncPicker);
     form.addEventListener('submit', event => {
       event.preventDefault(); if (navigating) return;
       showError('');

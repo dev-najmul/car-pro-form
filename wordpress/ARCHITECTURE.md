@@ -1,6 +1,6 @@
 # WordPress implementation contract
 
-Plugin: `tuxano-booking`, version 2.2.0, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
+Plugin: `tuxano-booking`, version 2.2.1, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
 
 ## Runtime and UI
 - One top-level **Tuxano Booking** menu: dashboard, submissions (custom private table, detail/status/admin notes, search/status/date filters/pagination), vehicles (private CPT `tuxano_vehicle` with native CRUD and taxonomy `tuxano_collection`), pricing, settings.
@@ -51,3 +51,5 @@ Version 2.1.3 allows deliberate confirmation of the validated address currently 
 Version 2.2.0 supersedes camera-center equality with explicit-intent and SDK movement/idle readiness: equivalent wrapped worlds must not invalidate a named Place ID. Normalize only SDK coordinates, anchor the visible pin through OverlayView to the nearest visible world, and produce manual coordinates only after actual user camera movement settles. Cooperative page scrolling alone leaves the selected intent intact. Toggle checked/focus styling uses general sibling selectors because validation can insert hidden elements between input and track.
 
 `[tuxano_quick_booking]` renders native inline HTML/CSS/ES modules so backdrop blur can see its parent hero. It obtains fresh public session settings, without a cached token/nonce or global main-runtime collision. Settings `booking_page_id` resolves only a published, unprotected, same-origin page; its public URL is excluded from fare revision. `quick-handoff.js` stores only whitelisted trip intent in a one-use ten-minute sessionStorage record bound to the destination. The URL fragment contains a random 128-bit reference, never addresses, credentials, prices, quotes, contact or consent. The fresh main frame consumes its matching parent's intent, re-resolves canonical places and fetches a new authoritative route before step 2. Invalid data/provider failure stays on step 1. Edit/navigation/picker generations prevent late auto-navigation; Back/BFCache and invalid-configuration retries restore a usable quick planner. Quick mode never submits a reservation.
+
+Quick date/time fields progressively enhance native inputs only when `showPicker()` is supported. Trusted click/tap and Enter/Space invoke it synchronously; unavailable or denied APIs retain visible, keyboard-editable native fields. Input/change events keep the floating display synchronized.
