@@ -122,10 +122,13 @@ test('map search shows the selected area and requires confirmation before replac
   const search = page.getByLabel('Search map for pickup', { exact: true });
   await search.fill(query);
   await expect(page.getByRole('option', { name: query, exact: true })).toBeVisible();
-  // Enter with no highlighted suggestion still cannot choose an unrelated place.
+  // Typing intentionally previews the first result and permits explicit map
+  // confirmation. Wait for that preview instead of racing its debounce; Enter
+  // without a highlighted suggestion still cannot commit the booking address.
+  await expect(mapPicker(page).locator('[data-map-status]')).toContainText('Area preview:');
+  await expect(mapConfirm(page)).toBeEnabled();
   await search.press('Enter');
   await expect(page).toHaveURL(/#trip$/);
-  await expect(mapConfirm(page)).toBeDisabled();
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
   expect(controls.get(page).requests).toHaveLength(before);
   await search.press('ArrowDown'); await search.press('Enter');
@@ -144,13 +147,20 @@ test('map search shows the selected area and requires confirmation before replac
   await expect(page).toHaveURL(/#trip$/);
 
   // An unfinished replacement search retains the committed address and route.
+  // Hold the provider reply so this tests a genuinely pending query, rather
+  // than a result that is allowed to become the next confirmable live preview.
   const committedRequests = controls.get(page).requests.length;
   await openMap(page);
-  await page.getByLabel('Search map for pickup', { exact: true }).fill('A different unfinished search');
+  const unfinished = 'A different unfinished search';
+  await page.evaluate(query => window.__mapsMock.holdSuggestions.push(query), unfinished);
+  await page.getByLabel('Search map for pickup', { exact: true }).fill(unfinished);
+  await expect.poll(() => page.evaluate(query => window.__mapsMock.pending.some(item => item.kind === 'suggest' && item.key === query), unfinished)).toBe(true);
   await expect(mapConfirm(page)).toBeDisabled();
   await expect(pickup(page)).toHaveValue(query);
   expect(controls.get(page).requests).toHaveLength(committedRequests);
   await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
+  await page.evaluate(query => window.__mapsMock.release('suggest', query), unfinished);
+  await settle(page);
   await expect(mapPicker(page)).toHaveCount(0);
   await expect(pickup(page)).toHaveValue(query);
 });
