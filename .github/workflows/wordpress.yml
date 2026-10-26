@@ -73,7 +73,7 @@ jobs:
           wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/tuxano-wp
           wp config set DISABLE_WP_CRON true --raw --path=/tmp/tuxano-wp
           wp core install --path=/tmp/tuxano-wp --url=http://127.0.0.1:8085 --title='Tuxano CI' --admin_user=tuxano_ci --admin_password="$(openssl rand -hex 24)" --admin_email=ci@example.invalid --skip-email
-          wp plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.3.0.zip" --activate --path=/tmp/tuxano-wp
+          wp plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.3.1.zip" --activate --path=/tmp/tuxano-wp
       - name: Test settings, native fleet CRUD, pricing, REST, persistence and notifications
         run: |
           wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-data.php" --path=/tmp/tuxano-wp
@@ -87,8 +87,8 @@ jobs:
       - if: matrix.php == '8.3'
         uses: actions/upload-artifact@v4
         with:
-          name: tuxano-booking-2.3.0
+          name: tuxano-booking-2.3.1
           path: |
-            releases/tuxano-booking-2.3.0.zip
-            releases/tuxano-booking-2.3.0.zip.sha256
+            releases/tuxano-booking-2.3.1.zip
+            releases/tuxano-booking-2.3.1.zip.sha256
           retention-days: 14

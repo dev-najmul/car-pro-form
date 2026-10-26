@@ -52,4 +52,11 @@
       break;
     }
   });
+  for (const frame of document.querySelectorAll('iframe[data-tuxano-booking-frame]')) {
+    const ready = () => {
+      if (frame.id && frame.id.length <= 100) frame.contentWindow?.postMessage({ type: 'tuxano-booking:ready', frameId: frame.id }, location.origin);
+    };
+    frame.addEventListener('load', ready);
+    ready();
+  }
 })();

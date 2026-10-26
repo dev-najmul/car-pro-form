@@ -250,7 +250,7 @@ final class Settings
                 return $url;
             }
         }
-        $version = defined('TUXANO_BOOKING_VERSION') ? TUXANO_BOOKING_VERSION : '2.3.0';
+        $version = defined('TUXANO_BOOKING_VERSION') ? TUXANO_BOOKING_VERSION : '2.3.1';
         $file = defined('TUXANO_BOOKING_FILE') ? TUXANO_BOOKING_FILE : dirname(__DIR__) . '/tuxano-booking.php';
         return plugins_url('public/' . $version . '/assets/tuxano-wordmark.png', $file);
     }

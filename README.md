@@ -1,13 +1,13 @@
-# WordPress plugin — Tuxano Booking 2.3.0
+# WordPress plugin — Tuxano Booking 2.3.1
 
 The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
 
-- [Direct plugin ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.0.zip) · [repository ZIP](releases/tuxano-booking-2.3.0.zip) · [checksum](releases/tuxano-booking-2.3.0.zip.sha256)
+- [Direct plugin ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.1.zip) · [repository ZIP](releases/tuxano-booking-2.3.1.zip) · [checksum](releases/tuxano-booking-2.3.1.zip.sha256)
 - [Home quick planner](https://bdreadyweb.com/carbook/) · [Main booking form](https://bdreadyweb.com/carbook/booking/) · [WordPress booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking)
 - [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
 - Shortcodes: `[tuxano_quick_booking]` for a home hero and `[tuxano_booking]` for the main booking page. Choose the destination under Settings → Quick booking. For the full reference design choose **Tuxano Booking — full page** as the page template.
 - Build: `npm run build:wordpress`. Existing static setup and historical prototype notes follow below.
-- [Email branding, status notifications and vehicle availability in 2.3.0](wordpress/UPGRADE-2.3.0.md).
+- [Email branding, status notifications and vehicle availability in 2.3.1](wordpress/UPGRADE-2.3.1.md).
 - [Quick date/time picker fix in 2.2.1](wordpress/UPGRADE-2.2.1.md).
 - [Quick booking and fixes in 2.2.0](wordpress/UPGRADE-2.2.0.md): home quick form, configurable booking page, reliable map confirmation and switch states.
 - [Phone fixes in 2.1.3](wordpress/UPGRADE-2.1.3.md): map confirmation and billing/review alignment.

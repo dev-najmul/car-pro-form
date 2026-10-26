@@ -1896,7 +1896,7 @@ The final [separate browser run40225517705](https://github.com/dev-najmul/car-pr
 
 ## 25. Branded emails and vehicle pickup-slot availability — 26 October 2026
 
-Owner authorized direct live update after tests. Release target **2.3.0**. Retain 2.2.1 for rollback and preserve existing pages, customer records, keys, prices, fleet and settings.
+Owner authorized direct live update after tests. Initial feature build **2.3.0**; final release **2.3.1** also repairs a discovered iframe startup race. Retain 2.2.1 for rollback and preserve existing pages, customer records, keys, prices, fleet and settings.
 
 Implementation plan:
 
@@ -1908,3 +1908,8 @@ Implementation plan:
 6. Test template rendering/privacy/escaping, native logo controls, all slot states/other vehicles/timezone boundaries and actual two-process races; run existing PHP/browser checks, package, update the authorized site and verify preservation. Use local mail capture for design/status tests; do not email existing customers as QA.
 
 Implementation and verification results will be recorded after completion.
+
+
+Implementation completed. Local syntax/109 Node/165 browser checks passed. PHP suites passed137data,116REST,159updates,31logo,74templates and96availability/concurrency assertions. New suites also passed actualPHP7.4. The independent two-process race confirmed only one row; direct unique-key contention and unavailable lock behavior were covered. Ten email desktop/phone visual previews passed. Initial live2.3.0 native logo selection and desktop/touch availability acceptance passed; all33settings, keys, sixfleetentries, fourprices, fourpages and all12owner submissions/revisions/statuses were retained. No customer mail or booking POST was sent duringliveQA.
+
+Initial BrowserCI40248347870 passed165; WordPressCI40248347825 passed everyPHP assertion across7.4/8.1/8.3/8.5, but its browser stage exposed an existing first-resize race between a fast child and a footer-loaded parentbridge. Final2.3.1 adds a trusted readiness handshake, with a strengthened test that intentionally delivers the first resize before bridge registration. Source and release bytes for2.3.0 are retained; final2.3.1 results follow.

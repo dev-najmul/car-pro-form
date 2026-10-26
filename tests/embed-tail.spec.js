@@ -10,10 +10,14 @@ async function embedded(page, { editorClass = 'elementor-widget-text-editor', ex
   await page.route('**/embed-tail-api/session', route => route.fulfill({ json: { token: 'synthetic-embed-test', vehicles: [], settings: {}, maps: {} } }));
   await page.route('**/embed-tail-assets/app.js', route => route.fulfill({ contentType: 'text/javascript', body: `window.setFixtureView=view=>{document.body.className=view==='thank-you'?'thank-page':'form-page';document.querySelector('#app').innerHTML='<main class="fixture-content">'+view+'</main><footer class="thank-footer">Receipt footer</footer>'};window.setFixtureView('form');` }));
   await page.goto('/');
-  await page.setContent(`<style>html,body{margin:0;padding:0}.editor-section{display:flex;flex-direction:column;background:linear-gradient(#4b3930,#738a57)}iframe{display:block;width:100%;height:1300px;border:0}.editor-section p,.unrelated-widget p{line-height:24px;margin:0 0 14.4px}</style><section class="editor-section"><div class="${editorClass}"><div class="tuxano-booking-embed"><iframe data-tuxano-booking-frame id="booking-tail" src="/embed-tail-child"></iframe></div><p class="wp-block-paragraph" id="" style="display:block">&nbsp;</p>${extra}</div></section><aside class="unrelated-widget"><p class="wp-block-paragraph">&nbsp;</p></aside>`);
-  await page.addScriptTag({ content: bridge });
+  await page.setContent(`<style>html,body{margin:0;padding:0}.editor-section{display:flex;flex-direction:column;background:linear-gradient(#4b3930,#738a57)}iframe{display:block;width:100%;height:1300px;border:0}.editor-section p,.unrelated-widget p{line-height:24px;margin:0 0 14.4px}</style><script>window.__initialBookingResize=false;window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='tuxano-booking:resize'&&event.data.frameId==='booking-tail'&&event.data.height===700)window.__initialBookingResize=true;});</script><section class="editor-section"><div class="${editorClass}"><div class="tuxano-booking-embed"><iframe data-tuxano-booking-frame id="booking-tail" src="/embed-tail-child"></iframe></div><p class="wp-block-paragraph" id="" style="display:block">&nbsp;</p>${extra}</div></section><aside class="unrelated-widget"><p class="wp-block-paragraph">&nbsp;</p></aside>`);
   const child = page.frameLocator('#booking-tail');
   await expect(child.locator('.fixture-content')).toHaveText('form');
+  // Force the reported production ordering: the first child size was sent
+  // before the footer bridge existed. Its readiness handshake must recover it.
+  await expect.poll(() => page.evaluate(() => window.__initialBookingResize)).toBe(true);
+  await expect(page.locator('#booking-tail')).toHaveCSS('height', '1300px');
+  await page.addScriptTag({ content: bridge });
   await expect(page.locator('#booking-tail')).toHaveCSS('height', '700px');
   return child;
 }

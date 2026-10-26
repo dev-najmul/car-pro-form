@@ -20,6 +20,14 @@ function reportSize() {
   });
 }
 
+// The iframe may finish before a footer-loaded parent bridge is listening.
+// Answer a trusted readiness handshake even when its size has not changed.
+window.addEventListener('message', event => {
+  if (window.parent === window || event.source !== window.parent || event.origin !== location.origin || event.data?.type !== 'tuxano-booking:ready' || event.data.frameId !== boot?.frameId) return;
+  previousHeight = 0;
+  reportSize();
+});
+
 function showError(message) {
   if (!app) return;
   app.replaceChildren();
