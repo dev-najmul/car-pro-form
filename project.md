@@ -1892,3 +1892,19 @@ ZIP [2.2.1](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-boo
 Final [WordPress compatibility run40225517456](https://github.com/dev-najmul/car-pro-form/actions/runs/40225517456) passed at `5a25960438d2edd91cb4a442d40fd8ce99c54801`: all four PHP targets and **669 distinct checks**, including **151 browser cases**. Two timing-dependent test assertions were stabilized without changing the plugin source or ZIP: settled map previews are allowed before explicit confirmation, and native picker opening is tested independently of browser-owned time-column keyboard timing. Live acceptance separately selected actual native chooser values. Source/release bytes remain identical to implementation commit `f8a470be6500f57649b6ce03767b7e5825c4a02d`.
 
 The final [separate browser run40225517705](https://github.com/dev-najmul/car-pro-form/actions/runs/40225517705) also succeeded. Owner review link bypasses the test network’s stale compressed variant: https://bdreadyweb.com/carbook/?v=2.2.1 .
+
+
+## 25. Branded emails and vehicle pickup-slot availability — 26 October 2026
+
+Owner authorized direct live update after tests. Release target **2.3.0**. Retain 2.2.1 for rollback and preserve existing pages, customer records, keys, prices, fleet and settings.
+
+Implementation plan:
+
+1. Match customer/admin receipts to the thank-you page's typography, sections and estimate; use header **#0a121f**. Add email-logo selection in Settings → Email, defaulting to the existing bundled wordmark, with a native Media Library picker and URL fallback. Keep configuration private and outside fare revisions.
+2. Automatically notify customers once per committed Confirmed/Cancelled/Completed transition when customer emails are enabled. Confirmed: thanks, request ID, date/time, pickup/drop-off, vehicle and authoritative price. Cancelled: short apology, ID and support invitation. Completed: thanks, ID and invitation for the next journey. Preserve initial receipt delivery and retry/idempotency leases.
+3. Preserve saved local pickup date/time and add indexed vehicle/UTC slot data derived server-side from each record's timezone. One vehicle ID at one exact pickup minute is one slot; another vehicle at that minute remains available. Cancelled/completed records do not reserve future slots. Pending/reviewing requests warn but do not reserve the vehicle.
+4. Check availability immediately after vehicle selection and freshly before proceeding from step 2. Show an accessible phone/desktop modal: confirmed blocks; pending requires acknowledgement. Handle slow/stale/failed checks safely and place modals inside the visible viewport of the autosized shortcode iframe.
+5. Enforce confirmed-slot conflicts again at final persistence and admin confirmation/rescheduling, with a short database write lock so simultaneous confirmations cannot both succeed. Keep idempotent submission retries working. Migrate old records without changing their accepted data/prices.
+6. Test template rendering/privacy/escaping, native logo controls, all slot states/other vehicles/timezone boundaries and actual two-process races; run existing PHP/browser checks, package, update the authorized site and verify preservation. Use local mail capture for design/status tests; do not email existing customers as QA.
+
+Implementation and verification results will be recorded after completion.

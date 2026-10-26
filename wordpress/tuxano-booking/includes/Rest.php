@@ -12,7 +12,7 @@ final class Rest
     public static function register(): void
     {
         register_rest_route(self::NAMESPACE, '/session', ['methods' => 'POST', 'callback' => [self::class, 'session'], 'permission_callback' => [self::class, 'origin']]);
-        foreach (['route', 'bookings'] as $path) {
+        foreach (['route', 'bookings', 'availability'] as $path) {
             register_rest_route(self::NAMESPACE, '/' . $path, ['methods' => 'POST', 'callback' => [self::class, $path], 'permission_callback' => [self::class, 'permission']]);
         }
         register_rest_route(self::NAMESPACE, '/admin/route', ['methods' => 'POST', 'callback' => [self::class, 'admin_route'], 'permission_callback' => [self::class, 'admin_permission']]);
@@ -114,6 +114,28 @@ final class Rest
             'browserKey' => $settings['browser_key'], 'browserConfigured' => !empty($settings['browser_key']),
             'routesConfigured' => !empty($settings['routes_key']), 'providerMode' => 'remote', 'routeEndpoint' => rest_url(self::NAMESPACE . '/route'),
         ]];
+    }
+
+    /** A fresh per-vehicle slot check, with no reservation/customer identifiers.
+     * @return array|\WP_Error
+     */
+    public static function availability(\WP_REST_Request $request)
+    {
+        $body = $request->get_json_params();
+        if (!is_array($body) || count($body) !== 3 || array_diff(array_keys($body), ['vehicleId', 'date', 'time']) || !is_string($body['date'] ?? null) || !is_string($body['time'] ?? null)) {
+            return self::fail('tuxano_availability_input', 'Choose a vehicle and valid pickup date and time.');
+        }
+        if (!self::rate('availability-session', hash('sha256', self::token($request)), 60, MINUTE_IN_SECONDS) || !self::rate('availability-client', self::client(), 120, MINUTE_IN_SECONDS)) { return self::fail('tuxano_rate', 'Please wait before checking vehicle availability again.', 429); }
+        try {
+            $slot = Availability::slot($body['vehicleId'] ?? null, $body['date'], $body['time']);
+            if (!Vehicles::find((string) $slot['vehicle_id'])) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
+            $pickup = new \DateTimeImmutable($slot['pickup_utc'], new \DateTimeZone('UTC'));
+            if ($pickup->getTimestamp() <= time() || $pickup->getTimestamp() > time() + 5 * YEAR_IN_SECONDS) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the booking website timezone.'); }
+        } catch (\InvalidArgumentException $error) { return self::fail('tuxano_availability_input', $error->getMessage()); }
+        return Availability::write(static function () use ($slot) {
+            Availability::backfill();
+            return Availability::check($slot);
+        });
     }
 
     /** PHP 7.4 equivalent of array_is_list(), preserving key order and types. */

@@ -39,6 +39,7 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
   let currentRoute = null, routeStatus = "idle", routeMessage = "", routeGeneration = 0, routeController = null, routePromise = null;
   let autocompleteCleanups = [];
   let advancing = false, locationGeneration = 0, navigationGeneration = 0, editGeneration = 0;
+  let availabilityGeneration = 0, availabilityController = null, availabilityDialogClose = null, pendingAvailabilityAck = "";
   let restoringPlaces = false;
   let deviceLocation = { status: "idle", candidate: null, message: "" };
   let pickupMapCleanup;
@@ -448,6 +449,7 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
     }
   };
   const dirty = () => {
+    cancelAvailability();
     ++editGeneration;
     const hadReceipt = Boolean(receipt);
     receipt = null; requestKey = "";
@@ -1078,6 +1080,7 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
   }
 
   function render() {
+    availabilityDialogClose?.(false);
     const active = document.activeElement;
     const focusKeys = [
       "field",
@@ -1144,6 +1147,7 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
     if (index === 5 && !state.submitted) return;
     if (index < 5 && index > state.completed) return;
     if (index === step) return;
+    cancelAvailability();
     cancelDeviceLocation();
     ++navigationGeneration;
     step = index;
@@ -1169,6 +1173,108 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
       box.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
     announce(message);
+  }
+  function availabilitySignature() {
+    return JSON.stringify([state.vehicle, state.trip.date, state.trip.time]);
+  }
+  function cancelAvailability() {
+    ++availabilityGeneration;
+    availabilityController?.abort(); availabilityController = null;
+    availabilityDialogClose?.(false);
+  }
+  function availabilityDialog(kind, message) {
+    availabilityDialogClose?.(false);
+    return new Promise(resolve => {
+      const previousFocus = document.activeElement;
+      const dialog = document.createElement("dialog");
+      dialog.className = "availability-dialog";
+      dialog.dataset.availabilityDialog = kind;
+      dialog.setAttribute("aria-labelledby", "availability-heading");
+      dialog.setAttribute("aria-describedby", "availability-description");
+      const title = kind === "unavailable" ? "Vehicle already booked" : kind === "requested" ? "Another request is awaiting review" : "Availability could not be checked";
+      dialog.innerHTML = `<div class="availability-symbol">${icon(kind === "unavailable" ? "calendar" : "info")}</div><h2 id="availability-heading">${e(title)}</h2><p id="availability-description">${e(message)}</p><div class="availability-slot"><strong>${e(selected().display)}</strong><span>${e(dateLabel())} · ${e(timeLabel())}</span></div>${kind === "requested" ? '<p class="availability-note">This is a reservation request, not a confirmed booking. Your team will confirm availability.</p>' : ""}<div class="availability-actions">${kind === "requested" ? '<button class="btn primary" type="button" data-availability-choice="continue">Continue with request</button>' : kind === "error" ? '<button class="btn primary" type="button" data-availability-choice="retry">Try again</button>' : ""}<button class="btn ${kind === "unavailable" ? "primary" : "secondary"}" type="button" data-availability-choice="cancel">Choose another vehicle</button></div>`;
+      let settled = false, parentWindow = null;
+      // An autosized shortcode iframe can be taller than the screen. Position
+      // the dialog inside the part of that frame the visitor can actually see.
+      const position = () => {
+        try {
+          if (window.parent === window || !window.frameElement) return;
+          parentWindow = window.parent;
+          const frame = window.frameElement.getBoundingClientRect();
+          const parentHeight = parentWindow.visualViewport?.height || parentWindow.innerHeight;
+          const top = Math.max(0, -frame.top), bottom = Math.min(innerHeight, parentHeight - frame.top);
+          const visible = Math.max(0, bottom - top);
+          if (visible < 120) return;
+          dialog.style.maxHeight = Math.max(88, visible - 32) + "px";
+          dialog.style.top = Math.max(16, top + (visible - dialog.offsetHeight) / 2) + "px";
+          dialog.style.bottom = "auto"; dialog.style.marginTop = "0";
+        } catch { /* Cross-origin embeds retain native viewport placement. */ }
+      };
+      const finish = choice => {
+        if (settled) return;
+        settled = true;
+        parentWindow?.removeEventListener("scroll", position);
+        parentWindow?.removeEventListener("resize", position);
+        window.removeEventListener("resize", position);
+        if (dialog.open) dialog.close();
+        dialog.remove(); availabilityDialogClose = null;
+        if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+        resolve(choice);
+      };
+      availabilityDialogClose = finish;
+      dialog.addEventListener("cancel", event => { event.preventDefault(); finish(false); });
+      dialog.addEventListener("close", () => finish(false));
+      dialog.addEventListener("click", event => {
+        const action = event.target.closest("[data-availability-choice]")?.dataset.availabilityChoice;
+        if (!action) return;
+        event.stopPropagation(); finish(action === "continue" ? true : action === "retry" ? "retry" : false);
+      });
+      app.append(dialog); dialog.showModal(); position();
+      parentWindow?.addEventListener("scroll", position, { passive: true });
+      parentWindow?.addEventListener("resize", position);
+      window.addEventListener("resize", position);
+      announce(title + ". " + message);
+    });
+  }
+  async function checkVehicleAvailability() {
+    if (!runtime || settings.availabilityChecks !== true) return true;
+    cancelAvailability();
+    const generation = availabilityGeneration, signature = availabilitySignature(), navigation = navigationGeneration, checkingStep = step;
+    const current = () => generation === availabilityGeneration && signature === availabilitySignature() && navigation === navigationGeneration && step === checkingStep;
+    const controller = new AbortController(); availabilityController = controller;
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const next = app.querySelector('[data-action="next"]');
+    const original = next?.innerHTML, disabled = next?.disabled;
+    if (next) { next.disabled = true; next.textContent = "Checking availability…"; next.setAttribute("aria-busy", "true"); }
+    try {
+      const headers = { "Content-Type": "application/json", "X-Tuxano-Session": runtime.token };
+      if (runtime.nonce) headers["X-WP-Nonce"] = runtime.nonce;
+      const response = await fetch(runtime.restUrl + "availability", {
+        method: "POST", credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+        body: JSON.stringify({ vehicleId: state.vehicle, date: state.trip.date, time: state.trip.time }),
+      });
+      let result;
+      try { result = await response.json(); } catch { throw new Error("Please try again before continuing, or choose another vehicle."); }
+      if (!current()) return false;
+      if (!response.ok || !["available", "requested", "unavailable"].includes(result?.state) || typeof result.message !== "string" || result.message.length > 1000) throw new Error(typeof result?.message === "string" && result.message.length <= 1000 ? result.message : "Please try again before continuing, or choose another vehicle.");
+      clearTimeout(timeout);
+      if (result.state === "available") { pendingAvailabilityAck = ""; return true; }
+      if (result.state === "requested" && pendingAvailabilityAck === signature) return true;
+      const accepted = await availabilityDialog(result.state, result.message);
+      if (!current()) return false;
+      if (result.state === "requested" && accepted === true) { pendingAvailabilityAck = signature; return true; }
+      return false;
+    } catch (failure) {
+      if (!current()) return false;
+      const retry = await availabilityDialog("error", controller.signal.aborted ? "The availability check took too long. Please try again before continuing." : failure.message || "Please try again before continuing, or choose another vehicle.");
+      // Keep this attempt's busy-state lease until the retry finishes too.
+      if (retry === "retry" && current()) return await checkVehicleAvailability();
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      if (availabilityController === controller) availabilityController = null;
+      if (next?.isConnected) { next.disabled = disabled; next.innerHTML = original; next.removeAttribute("aria-busy"); }
+    }
   }
   function fieldMessage(control) {
     const label = (control.getAttribute("aria-label") || control.name || "this field").replace(/^(Billing|Passenger) /, "");
@@ -1380,7 +1486,9 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
       try { result = await response.json(); } catch { throw new Error("We could not confirm your submission. Please try again."); }
       if (!response.ok) {
         if (/quote|revision/i.test(result.code || "")) invalidateRoute();
-        throw new Error(result.message || "Your reservation request could not be saved. Please try again.");
+        const failure = new Error(result.message || "Your reservation request could not be saved. Please try again.");
+        failure.code = result.code;
+        throw failure;
       }
       const components = ["transportation", "carCost", "boosterCost", "seats", "meet", "percent", "tip", "total"];
       if (typeof result.requestId !== "string" || !result.requestId || result.requestId.length > 100 || !result.pricing || components.some(key => !Number.isFinite(result.pricing[key]) || result.pricing[key] < 0) || !result.route || !Number.isFinite(result.route.distanceMeters) || result.route.distanceMeters < 0 || !Number.isFinite(result.route.durationSeconds) || result.route.durationSeconds < 0) throw new Error("We could not verify the saved request receipt. Please retry this request.");
@@ -1408,6 +1516,8 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
         return;
       }
       if (step !== startingStep || navigationGeneration !== startingNavigation || !validate()) return;
+      if (step === 1 && !await checkVehicleAvailability()) return;
+      if (step !== startingStep || navigationGeneration !== startingNavigation || !validate()) return;
       if (step === 4) {
         const issue = validateRetainedState();
         if (issue) {
@@ -1430,6 +1540,11 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
       save();
       go(step + 1);
     } catch (failure) {
+      if (failure.code === "tuxano_vehicle_unavailable") {
+        state.consent = false; pendingAvailabilityAck = ""; save(); go(1);
+        await availabilityDialog("unavailable", failure.message);
+        return;
+      }
       error(failure.message || "Your reservation request could not be submitted. Please try again.");
     } finally { advancing = false; }
   }
@@ -1554,6 +1669,7 @@ import { normalizeQuickTrip, validateQuickPickupTime } from "./quick-handoff.js"
       save();
       render();
       announce(`${selected().display} selected.`);
+      await checkVehicleAvailability();
       return;
     }
     if (button.dataset.flight) {

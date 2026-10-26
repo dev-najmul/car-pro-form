@@ -69,6 +69,8 @@ final class BookingUpdates
         $changes = self::diff($old, $clean);
         if ($status !== $row['status']) { $changes['status'] = ['old' => $row['status'], 'new' => $status]; }
         if ($notes !== $row['notes']) { $changes['notes'] = ['old' => $row['notes'], 'new' => $notes]; }
+        $status_notification = $status !== $row['status'] && in_array($status, ['confirmed', 'cancelled', 'completed'], true);
+        $notify_customer = !empty(Settings::get()['email_customer']) && ($notify_customer || $status_notification);
         if (!$changes && !$reprice && !$notify_customer) { return $row; }
         $next = (int) $row['revision'] + 1;
         $data = [
@@ -85,7 +87,7 @@ final class BookingUpdates
         if ($route_changed) { $entry['beforeRoute'] = $row['route']; $entry['afterRoute'] = $route; }
         $saved = Database::revise($id, (int) $revision, $data, $entry);
         if (is_wp_error($saved)) { return $saved; }
-        if ($notify_customer) { Notifications::send_update($id, $next); }
+        if (($saved['update_mail'] ?? '') === 'pending') { Notifications::send_update($id, $next); }
         return Database::find($id);
     }
 

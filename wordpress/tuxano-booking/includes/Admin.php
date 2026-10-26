@@ -50,6 +50,7 @@ final class Admin {
             wp_add_inline_script('tuxano-booking-editor', 'globalThis.TuxanoEditor=' . wp_json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';', 'before');
         }
         if ($screen && $screen->post_type === 'tuxano_vehicle' && $screen->base === 'post') { wp_enqueue_media(); }
+        if (self::get_query('page') === 'tuxano-settings') { wp_enqueue_media(); }
     }
 
     private static function native_screen(): bool {
@@ -374,7 +375,7 @@ final class Admin {
         foreach (Database::STATUSES as $status) {
             echo '<option value="' . esc_attr($status) . '" ' . selected($row['status'], $status, false) . '>' . esc_html(self::status_label($status)) . '</option>';
         }
-        echo '</select></p><p><label for="tuxano-booking-notes">' . esc_html__('Internal notes', 'tuxano-booking') . '</label><textarea class="widefat" id="tuxano-booking-notes" name="notes" rows="8" maxlength="5000">' . esc_textarea(self::scalar($row['notes'] ?? '', '')) . '</textarea><span class="description">' . esc_html__('Visible only to administrators. Updating status does not send an email.', 'tuxano-booking') . '</span></p>';
+        echo '</select></p><p><label for="tuxano-booking-notes">' . esc_html__('Internal notes', 'tuxano-booking') . '</label><textarea class="widefat" id="tuxano-booking-notes" name="notes" rows="8" maxlength="5000">' . esc_textarea(self::scalar($row['notes'] ?? '', '')) . '</textarea><span class="description">' . esc_html__('Visible only to administrators. Changing to Confirmed, Cancelled or Completed emails the customer when customer emails are enabled in Settings.', 'tuxano-booking') . '</span></p>';
         submit_button(__('Save request', 'tuxano-booking'), 'primary', 'submit', false);
         echo '</form></section><section class="tuxano-card"><h2>' . esc_html__('Email notifications', 'tuxano-booking') . '</h2>';
         self::information([
@@ -453,7 +454,7 @@ final class Admin {
         $trip = is_array($booking['trip'] ?? null) ? $booking['trip'] : [];
         $settings = Settings::get();
         $revision = is_array($draft) && isset($draft['revision']) ? (string) $draft['revision'] : BookingUpdates::revision($row);
-        self::open(sprintf(__('Edit %s', 'tuxano-booking'), self::scalar($row['reference'])), __('Update the trip and contact details, review the fare, and choose whether to email the customer.', 'tuxano-booking'));
+        self::open(sprintf(__('Edit %s', 'tuxano-booking'), self::scalar($row['reference'])), __('Update the trip and contact details, review the fare, and keep the customer informed.', 'tuxano-booking'));
         echo '<div class="tuxano-context-actions"><a class="button" href="' . esc_url(self::url('tuxano-submissions', ['booking_id' => $id])) . '">← ' . esc_html__('View submission', 'tuxano-booking') . '</a><span class="tuxano-revision">' . esc_html(sprintf(__('Revision %s', 'tuxano-booking'), $revision)) . '</span></div><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" data-tuxano-editor novalidate><input type="hidden" name="action" value="tuxano_edit_booking"><input type="hidden" name="booking_id" value="' . esc_attr((string) $id) . '"><input type="hidden" name="revision" value="' . esc_attr($revision) . '"><input type="hidden" name="booking[consent]" value="' . (!empty($booking['consent']) ? '1' : '0') . '">';
         wp_nonce_field('tuxano_edit_booking_' . $id);
         echo '<div class="tuxano-detail-grid"><div class="tuxano-detail-main"><section class="tuxano-card"><div class="tuxano-section-heading"><span class="dashicons dashicons-location" aria-hidden="true"></span><div><h2>' . esc_html__('Trip & itinerary', 'tuxano-booking') . '</h2><p>' . esc_html__('Pickup times use the website timezone: ', 'tuxano-booking') . esc_html(wp_timezone_string()) . '.</p></div></div><div class="tuxano-editor-grid">';
@@ -520,7 +521,7 @@ final class Admin {
         }
         echo '</div></section></div><aside class="tuxano-detail-sidebar"><section class="tuxano-card tuxano-save-card"><div class="tuxano-eyebrow">' . esc_html__('SAVED ESTIMATE', 'tuxano-booking') . '</div><strong class="tuxano-editor-total">' . esc_html(self::money($row['total'], $row['currency'])) . '</strong><p class="description">' . esc_html__('Contact and status edits keep the saved fare. Route, vehicle and extra changes recalculate the estimate.', 'tuxano-booking') . '</p><label for="tuxano-editor-status">' . esc_html__('Status', 'tuxano-booking') . '</label><select name="status" id="tuxano-editor-status">';
         foreach (Database::STATUSES as $status) { echo '<option value="' . esc_attr($status) . '" ' . selected($draft['status'] ?? $row['status'], $status, false) . '>' . esc_html(self::status_label($status)) . '</option>'; }
-        echo '</select><label for="tuxano-editor-notes">' . esc_html__('Internal notes', 'tuxano-booking') . '</label><textarea id="tuxano-editor-notes" name="notes" rows="5" maxlength="5000">' . esc_textarea(self::scalar($draft['notes'] ?? $row['notes'], '')) . '</textarea><p class="description">' . esc_html__('Private to administrators. Never included in customer emails.', 'tuxano-booking') . '</p><label class="tuxano-save-option"><input type="checkbox" name="reprice" value="1"> <span>' . esc_html__('Recalculate using current rates', 'tuxano-booking') . '</span></label><label class="tuxano-save-option"><input type="checkbox" name="notify_customer" value="1"> <span>' . esc_html__('Email the updated booking and itemized estimate to the customer', 'tuxano-booking') . '</span></label><div class="tuxano-editor-summary-error" role="alert" hidden></div>';
+        echo '</select><label for="tuxano-editor-notes">' . esc_html__('Internal notes', 'tuxano-booking') . '</label><textarea id="tuxano-editor-notes" name="notes" rows="5" maxlength="5000">' . esc_textarea(self::scalar($draft['notes'] ?? $row['notes'], '')) . '</textarea><p class="description">' . esc_html__('Private to administrators. Never included in customer emails.', 'tuxano-booking') . '</p><label class="tuxano-save-option"><input type="checkbox" name="reprice" value="1"> <span>' . esc_html__('Recalculate using current rates', 'tuxano-booking') . '</span></label><label class="tuxano-save-option"><input type="checkbox" name="notify_customer" value="1"> <span>' . esc_html__('Also email the customer about other booking changes', 'tuxano-booking') . '</span></label><p class="description">' . esc_html__('Changing to Confirmed, Cancelled or Completed automatically emails the customer when customer emails are enabled in Settings. Use the checkbox for other changes.', 'tuxano-booking') . '</p><div class="tuxano-editor-summary-error" role="alert" hidden></div>';
         submit_button(__('Save booking changes', 'tuxano-booking'), 'primary', 'submit', false);
         echo '<a class="button" href="' . esc_url(self::url('tuxano-submissions', ['booking_id' => $id])) . '">' . esc_html__('Cancel', 'tuxano-booking') . '</a></section><section class="tuxano-card"><h2>' . esc_html__('Change history', 'tuxano-booking') . '</h2>';
         $history = is_array($row['history'] ?? null) ? array_reverse($row['history']) : [];
@@ -720,8 +721,9 @@ final class Admin {
         self::field($settings, 'terms_url', __('Terms of use URL', 'tuxano-booking'), 'url', __('Use your published business terms page.', 'tuxano-booking'), ['maxlength' => 2048]);
         self::field($settings, 'privacy_url', __('Privacy policy URL', 'tuxano-booking'), 'url', __('Use your published privacy policy page.', 'tuxano-booking'), ['maxlength' => 2048]);
         echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Email notifications', 'tuxano-booking') . '</h2><p>' . esc_html__('New requests and customer updates use your branded HTML email template. Delivery status is recorded separately from the saved booking.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
-        self::toggle($settings, 'email_customer', __('Customer thank-you email', 'tuxano-booking'));
+        self::toggle($settings, 'email_customer', __('Customer receipt and status emails', 'tuxano-booking'));
         self::toggle($settings, 'email_admin', __('Admin submission notification', 'tuxano-booking'));
+        self::email_logo_field($settings);
         self::field($settings, 'admin_email', __('Notification recipient', 'tuxano-booking'), 'email', __('One email address for new-submission notifications.', 'tuxano-booking'), ['maxlength' => 254, 'required' => 'required']);
         self::field($settings, 'sender_name', __('Sender name', 'tuxano-booking'), 'text', '', ['maxlength' => 120]);
         self::field($settings, 'from_email', __('Sender email', 'tuxano-booking'), 'email', __('Leave blank for the default WordPress domain address. Use an address authorized by your mail provider.', 'tuxano-booking'), ['maxlength' => 254]);
@@ -730,6 +732,12 @@ final class Admin {
         echo '</table></section>';
         submit_button(__('Save settings', 'tuxano-booking'));
         echo '</form></div>';
+    }
+
+    private static function email_logo_field(array $settings): void {
+        $default = Settings::email_logo_url(['email_logo_url' => '']);
+        $current = Settings::email_logo_url($settings);
+        echo '<tr><th scope="row"><label for="tuxano-email_logo_url">' . esc_html__('Email logo', 'tuxano-booking') . '</label></th><td><div class="tuxano-email-logo" data-tuxano-email-logo data-default-logo="' . esc_url($default) . '"><div class="tuxano-email-logo-preview"><img src="' . esc_url($current) . '" alt="' . esc_attr__('Email logo preview', 'tuxano-booking') . '" width="240" data-tuxano-email-logo-preview></div><input class="regular-text" id="tuxano-email_logo_url" name="email_logo_url" type="url" value="' . esc_attr($settings['email_logo_url']) . '" placeholder="' . esc_attr($default) . '" maxlength="2048" data-tuxano-email-logo-input><div class="tuxano-email-logo-actions"><button type="button" class="button" data-tuxano-email-logo-select>' . esc_html__('Choose image', 'tuxano-booking') . '</button><button type="button" class="button" data-tuxano-email-logo-reset>' . esc_html__('Use default logo', 'tuxano-booking') . '</button></div><p class="description">' . esc_html__('Choose an image from the Media Library or paste its public HTTP/HTTPS image URL. An empty field uses the bundled TUXANO logo. The email header is dark navy (#0a121f); transparent PNG images work well. Save settings to apply changes.', 'tuxano-booking') . '</p><p class="description" role="status" aria-live="polite" data-tuxano-email-logo-status></p></div></td></tr>';
     }
 
     private static function key_field(array $settings, string $name, string $label, string $description): void {
@@ -751,7 +759,7 @@ final class Admin {
         check_admin_referer('tuxano_save_settings_' . $section);
         $keys = $section === 'pricing'
             ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
-            : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit', 'booking_page_id'];
+            : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'email_logo_url', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit', 'booking_page_id'];
         if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS)); }
         $values = [];
         foreach ($keys as $key) {

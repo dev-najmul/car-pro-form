@@ -294,6 +294,12 @@ body.tuxano-native-screen .tuxano-vehicle-pricing .tuxano-rate-amount input { fo
   body.tuxano-native-screen .tuxano-vehicle-pricing .tuxano-rate-grid { grid-template-columns: minmax(0,1fr); }
   .tuxano-vehicle-pricing .tuxano-rate-grid { grid-template-columns: minmax(0,1fr); }
 }
+.tuxano-admin .tuxano-email-logo { max-width: 540px; }
+.tuxano-admin .tuxano-email-logo-preview { display: flex; align-items: center; justify-content: center; min-height: 100px; margin-bottom: 14px; padding: 24px; border: 1px solid #23334a; border-radius: 9px; background: #0a121f; }
+.tuxano-admin .tuxano-email-logo-preview img { display: block; width: 240px; max-width: 100%; height: auto; }
+.tuxano-admin .tuxano-email-logo-preview img[hidden] { display: none; }
+.tuxano-admin .tuxano-email-logo input[type="url"] { width: 100%; max-width: 100%; }
+.tuxano-admin .tuxano-email-logo-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 @media (prefers-reduced-motion: reduce) {
   .tuxano-admin .tuxano-stat, .tuxano-admin .tuxano-tabs a { transition: none; }
 }

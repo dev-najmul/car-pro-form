@@ -102,7 +102,8 @@ $mail_mock = static function ($preempt, array $args) use ($check, &$mail, &$crea
         $created_ids[$id] = $id;
     }
     $row = $id ? Database::find($id) : null;
-    $check($row !== null && $row[$kind . '_mail'] === 'sending', 'Notification must be claimed only after its booking is durably saved.');
+    $mail_column = $kind === 'customer' && strpos($args['subject'], 'Your reservation is confirmed') === 0 ? 'update_mail' : $kind . '_mail';
+    $check($row !== null && $row[$mail_column] === 'sending', 'Notification must claim its own delivery lease after the booking is durably saved.');
     $mail[] = ['kind' => $kind, 'args' => $args];
     if ($mail_results[$kind] === 'throw') {
         throw new RuntimeException('Deterministic mail transport exception.');
@@ -257,6 +258,7 @@ try {
     $listing = Database::listing(['search' => $receipt['requestId'], 'status' => 'new', 'per_page' => 1]);
     $check($listing['total'] === 1 && (int) $listing['items'][0]['id'] === $id && !isset($listing['items'][0]['payload']), 'Private admin listing must filter and paginate scalar summary rows.');
     $check(Database::update($id, ['status' => 'confirmed', 'notes' => 'Integration reviewed', 'total' => 1]) === true && (float) Database::find($id)['total'] === 421.88, 'Admin updates may change status and notes without changing authoritative total.');
+    $check(count($mail) === 7 && Database::find($id)['update_mail'] === 'accepted', 'Status confirmation must automatically notify once using the independent update lease.');
     $check(is_wp_error(Database::update($id, ['status' => 'invented'])) && Database::find($id)['status'] === 'confirmed', 'Invalid admin statuses must not modify a booking.');
     $export = Database::privacy_export('booking-customer@example.test');
     $check(count($export['data']) === 1 && strpos(wp_json_encode($export), $request_key) === false && strpos(wp_json_encode($export), 'Integration reviewed') === false, 'Privacy export must include customer records without request keys or internal notes.');

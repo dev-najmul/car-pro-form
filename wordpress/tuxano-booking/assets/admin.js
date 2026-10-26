@@ -2,6 +2,29 @@
 (() => {
   'use strict';
   const boot = globalThis.TuxanoAdmin;
+  const updateEmailLogo = card => {
+    const input = card.querySelector('[data-tuxano-email-logo-input]');
+    const image = card.querySelector('[data-tuxano-email-logo-preview]');
+    const status = card.querySelector('[data-tuxano-email-logo-status]');
+    if (!input || !image || !status) return;
+    const value = input.value.trim();
+    let url = card.dataset.defaultLogo;
+    let valid = true;
+    if (value) {
+      try {
+        const parsed = new URL(value);
+        valid = value.length <= 2048 && !/[\u0000-\u0020\u007f]/.test(value) && ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.hash;
+        if (valid) url = parsed.href;
+      } catch { valid = false; }
+    }
+    input.setCustomValidity(valid ? '' : 'Enter a public HTTP or HTTPS image URL without credentials or a fragment.');
+    status.textContent = !valid ? 'Enter a valid HTTP/HTTPS image URL before saving.' : (value ? 'Selected logo preview. Save settings to apply it to emails.' : 'Using the bundled TUXANO logo.');
+    image.hidden = !valid;
+    if (!valid) return;
+    image.onerror = () => { image.hidden = true; status.textContent = 'The image could not be loaded. Check the image URL before saving.'; };
+    image.onload = () => { image.hidden = false; };
+    if (image.getAttribute('src') !== url) image.src = url;
+  };
   const showKeyResult = (card, message, state = 'info') => {
     const result = card.querySelector('[data-tuxano-key-result]');
     if (!result) return;
@@ -92,6 +115,7 @@
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
     if (target.matches('[data-tuxano-rate]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
+    if (target.matches('[data-tuxano-email-logo-input]')) updateEmailLogo(target.closest('[data-tuxano-email-logo]'));
     if (target.matches('[data-tuxano-key-input]')) {
       const card = target.closest('[data-tuxano-key]'); if (!card) return;
       card.querySelector('[data-tuxano-key-clear-value]').value = '0';
@@ -109,6 +133,23 @@
   document.addEventListener('click', async event => {
     const button = event.target.closest('button, a');
     if (!button) return;
+    const logo = button.closest('[data-tuxano-email-logo]');
+    if (logo && button.matches('[data-tuxano-email-logo-reset]')) {
+      event.preventDefault(); const input = logo.querySelector('[data-tuxano-email-logo-input]');
+      input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); return;
+    }
+    if (logo && button.matches('[data-tuxano-email-logo-select]')) {
+      event.preventDefault();
+      if (!window.wp?.media) { logo.querySelector('[data-tuxano-email-logo-status]').textContent = 'The Media Library is unavailable. Paste a public image URL instead.'; return; }
+      const picker = window.wp.media({ title: 'Choose email logo', library: { type: 'image' }, button: { text: 'Use this logo' }, multiple: false });
+      picker.on('select', () => {
+        const photo = picker.state().get('selection').first()?.toJSON();
+        if (typeof photo?.url !== 'string') return;
+        const input = logo.querySelector('[data-tuxano-email-logo-input]');
+        input.value = photo.url; input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      picker.open(); return;
+    }
     const card = button.closest('[data-tuxano-key]');
     if (card && button.matches('[data-tuxano-key-replace]')) {
       event.preventDefault(); const input = card.querySelector('[data-tuxano-key-input]');
@@ -185,4 +226,5 @@
   }
   document.querySelectorAll('.tuxano-bulk-form').forEach(selection);
   document.querySelectorAll('.tuxano-vehicle-pricing').forEach(updateRates);
+  document.querySelectorAll('[data-tuxano-email-logo]').forEach(updateEmailLogo);
 })();

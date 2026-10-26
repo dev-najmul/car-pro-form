@@ -4,7 +4,7 @@ Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ extras and gratuity, private submissions, customer/admin emails and retention.
 No payment gateway is included. Requests require manual availability review.
 
 == Installation ==
-1. Upload tuxano-booking-2.2.1.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.3.0.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
@@ -65,6 +65,18 @@ Country-aware suggestions and known-country checks help prevent accidental
 cross-country selections. Unknown coordinate countries are not guessed; the
 server still requires an actual driving route and calculates authoritative fares.
 
+== Availability and status emails ==
+The same vehicle at the same exact pickup minute can have only one confirmed
+booking. Pending/new/reviewing requests show an acknowledgement warning and may
+still be submitted. Another vehicle at that minute remains available. Cancelled
+and completed requests release their slot. Availability is rechecked before
+continuing from vehicle selection and again when saving/confirming on the server.
+Times use the WordPress website timezone; saved historical timezones are retained.
+Lifecycle emails are automatic when customer notifications are enabled. Ordinary
+booking edits can still use the optional detailed-update email checkbox.
+Settings > Email supports a Media Library image or public image URL for the logo;
+an empty value uses the bundled wordmark. The email header background is #0a121f.
+
 == External services and privacy ==
 Google Maps JavaScript/Places receive typed location searches and chosen points.
 Google Routes receives the ordered route from the WordPress server. The Routes
@@ -87,6 +99,13 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+
+= 2.3.0 =
+* Add thank-you-style customer/admin emails with configurable email logo and dark navy header.
+* Automatically send concise confirmed, cancelled and completed customer notifications.
+* Check per-vehicle pickup-time availability with pending-request warnings and confirmed booking blocks.
+* Enforce confirmed-slot conflicts in final submission and administrator updates, including simultaneous confirmations.
+* Preserve legacy booking data while adding indexed vehicle and UTC pickup slots.
 
 = 2.2.1 =
 * Open quick-booking date/time pickers on field clicks, touch taps and keyboard activation.

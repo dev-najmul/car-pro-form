@@ -27,6 +27,9 @@ final class Database
             status varchar(20) NOT NULL DEFAULT 'new',
             created_at datetime NOT NULL,
             pickup_at datetime NOT NULL,
+            vehicle_id bigint(20) unsigned NOT NULL DEFAULT 0,
+            pickup_utc datetime DEFAULT NULL,
+            confirmed_slot char(64) DEFAULT NULL,
             customer_name varchar(200) NOT NULL,
             customer_email varchar(254) NOT NULL,
             vehicle_name varchar(200) NOT NULL,
@@ -49,10 +52,13 @@ final class Database
             PRIMARY KEY  (id),
             UNIQUE KEY reference (reference),
             UNIQUE KEY request_key (request_key),
+            UNIQUE KEY confirmed_slot (confirmed_slot),
             KEY status_created (status,created_at),
             KEY customer_email (customer_email(100)),
-            KEY pickup_at (pickup_at)
+            KEY pickup_at (pickup_at),
+            KEY vehicle_pickup (vehicle_id,pickup_utc,status)
         ) {$collation};");
+        Availability::backfill(1000);
         update_option('tuxano_booking_db_version', TUXANO_BOOKING_VERSION, false);
     }
 
@@ -78,12 +84,24 @@ final class Database
     /** @return int|\WP_Error */
     public static function insert(array $row)
     {
-        global $wpdb;
-        // Suppress duplicate-key SQL output; a racing retry reads the winning row.
-        $previous = $wpdb->suppress_errors(true);
-        $success = $wpdb->insert(self::table(), $row);
-        $wpdb->suppress_errors($previous);
-        return $success ? (int) $wpdb->insert_id : new \WP_Error('booking_save_failed', __('The request could not be saved. Please retry; your details are still on this page.', 'tuxano-booking'), ['status' => 503]);
+        return Availability::write(static function () use ($row) {
+            global $wpdb;
+            Availability::backfill();
+            $booking = is_array($row['payload'] ?? null) ? $row['payload'] : json_decode((string) ($row['payload'] ?? ''), true);
+            try { $slot = Availability::from_booking(is_array($booking) ? $booking : []); }
+            catch (\InvalidArgumentException $error) { return new \WP_Error('tuxano_schedule_input', $error->getMessage(), ['status' => 400]); }
+            if (!in_array($row['status'] ?? 'new', ['cancelled', 'completed'], true)) {
+                $allowed = Availability::permit($slot);
+                if (is_wp_error($allowed)) { return $allowed; }
+            }
+            $row = array_merge($row, $slot, ['confirmed_slot' => ($row['status'] ?? 'new') === 'confirmed' ? Availability::confirmed_key($slot) : null]);
+            if (is_array($row['payload'])) { $row['payload'] = wp_json_encode($row['payload']); }
+            // Suppress duplicate-key SQL output; a racing retry reads the winner.
+            $previous = $wpdb->suppress_errors(true);
+            $success = $wpdb->insert(self::table(), $row);
+            $wpdb->suppress_errors($previous);
+            return $success ? (int) $wpdb->insert_id : new \WP_Error('booking_save_failed', __('The request could not be saved. Please retry; your details are still on this page.', 'tuxano-booking'), ['status' => 503]);
+        });
     }
 
     public static function listing(array $filters = []): array
@@ -141,6 +159,9 @@ final class Database
         }
         if (!$entry['changes']) { return true; }
         $result = self::revise($id, (int) $row['revision'], $clean, $entry);
+        if (!is_wp_error($result) && ($result['update_mail'] ?? '') === 'pending') {
+            Notifications::send_update($id, (int) $result['revision']);
+        }
         return is_wp_error($result) ? $result : true;
     }
 
@@ -153,6 +174,15 @@ final class Database
      */
     public static function revise(int $id, int $expected, array $changes, array $entry)
     {
+        return Availability::write(static function () use ($id, $expected, $changes, $entry) {
+            Availability::backfill();
+            return self::revise_locked($id, $expected, $changes, $entry);
+        });
+    }
+
+    /** The caller holds the schedule write lock through conflict check + CAS. */
+    private static function revise_locked(int $id, int $expected, array $changes, array $entry)
+    {
         global $wpdb;
         $row = self::find($id);
         if (!$row) { return new \WP_Error('tuxano_booking_missing', __('Request not found.', 'tuxano-booking'), ['status' => 404]); }
@@ -163,6 +193,33 @@ final class Database
         $clean = array_intersect_key($changes, array_flip($allowed));
         if (!$clean) { return new \WP_Error('tuxano_edit_validation', __('There are no request changes to save.', 'tuxano-booking'), ['status' => 400]); }
         $next = $expected + 1;
+        $status = $clean['status'] ?? $row['status'];
+        if (!in_array($status, self::STATUSES, true)) { return new \WP_Error('invalid_status', __('Invalid request status.', 'tuxano-booking'), ['status' => 400]); }
+        $booking = $clean['payload'] ?? $row['payload'];
+        if (!is_array($booking)) { $booking = json_decode((string) $booking, true); }
+        try {
+            $slot = Availability::from_booking(is_array($booking) ? $booking : []);
+            if (!in_array($status, ['cancelled', 'completed'], true)) {
+                $allowed = Availability::permit($slot, $id);
+                if (is_wp_error($allowed)) { return $allowed; }
+            }
+            $clean = array_merge($clean, $slot, ['confirmed_slot' => $status === 'confirmed' ? Availability::confirmed_key($slot) : null]);
+        } catch (\InvalidArgumentException $error) {
+            // Teams must still be able to cancel/complete a corrupt legacy row.
+            if ($status === 'confirmed') { return new \WP_Error('tuxano_schedule_input', $error->getMessage(), ['status' => 400]); }
+            $clean['confirmed_slot'] = null;
+        }
+        $automatic_notification = $status !== $row['status'] && in_array($status, ['confirmed', 'cancelled', 'completed'], true);
+        $customer_enabled = !empty(Settings::get()['email_customer']);
+        if ($automatic_notification) {
+            $clean['update_mail'] = $customer_enabled ? 'pending' : 'disabled';
+            $clean['update_mail_revision'] = $next;
+            $clean['update_mail_started'] = null;
+            $entry['notificationRequested'] = $customer_enabled;
+            $entry['notificationReason'] = 'status';
+        } elseif (!$customer_enabled && ($clean['update_mail'] ?? '') === 'pending') {
+            $clean['update_mail'] = 'disabled';
+        }
         $entry['revision'] = $next;
         $entry['actor'] = get_current_user_id();
         $entry['at'] = current_time('mysql', true);
@@ -179,7 +236,13 @@ final class Database
         $clean['revision'] = $next;
         $clean['updated_at'] = $entry['at'];
         $clean['history'] = wp_json_encode($history);
+        $previous = $wpdb->suppress_errors(true);
         $success = $wpdb->update(self::table(), $clean, ['id' => $id, 'revision' => $expected]);
+        $storage_error = $wpdb->last_error;
+        $wpdb->suppress_errors($previous);
+        if ($success === false && stripos($storage_error, 'confirmed_slot') !== false && stripos($storage_error, 'duplicate') !== false) {
+            return new \WP_Error('tuxano_vehicle_unavailable', __('This vehicle already has a confirmed booking at this pickup date and time. Choose another vehicle or change the pickup time.', 'tuxano-booking'), ['status' => 409, 'state' => 'unavailable']);
+        }
         if ($success === false) { return new \WP_Error('tuxano_edit_storage', __('The request could not be updated. Your previous saved request is unchanged.', 'tuxano-booking'), ['status' => 503]); }
         if ($success !== 1) { return new \WP_Error('tuxano_edit_conflict', __('This request was changed by another administrator. Reload it before saving your changes.', 'tuxano-booking'), ['status' => 409]); }
         return self::find($id);
@@ -213,6 +276,7 @@ final class Database
     public static function maintenance(): void
     {
         global $wpdb;
+        Availability::backfill(1000);
         Rest::clean_rates();
         $days = (int) (Settings::get()['retention_days'] ?? 0);
         if ($days > 0) {

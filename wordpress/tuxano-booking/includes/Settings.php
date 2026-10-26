@@ -59,6 +59,7 @@ final class Settings
             'retention_days' => 0,
             'sender_name' => (string) get_bloginfo('name'),
             'from_email' => $from,
+            'email_logo_url' => '',
             'browser_key' => '',
             'routes_key' => '',
             'route_daily_limit' => 1000,
@@ -163,10 +164,10 @@ final class Settings
                 } else {
                     $next[$key] = $value === '' && $key === 'from_email' ? self::defaults()['from_email'] : sanitize_email($value);
                 }
-            } elseif (in_array($key, ['website', 'terms_url', 'privacy_url'], true)) {
+            } elseif (in_array($key, ['website', 'terms_url', 'privacy_url', 'email_logo_url'], true)) {
                 $url = $value === '' ? '' : esc_url_raw($value, ['http', 'https']);
                 $parts = $url !== '' ? wp_parse_url($url) : [];
-                if (strlen($value) > 2048 || ($value !== '' && (!preg_match('#^https?://#i', $value) || !$url || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])))) {
+                if (strlen($value) > 2048 || ($key === 'email_logo_url' && preg_match('/[\x00-\x20\x7f]/', $value)) || ($value !== '' && (!preg_match('#^https?://#i', $value) || !$url || empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) || ($key === 'email_logo_url' && isset($parts['fragment']))))) {
                     $errors->add('tuxano_invalid_settings', sprintf(__('Enter a valid HTTP or HTTPS URL for %s.', 'tuxano-booking'), $key));
                 } else {
                     $next[$key] = $url;
@@ -234,7 +235,24 @@ final class Settings
         }
         $public['timezone'] = wp_timezone_string();
         $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
+        $public['availabilityChecks'] = true;
         return $public;
+    }
+
+    /** Display-only email branding; no remote file is fetched by the server. */
+    public static function email_logo_url(array $settings): string
+    {
+        $value = $settings['email_logo_url'] ?? '';
+        if (is_string($value) && $value !== '' && strlen($value) <= 2048 && !preg_match('/[\x00-\x20\x7f]/', $value)) {
+            $url = esc_url_raw($value, ['http', 'https']);
+            $parts = $url !== '' ? wp_parse_url($url) : [];
+            if (preg_match('#^https?://#i', $value) && is_array($parts) && !empty($parts['host']) && !isset($parts['user']) && !isset($parts['pass']) && !isset($parts['fragment'])) {
+                return $url;
+            }
+        }
+        $version = defined('TUXANO_BOOKING_VERSION') ? TUXANO_BOOKING_VERSION : '2.3.0';
+        $file = defined('TUXANO_BOOKING_FILE') ? TUXANO_BOOKING_FILE : dirname(__DIR__) . '/tuxano-booking.php';
+        return plugins_url('public/' . $version . '/assets/tuxano-wordmark.png', $file);
     }
 
     /** Only an existing public page on this origin can receive quick trips. */

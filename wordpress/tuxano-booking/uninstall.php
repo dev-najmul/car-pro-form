@@ -16,7 +16,7 @@ $vehicles = get_posts(['post_type' => 'tuxano_vehicle', 'post_status' => 'any', 
 foreach ($vehicles as $vehicle) { wp_delete_post($vehicle, true); }
 $terms = get_terms(['taxonomy' => 'tuxano_collection', 'hide_empty' => false, 'fields' => 'ids']);
 if (!is_wp_error($terms)) { foreach ($terms as $term) { wp_delete_term($term, 'tuxano_collection'); } }
-foreach (['tuxano_booking_settings', 'tuxano_booking_db_version', 'tuxano_booking_fleet_seeded'] as $option) { delete_option($option); }
+foreach (['tuxano_booking_settings', 'tuxano_booking_db_version', 'tuxano_booking_fleet_seeded', 'tuxano_schedule_cursor'] as $option) { delete_option($option); }
 $keys = $wpdb->get_col($wpdb->prepare("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s", $wpdb->esc_like('_tuxano_rate_') . '%', $wpdb->esc_like('_transient_tuxano_') . '%', $wpdb->esc_like('_transient_timeout_tuxano_') . '%'));
 foreach ($keys as $key) { delete_option($key); }
 wp_clear_scheduled_hook('tuxano_booking_maintenance');

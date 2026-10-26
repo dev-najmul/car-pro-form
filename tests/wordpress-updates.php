@@ -279,13 +279,13 @@ try {
     };
     $error(BookingUpdates::save($id, $bad_route, BookingUpdates::revision($before_failure), 'cancelled', 'Stale outer edit', true), 409, 'A concurrent winning edit during provider work must be protected by the final database revision check.');
     $winner = Database::find($id);
-    $check((int) $winner['revision'] === 5 && $winner['status'] === 'confirmed' && $winner['notes'] === 'Concurrent administrator winner' && $winner['route'] === $before_failure['route'] && count($mail) === 3, 'A losing edit must not replace a concurrent status/note winner, route or mail state.');
+    $check((int) $winner['revision'] === 5 && $winner['status'] === 'confirmed' && $winner['notes'] === 'Concurrent administrator winner' && $winner['route'] === $before_failure['route'] && count($mail) === 4 && $winner['update_mail'] === 'accepted', 'A losing edit preserves the concurrent winner and its one automatic confirmation notification.');
 
     wp_set_current_user(0);
     $original_retry = $admin_request('bookings', ['booking' => $booking, 'quoteToken' => str_repeat('0', 64), 'requestKey' => $request_key, 'website' => ''], '', ['X-Tuxano-Session' => $visitor_token]);
     $original_receipt = $original_retry->get_data();
     $check($original_retry->get_status() === 200 && $original_receipt['requestId'] === $reference && $original_receipt['pricing']['total'] === 421.88 && $original_receipt['route'] === $route, 'A retry of the original visitor request after admin edits must return its original accepted receipt, not the revised price or private audit history.');
-    $check(count($mail) === 3 && !isset($original_receipt['history'], $original_receipt['payload'], $original_receipt['notes']), 'A visitor retry after an admin edit must not duplicate mail or expose private administrative data.');
+    $check(count($mail) === 4 && !isset($original_receipt['history'], $original_receipt['payload'], $original_receipt['notes']), 'A visitor retry after an admin edit must not duplicate mail or expose private administrative data.');
     wp_set_current_user($admin_id);
 
     if (is_callable([Admin::class, 'per_page']) && is_callable([Admin::class, 'bulk_ids'])) {
@@ -301,7 +301,8 @@ try {
     // and delete only explicitly selected fixture rows.
     $bulk_ids = [];
     for ($index = 0; $index < 3; ++$index) {
-        $bulk_id = Database::insert(['reference' => 'TUX-' . gmdate('Y') . '-' . strtoupper(bin2hex(random_bytes(6))), 'request_key' => hash('sha256', $run . '_bulk_' . $index), 'request_hash' => hash('sha256', $run . '_bulk_body_' . $index), 'status' => 'new', 'created_at' => current_time('mysql', true), 'pickup_at' => '2024-03-01 12:00:00', 'customer_name' => 'Bulk fixture ' . $run, 'customer_email' => $run . '-bulk@example.test', 'vehicle_name' => $vehicle['display'], 'total' => 421.88, 'currency' => 'USD', 'payload' => wp_json_encode($booking), 'pricing' => wp_json_encode($pricing), 'route' => wp_json_encode($route), 'notes' => '', 'customer_mail' => 'disabled', 'admin_mail' => 'disabled']);
+        $bulk_booking = $booking; $bulk_booking['trip']['time'] = '12:0' . ($index + 1);
+        $bulk_id = Database::insert(['reference' => 'TUX-' . gmdate('Y') . '-' . strtoupper(bin2hex(random_bytes(6))), 'request_key' => hash('sha256', $run . '_bulk_' . $index), 'request_hash' => hash('sha256', $run . '_bulk_body_' . $index), 'status' => 'new', 'created_at' => current_time('mysql', true), 'pickup_at' => '2024-03-01 ' . $bulk_booking['trip']['time'] . ':00', 'customer_name' => 'Bulk fixture ' . $run, 'customer_email' => $run . '-bulk@example.test', 'vehicle_name' => $vehicle['display'], 'total' => 421.88, 'currency' => 'USD', 'payload' => wp_json_encode($bulk_booking), 'pricing' => wp_json_encode($pricing), 'route' => wp_json_encode($route), 'notes' => '', 'customer_mail' => 'disabled', 'admin_mail' => 'disabled']);
         $check(!is_wp_error($bulk_id), 'Bulk fixture rows must be durable before a delete test.');
         $bulk_ids[] = (int) $bulk_id; $fixture_ids[] = (int) $bulk_id;
     }

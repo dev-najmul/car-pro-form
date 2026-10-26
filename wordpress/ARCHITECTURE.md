@@ -1,6 +1,6 @@
 # WordPress implementation contract
 
-Plugin: `tuxano-booking`, version 2.2.1, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
+Plugin: `tuxano-booking`, version 2.3.0, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
 
 ## Runtime and UI
 - One top-level **Tuxano Booking** menu: dashboard, submissions (custom private table, detail/status/admin notes, search/status/date filters/pagination), vehicles (private CPT `tuxano_vehicle` with native CRUD and taxonomy `tuxano_collection`), pricing, settings.
@@ -53,3 +53,32 @@ Version 2.2.0 supersedes camera-center equality with explicit-intent and SDK mov
 `[tuxano_quick_booking]` renders native inline HTML/CSS/ES modules so backdrop blur can see its parent hero. It obtains fresh public session settings, without a cached token/nonce or global main-runtime collision. Settings `booking_page_id` resolves only a published, unprotected, same-origin page; its public URL is excluded from fare revision. `quick-handoff.js` stores only whitelisted trip intent in a one-use ten-minute sessionStorage record bound to the destination. The URL fragment contains a random 128-bit reference, never addresses, credentials, prices, quotes, contact or consent. The fresh main frame consumes its matching parent's intent, re-resolves canonical places and fetches a new authoritative route before step 2. Invalid data/provider failure stays on step 1. Edit/navigation/picker generations prevent late auto-navigation; Back/BFCache and invalid-configuration retries restore a usable quick planner. Quick mode never submits a reservation.
 
 Quick date/time fields progressively enhance native inputs only when `showPicker()` is supported. Trusted click/tap and Enter/Space invoke it synchronously; unavailable or denied APIs retain visible, keyboard-editable native fields. Input/change events keep the floating display synchronized.
+
+
+## Vehicle pickup-slot integrity and lifecycle notifications
+
+Version 2.3.0 adds `Availability` and the always-present public capability
+`availabilityChecks`. Session-bound POST `/availability` accepts only vehicleId,
+date and time, returning state/message without customer or request data. It uses
+fresh no-store responses and per-session/network limits. The frontend checks
+on vehicle selection and freshly before step 3, with acknowledged pending
+warnings, confirmed blocks, stale-response guards and an accessible dialog placed
+inside the visible parent viewport of autosized shortcode frames.
+
+`vehicle_id` and `pickup_utc` are derived from validated saved vehicle/date/time
+and the recorded timezone; the existing local `pickup_at` remains intact.
+Confirmed rows have a unique nullable SHA-256 slot key. Short site-specific MySQL
+advisory write leases serialize conflict lookup and persistence; the database
+unique index independently prevents two confirmed slot keys. Network/provider
+requests and mail transport run outside the lease. Pending rows do not reserve
+a vehicle. Completed/cancelled rows release the slot. Original idempotent
+receipt replay precedes fresh conflict checks. Bounded additive backfill retains
+payload, history, prices and statuses; unresolved confirmed schedules and
+incomplete active migrations fail closed.
+
+Each committed confirmed/cancelled/completed transition schedules one customer
+update revision when customer emails are enabled. Transport claims/retry guards
+remain separate from initial customer/admin receipts. Generic same-status edits
+retain optional detailed-update emails. Email HTML uses tables/inline styles and
+plain-text alternatives; the configured logo is display-only HTTP(S) branding,
+never fetched by the server, exposed publicly or included in pricing revisions.

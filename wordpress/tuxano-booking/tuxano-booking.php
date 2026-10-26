@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tuxano Booking
  * Description: Executive transportation requests, route-based pricing, fleet management and private booking administration.
- * Version: 2.2.1
+ * Version: 2.3.0
  * Plugin URI: https://farhanrajnajmul.com/
  * Requires at least: 6.6
  * Requires PHP: 7.4
@@ -16,12 +16,12 @@ namespace Tuxano\Booking;
 
 defined('ABSPATH') || exit;
 
-define('TUXANO_BOOKING_VERSION', '2.2.1');
+define('TUXANO_BOOKING_VERSION', '2.3.0');
 define('TUXANO_BOOKING_FILE', __FILE__);
 define('TUXANO_BOOKING_DIR', plugin_dir_path(__FILE__));
 define('TUXANO_BOOKING_URL', plugin_dir_url(__FILE__));
 
-foreach (['Countries', 'Settings', 'Vehicles', 'Pricing', 'Database', 'Notifications', 'BookingUpdates', 'Rest', 'Frontend', 'Admin'] as $component) {
+foreach (['Countries', 'Settings', 'Vehicles', 'Pricing', 'Database', 'Availability', 'Notifications', 'BookingUpdates', 'Rest', 'Frontend', 'Admin'] as $component) {
     require_once TUXANO_BOOKING_DIR . 'includes/' . $component . '.php';
 }
 
