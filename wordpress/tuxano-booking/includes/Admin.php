@@ -196,6 +196,16 @@ final class Admin {
         }
     }
 
+    private static function pickup_label(array $row): string {
+        $booking = $row['payload']['booking'] ?? $row['payload'] ?? [];
+        $trip = is_array($booking) ? ($booking['trip'] ?? []) : [];
+        try {
+            return Timezones::display((string) ($trip['date'] ?? ''), (string) ($trip['time'] ?? ''), is_string($trip['timezone'] ?? null) ? $trip['timezone'] : wp_timezone_string());
+        } catch (\Throwable $error) {
+            return self::scalar($row['pickup_at'] ?? '');
+        }
+    }
+
     public static function dashboard(): void {
         self::open(__('Tuxano Booking', 'tuxano-booking'), __('Manage reservation requests, your fleet, pricing, and booking settings.', 'tuxano-booking'));
         $counts = Database::counts();
@@ -289,7 +299,7 @@ final class Admin {
             $edit = self::url('tuxano-submissions', ['booking_id' => (int) $row['id'], 'edit' => 1]);
             echo '<tr>';
             if ($bulk) { echo '<th scope="row" class="check-column"><input type="checkbox" name="booking_ids[]" value="' . esc_attr((string) $row['id']) . '" data-tuxano-row aria-label="' . esc_attr(sprintf(__('Select %s', 'tuxano-booking'), self::scalar($row['reference']))) . '"></th>'; }
-            echo '<td><a class="tuxano-reference" href="' . esc_url($view) . '">' . esc_html(self::scalar($row['reference'])) . '</a><small class="tuxano-table-subtitle">' . esc_html(self::date_label($row['created_at'] ?? '')) . '</small></td><td><strong>' . esc_html(self::scalar($row['customer_name'] ?? '')) . '</strong><small class="tuxano-table-subtitle">' . esc_html(self::scalar($row['customer_email'] ?? '')) . '</small></td><td>' . esc_html(self::date_label($row['pickup_at'] ?? '', false)) . '</td><td>' . esc_html(self::scalar($row['vehicle_name'] ?? '')) . '</td><td class="tuxano-nowrap"><strong>' . esc_html(self::money($row['total'] ?? 0, self::scalar($row['currency'] ?? '', ''))) . '</strong></td><td>' . self::badge(self::scalar($row['status'] ?? '', 'new')) . '</td><td><div class="tuxano-row-actions"><a class="button button-small" href="' . esc_url($view) . '">' . esc_html__('View', 'tuxano-booking') . '</a><a class="button button-small" href="' . esc_url($edit) . '">' . esc_html__('Edit', 'tuxano-booking') . '</a></div></td></tr>';
+            echo '<td><a class="tuxano-reference" href="' . esc_url($view) . '">' . esc_html(self::scalar($row['reference'])) . '</a><small class="tuxano-table-subtitle">' . esc_html(self::date_label($row['created_at'] ?? '')) . '</small></td><td><strong>' . esc_html(self::scalar($row['customer_name'] ?? '')) . '</strong><small class="tuxano-table-subtitle">' . esc_html(self::scalar($row['customer_email'] ?? '')) . '</small></td><td>' . esc_html(self::pickup_label($row)) . '</td><td>' . esc_html(self::scalar($row['vehicle_name'] ?? '')) . '</td><td class="tuxano-nowrap"><strong>' . esc_html(self::money($row['total'] ?? 0, self::scalar($row['currency'] ?? '', ''))) . '</strong></td><td>' . self::badge(self::scalar($row['status'] ?? '', 'new')) . '</td><td><div class="tuxano-row-actions"><a class="button button-small" href="' . esc_url($view) . '">' . esc_html__('View', 'tuxano-booking') . '</a><a class="button button-small" href="' . esc_url($edit) . '">' . esc_html__('Edit', 'tuxano-booking') . '</a></div></td></tr>';
         }
         echo '</tbody></table></div>';
     }
@@ -457,7 +467,7 @@ final class Admin {
         self::open(sprintf(__('Edit %s', 'tuxano-booking'), self::scalar($row['reference'])), __('Update the trip and contact details, review the fare, and keep the customer informed.', 'tuxano-booking'));
         echo '<div class="tuxano-context-actions"><a class="button" href="' . esc_url(self::url('tuxano-submissions', ['booking_id' => $id])) . '">← ' . esc_html__('View submission', 'tuxano-booking') . '</a><span class="tuxano-revision">' . esc_html(sprintf(__('Revision %s', 'tuxano-booking'), $revision)) . '</span></div><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" data-tuxano-editor novalidate><input type="hidden" name="action" value="tuxano_edit_booking"><input type="hidden" name="booking_id" value="' . esc_attr((string) $id) . '"><input type="hidden" name="revision" value="' . esc_attr($revision) . '"><input type="hidden" name="booking[consent]" value="' . (!empty($booking['consent']) ? '1' : '0') . '">';
         wp_nonce_field('tuxano_edit_booking_' . $id);
-        echo '<div class="tuxano-detail-grid"><div class="tuxano-detail-main"><section class="tuxano-card"><div class="tuxano-section-heading"><span class="dashicons dashicons-location" aria-hidden="true"></span><div><h2>' . esc_html__('Trip & itinerary', 'tuxano-booking') . '</h2><p>' . esc_html__('Pickup times use the website timezone: ', 'tuxano-booking') . esc_html(wp_timezone_string()) . '.</p></div></div><div class="tuxano-editor-grid">';
+        echo '<div class="tuxano-detail-grid"><div class="tuxano-detail-main"><section class="tuxano-card"><div class="tuxano-section-heading"><span class="dashicons dashicons-location" aria-hidden="true"></span><div><h2>' . esc_html__('Trip & itinerary', 'tuxano-booking') . '</h2><p>' . esc_html__('Pickup times are local to the pickup location. Saved time zone: ', 'tuxano-booking') . esc_html(Timezones::label(is_string($trip['timezone'] ?? null) ? $trip['timezone'] : wp_timezone_string())) . '. ' . esc_html__('Changing the pickup or schedule verifies its geographic time zone again.', 'tuxano-booking') . '</p></div></div><div class="tuxano-editor-grid">';
         self::editor_field('trip.service', __('Service type', 'tuxano-booking'), $trip['service'] ?? 'transfer', 'select', ['transfer' => __('Transfer', 'tuxano-booking'), 'hourly' => __('Hourly', 'tuxano-booking')]);
         self::editor_field('trip.hours', __('Booked hours', 'tuxano-booking'), $trip['hours'] ?? $settings['min_hours'], 'number', [], ['min' => 1, 'max' => 24, 'step' => 1, 'required' => 'required']);
         self::editor_field('trip.date', __('Pickup date', 'tuxano-booking'), $trip['date'] ?? '', 'date', [], ['required' => 'required']);

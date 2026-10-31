@@ -53,7 +53,6 @@ test.afterEach(async ({ page }) => {
 });
 
 const dialog = page => page.locator('dialog[data-availability-dialog]');
-const continueToPassengers = page => page.getByRole('button', { name: /continue to passengers/i });
 async function choosePlace(page, label, query) {
   await page.getByLabel(label, { exact: true }).fill(query);
   await page.getByRole('option', { name: query, exact: true }).click();
@@ -70,19 +69,18 @@ async function vehicles(page) {
   await expect(page).toHaveURL(/#vehicles$/);
 }
 async function select(page, name = 'City Sedan') {
-  await page.getByRole('button', { name: `Select ${name}`, exact: true }).click();
+  await page.getByRole('button', { name: `Select & continue with ${name}`, exact: true }).click();
 }
 async function availableSelection(page, name = 'City Sedan') {
   const before = controls.get(page).calls.length;
   await select(page, name);
   await expect.poll(() => controls.get(page).calls.length).toBeGreaterThan(before);
-  await expect(continueToPassengers(page)).toBeEnabled();
+  await expect(page).toHaveURL(/#passengers$/);
   await expect(dialog(page)).toBeHidden();
 }
 async function passengers(page) {
   await vehicles(page);
   await availableSelection(page);
-  await continueToPassengers(page).click();
   await expect(page).toHaveURL(/#passengers$/);
 }
 async function review(page) {
@@ -112,7 +110,6 @@ test('confirmed vehicle slot blocks continuation while a different vehicle at th
   expect(control.calls[0].body).not.toHaveProperty('email');
   await dialog(page).getByRole('button', { name: 'Choose another vehicle', exact: true }).click();
   await availableSelection(page, 'Group Shuttle');
-  await continueToPassengers(page).click();
   await expect(page).toHaveURL(/#passengers$/);
   expect(control.calls.at(-1).body).toEqual({ vehicleId: '209', date: pickupDate, time: '14:30' });
   expect(control.submissions).toHaveLength(0);
@@ -125,7 +122,7 @@ test('a pending request requires explicit acknowledgement and does not reserve o
   await expect(dialog(page)).toContainText('Availability is not guaranteed');
   await page.keyboard.press('Escape');
   await expect(dialog(page)).toBeHidden();
-  await continueToPassengers(page).click();
+  await select(page);
   await expect(dialog(page)).toBeVisible();
   await expect(page).toHaveURL(/#vehicles$/);
   await dialog(page).getByRole('button', { name: 'Continue with request', exact: true }).click();
@@ -134,25 +131,30 @@ test('a pending request requires explicit acknowledgement and does not reserve o
   expect(control.submissions).toHaveLength(0);
 });
 
-test('selection acknowledgement suppresses duplicate warning but a fresh check still blocks a newly confirmed booking', async ({ page }) => {
+test('a fresh selection after returning from passengers blocks a newly confirmed booking', async ({ page }) => {
   const control = controls.get(page); control.states['104'] = 'requested';
   await vehicles(page); await select(page);
   await dialog(page).getByRole('button', { name: 'Continue with request', exact: true }).click();
+  await expect(page).toHaveURL(/#passengers$/);
+  await page.getByRole('button', { name: 'BACK', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
   const before = control.calls.length;
   control.states['104'] = 'unavailable';
-  await continueToPassengers(page).click();
+  await select(page);
   await expect.poll(() => control.calls.length).toBeGreaterThan(before);
   await expect(dialog(page).getByRole('heading', { name: 'Vehicle already booked', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/#vehicles$/);
 });
 
-test('pending selection acknowledgement remains effective for an unchanged requested slot on a fresh continue check', async ({ page }) => {
+test('an acknowledged pending request remains valid for the unchanged slot after a fresh selection check', async ({ page }) => {
   const control = controls.get(page); control.states['104'] = 'requested';
   await vehicles(page); await select(page);
   await dialog(page).getByRole('button', { name: 'Continue with request', exact: true }).click();
+  await expect(page).toHaveURL(/#passengers$/);
+  await page.getByRole('button', { name: 'BACK', exact: true }).click();
+  await expect(page).toHaveURL(/#vehicles$/);
   const before = control.calls.length;
-  await continueToPassengers(page).click();
+  await select(page);
   await expect(page).toHaveURL(/#passengers$/);
   expect(control.calls.length).toBeGreaterThan(before);
   await expect(dialog(page)).toBeHidden();
@@ -171,7 +173,6 @@ test('a delayed response for the previous vehicle cannot open a warning over the
   await availableSelection(page, 'Group Shuttle');
   release();
   await expect(dialog(page)).toBeHidden();
-  await continueToPassengers(page).click();
   await expect(page).toHaveURL(/#passengers$/);
   expect(control.calls.at(-1).body.vehicleId).toBe('209');
 });
@@ -190,8 +191,6 @@ test('availability retry can acknowledge a newly discovered pending request and 
   await expect(dialog(page).getByRole('heading', { name: 'Another request is awaiting review', exact: true })).toBeVisible();
   await dialog(page).getByRole('button', { name: 'Continue with request', exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  await expect(continueToPassengers(page)).toBeEnabled();
-  await continueToPassengers(page).click();
   await expect(page).toHaveURL(/#passengers$/);
 });
 
@@ -237,13 +236,12 @@ test.describe('touch phone availability acknowledgement', () => {
   test('requested-time warning fits the phone and can be acknowledged with a tap', async ({ page }) => {
     controls.get(page).states['104'] = 'requested';
     await vehicles(page);
-    await page.getByRole('button', { name: 'Select City Sedan', exact: true }).tap();
+    await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).tap();
     await expect(dialog(page)).toBeVisible();
     const box = await dialog(page).boundingBox();
     expect(box.width).toBeLessThanOrEqual(393);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     await dialog(page).getByRole('button', { name: 'Continue with request', exact: true }).tap();
-    await continueToPassengers(page).tap();
     await expect(page).toHaveURL(/#passengers$/);
   });
 });
@@ -263,7 +261,7 @@ test('availability dialog stays inside the visible parent viewport in a tall boo
   await frame.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
   await page.evaluate(() => scrollTo(0, document.querySelector('iframe').offsetTop + 250));
-  await frame.getByRole('button', { name: 'Select City Sedan', exact: true }).click();
+  await frame.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   const modal = dialog(frame); await expect(modal).toBeVisible();
   await expect.poll(async () => {
     const box = await modal.boundingBox();

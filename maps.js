@@ -223,6 +223,41 @@ export class MapsClient {
     if (!coordinates) throw new Error('This place has no valid map position. Please choose another suggestion.');
     return { placeId: place.id, ...coordinates, ...countryOfPlace(place), name, address, text: label, attributions: (place.attributions || []).map(a => ({ displayName: a.provider || '', uri: a.providerURI || '' })) };
   }
+  async reverseGeocode(point) {
+    if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) {
+      throw new Error('A valid detected position is required to find your current address.');
+    }
+    // Only the device position is a routing point. A reverse-geocoded address
+    // describes that position; its place ID/rooftop must never move the pickup.
+    const coordinates = { latitude: point.latitude, longitude: point.longitude };
+    const unavailable = 'Your current address could not be loaded. Choose pickup on map or enter your pickup address.';
+    let timer;
+    try {
+      return await Promise.race([
+        (async () => {
+          await this.ready();
+          const { Geocoder } = await globalThis.google.maps.importLibrary('geocoding');
+          const response = await new Geocoder().geocode({ location: { lat: coordinates.latitude, lng: coordinates.longitude } });
+          const results = Array.isArray(response?.results) ? response.results.slice(0, 20) : [];
+          for (const result of results) {
+            const address = typeof result?.formatted_address === 'string' ? result.formatted_address.trim() : '';
+            const location = coordinatesOf(result?.geometry?.location);
+            const country = countryOfPlace({ addressComponents: result?.address_components });
+            // Broad city/country results and distant address centers are not a
+            // usable pickup address. Never invent an address if Google has none.
+            const types = Array.isArray(result?.types) ? result.types : [];
+            if (!address || address.length > 1024 || /[\u0000-\u001f\u007f]/u.test(address) || !country.countryCode || !country.countryName || country.countryName.length > 120 || /[\u0000-\u001f\u007f]/u.test(country.countryName) || !location || pointDistanceMeters(coordinates, location) > 500 || !types.some(type => ['street_address', 'premise', 'subpremise', 'route', 'intersection', 'point_of_interest', 'establishment', 'plus_code'].includes(type))) continue;
+            return { ...coordinates, text: address, address, ...country, attributions: [] };
+          }
+          throw new Error(unavailable);
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(unavailable)), 8000); }),
+      ]);
+    } catch {
+      // API restrictions, billing messages and SDK internals stay out of the UI.
+      throw new Error(unavailable);
+    } finally { clearTimeout(timer); }
+  }
   async describeDeviceLocation(point) {
     if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to find nearby landmarks.');
     let timer;
@@ -279,7 +314,12 @@ export class MapsClient {
     let data;
     try { data = await response.json(); } catch { throw new Error('The route service is temporarily unavailable. Please try again.'); }
     if (!response.ok) throw new Error(data.message || data.error?.message || 'The route could not be calculated. Please check your locations and try again.');
-    if (!Number.isFinite(data.distanceMeters) || data.distanceMeters < 0 || !Number.isFinite(data.durationSeconds) || data.durationSeconds < 0) throw new Error('The route service returned an invalid estimate. Please try again.');
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !Number.isFinite(data.distanceMeters) || data.distanceMeters < 0 || !Number.isFinite(data.durationSeconds) || data.durationSeconds < 0) throw new Error('The route service returned an invalid estimate. Please try again.');
+    if (globalThis.TuxanoBooking?.settings?.pickupTimezones || Object.hasOwn(data, 'pickupTimezone') || Object.hasOwn(data, 'pickupTimezoneLabel')) {
+      let valid = typeof data.pickupTimezone === 'string' && data.pickupTimezone.length <= 100 && /^(?:UTC|[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){1,4})$/.test(data.pickupTimezone);
+      try { if (valid) new Intl.DateTimeFormat('en-US', { timeZone: data.pickupTimezone }).format(0); } catch { valid = false; }
+      if (!valid || typeof data.pickupTimezoneLabel !== 'string' || !data.pickupTimezoneLabel.trim() || data.pickupTimezoneLabel !== data.pickupTimezoneLabel.trim() || data.pickupTimezoneLabel.length > 120 || /[\u0000-\u001f\u007f<>\u202a-\u202e\u2066-\u2069]/u.test(data.pickupTimezoneLabel)) throw new Error('The pickup time zone could not be verified. Please select your pickup again and try again.');
+    }
     return data;
   }
   async browserRoute(request, signal) {

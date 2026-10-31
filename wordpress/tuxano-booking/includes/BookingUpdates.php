@@ -37,33 +37,43 @@ final class BookingUpdates
         try {
             $points = Rest::booking_points($booking, true);
             $old_points = Rest::booking_points($old, true);
-            [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, ['points' => $points], true, $snapshot);
+            // Reject malformed fields before spending a provider request. UTC
+            // here validates only calendar/field shape; the geographic zone is
+            // resolved below and revalidated before anything can be saved.
+            Rest::validate_booking($booking, ['points' => $points, 'pickupTimezone' => 'UTC', 'allowLegacyTime' => true], true, $snapshot);
         } catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
         $route_changed = wp_json_encode($points) !== wp_json_encode($old_points);
+        $pickup_changed = wp_json_encode($points['origin']) !== wp_json_encode($old_points['origin']);
+        $same_schedule = !$pickup_changed && ($old['trip']['date'] ?? '') === ($booking['trip']['date'] ?? '') && ($old['trip']['time'] ?? '') === ($booking['trip']['time'] ?? '');
+        $route = $row['route'];
+        // A contact/status-only edit must not reinterpret a historical wall
+        // timestamp. Changed schedules use the saved geographic zone, or fetch
+        // one provider origin when a legacy request has no geographic zone.
+        $timezone = $same_schedule ? ($old['trip']['timezone'] ?? wp_timezone_string()) : (!$pickup_changed ? ($route['pickupTimezone'] ?? null) : null);
+        if ($route_changed || !is_string($timezone) || $timezone === '') {
+            if (!Rest::admin_provider_budget()) { return self::error('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
+            $measured = Rest::measure_route($points, null, true);
+            if (is_wp_error($measured)) { return $measured; }
+            if (!$same_schedule || $pickup_changed) { $timezone = $measured['pickupTimezone']; }
+            if ($route_changed) { $route = $measured; }
+            else { $route['pickupTimezone'] = $measured['pickupTimezone']; $route['pickupTimezoneLabel'] = $measured['pickupTimezoneLabel']; }
+        }
+        $validation_quote = ['points' => $points, 'pickupTimezone' => $timezone, 'allowLegacyTime' => $same_schedule];
+        try { [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, $validation_quote, true, $snapshot); }
+        catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
         $priced_changed = wp_json_encode(self::priced_fields($clean)) !== wp_json_encode(self::priced_fields($old));
         $needs_price = $route_changed || $priced_changed || $reprice;
-        $route = $row['route'];
-        if ($route_changed) {
-            if (!Rest::admin_provider_budget()) { return self::error('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
-            $route = Rest::measure_route($points, null, true);
-            if (is_wp_error($route)) { return $route; }
-        }
         $pricing = $row['pricing'];
         if ($needs_price) {
             $vehicle = Vehicles::find((string) $clean['vehicle']) ?: $vehicle;
             try {
                 // Revalidate capacity against the current selected vehicle when
                 // recalculating, instead of silently using a larger old limit.
-                [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, ['points' => $points], true, $vehicle);
+                [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, $validation_quote, true, $vehicle);
                 $pricing = Pricing::calculate($vehicle, $route, $clean, Settings::get());
             } catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
         } elseif (isset($old['vehicleSnapshot']) && is_array($old['vehicleSnapshot'])) {
             $clean['vehicleSnapshot'] = $old['vehicleSnapshot'];
-        }
-        // An existing local pickup timestamp keeps its recorded timezone when
-        // only contact fields are edited. New dates use the current site zone.
-        if (($old['trip']['date'] ?? '') === $clean['trip']['date'] && ($old['trip']['time'] ?? '') === $clean['trip']['time'] && !empty($old['trip']['timezone']) && is_string($old['trip']['timezone'])) {
-            $clean['trip']['timezone'] = mb_substr($old['trip']['timezone'], 0, 80);
         }
         $notes = sanitize_textarea_field($notes);
         $changes = self::diff($old, $clean);

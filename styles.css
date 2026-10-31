@@ -434,6 +434,20 @@ a {
 .picker-field {
   min-width: 0;
 }
+.hour-control { max-width: 100%; }
+.hour-quantity { display: flex; align-items: stretch; width: 232px; max-width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.hour-quantity > button { display: grid; place-items: center; flex: 0 0 48px; border: 0; background: var(--pale); color: var(--ink); }
+.hour-quantity > button:disabled { opacity: .4; cursor: default; }
+.hour-quantity > label { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); gap: 5px; }
+.hour-quantity input.input { width: 48px; min-width: 0; padding: 8px 2px; border: 0; text-align: right; background: transparent; appearance: textfield; }
+.hour-quantity input::-webkit-inner-spin-button, .hour-quantity input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.hour-quantity input:focus-visible, .hour-quantity button:focus-visible { outline: 2px solid #5079c4; outline-offset: -3px; }
+.hour-quantity span { font-size: 15px; }
+.hours-limits { font-size: 12px; color: var(--muted); margin: 7px 0 0; }
+.hours-service-note { display: flex; align-items: flex-start; gap: 12px; margin-top: 14px; padding: 14px; border: 1px solid #d7e2f2; border-radius: 5px; background: #f5f8fd; }
+.hours-service-note > .icon { flex-shrink: 0; color: #23589a; }
+.hours-service-note p { margin: 0; font-size: 13px; line-height: 1.6; }
+.hours-service-note strong, .hours-service-note p > span { display: block; }
 .picker-box {
   display: flex;
   align-items: center;

@@ -55,6 +55,7 @@ try {
     $defaults = Settings::defaults();
     $check($defaults['meet_price'] === 50.0 && $defaults['first_seat_price'] === 75.0 && $defaults['additional_seat_price'] === 50.0, 'Original extras defaults must match the form.');
     $check($defaults['dashboard_recent_limit'] === 3, 'The dashboard defaults to the three newest submissions.');
+    $check($defaults['min_hours'] === 3 && $defaults['max_hours'] === 24, 'New hourly bookings default to a three-hour minimum and twenty-four-hour maximum.');
     $legacy = Settings::get();
     unset($legacy['dashboard_recent_limit']);
     update_option(Settings::OPTION, $legacy, false);

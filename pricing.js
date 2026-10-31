@@ -9,7 +9,7 @@ export const PRICING = Object.freeze({
   cullinan: Object.freeze({ base: 700, perMile: 20, perDrivingMinute: 25, minimum: 900, perWaitingMinute: 7.5, hourly: 750 }),
   phantom: Object.freeze({ base: 1000, perMile: 30, perDrivingMinute: 55, minimum: 1500, perWaitingMinute: 10, hourly: 1250 }),
 });
-export function quoteTransportation(vehicleId, route, waitMinutes = 0, service = 'transfer', hours = 3, configuredTariff = null, limits = { minHours: 2, maxHours: 12 }) {
+export function quoteTransportation(vehicleId, route, waitMinutes = 0, service = 'transfer', hours = 3, configuredTariff = null, limits = { minHours: 3, maxHours: 24 }) {
   if (typeof vehicleId !== 'string' || (!configuredTariff && !Object.hasOwn(PRICING, vehicleId))) throw new TypeError('Unknown vehicle class.');
   const tariff = configuredTariff || PRICING[vehicleId];
   if (!tariff || ['base', 'perMile', 'perDrivingMinute', 'minimum', 'perWaitingMinute', 'hourly'].some(key => !Number.isFinite(tariff[key]) || tariff[key] < 0)) throw new TypeError('Invalid vehicle pricing.');

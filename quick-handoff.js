@@ -56,7 +56,28 @@ export function quickWebsiteClock(timezone = 'UTC', now = Date.now()) {
 }
 
 export function validateQuickPickupTime(trip, timezone = 'UTC', now = Date.now()) {
-  if (`${trip.date}T${trip.time}` <= quickWebsiteClock(timezone, now)) throw new Error('Choose a pickup date and time in the future.');
+  const wall = `${trip.date}T${trip.time}`;
+  const naive = Date.parse(wall + ':00Z');
+  if (!Number.isFinite(naive) || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(wall)) throw new Error('Choose a valid pickup date and time.');
+  const offsets = new Set();
+  if (typeof timezone === 'string' && /^[+-]\d{2}:\d{2}$/.test(timezone)) {
+    offsets.add((timezone[0] === '-' ? -1 : 1) * (Number(timezone.slice(1, 3)) * 60 + Number(timezone.slice(4))));
+  } else {
+    let formatter;
+    try { formatter = new Intl.DateTimeFormat('en-GB', { timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); }
+    catch { throw new Error('Your pickup time zone could not be verified. Select your pickup again.'); }
+    // Offsets on either side of the requested day distinguish a missing or
+    // repeated wall time. Never parse the pickup in the browser's own zone.
+    for (const days of [-2, -1, 0, 1, 2]) {
+      const stamp = naive + days * 86400000;
+      const parts = Object.fromEntries(formatter.formatToParts(new Date(stamp)).map(part => [part.type, part.value]));
+      offsets.add((Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute)) - stamp) / 60000);
+    }
+  }
+  const matches = [...offsets].map(offset => naive - offset * 60000).filter(stamp => quickWebsiteClock(timezone, stamp) === wall);
+  if (!matches.length) throw new Error('This pickup time does not exist when daylight saving time changes. Choose another time.');
+  if (matches.length > 1) throw new Error('This pickup time occurs twice when daylight saving time ends. Choose a time outside the repeated hour, or contact the booking team.');
+  if (matches[0] <= now) throw new Error('Choose a pickup date and time in the future.');
 }
 
 function prune(storage, now) {

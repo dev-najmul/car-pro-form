@@ -69,7 +69,7 @@ test("hourly hire uses booked time plus road mileage and explicit waiting", () =
   assert.equal(quote.waitingCharge, 22.5);
   assert.equal(quote.transportation, 542.5);
   assert.equal(quote.totalDurationSeconds, 2700, "Travel time is driving plus stops, not the booked hire period");
-  assert.equal(quoteTransportation("luxury", { distanceMeters: 0, durationSeconds: 60 }, 0, "hourly", 2).transportation, 230);
+  assert.equal(quoteTransportation("luxury", { distanceMeters: 0, durationSeconds: 60 }, 0, "hourly", 3).transportation, 345);
 });
 
 test("hourly hire charges driving beyond the booked period without double-counting stop waits", () => {
@@ -100,10 +100,10 @@ test("unknown vehicles, invalid route measurements, and invalid wait values cann
 
 test("unsupported services and hourly durations outside the documented range are rejected", () => {
   assert.throws(() => quoteTransportation("luxury", twentyMiles, 0, "unsupported"), TypeError);
-  for (const hours of [1, 13, 2.5, "4", null, Infinity]) {
+  for (const hours of [1, 2, 25, 2.5, "4", null, Infinity]) {
     assert.throws(() => quoteTransportation("luxury", twentyMiles, 0, "hourly", hours), TypeError);
   }
-  assert.equal(quoteTransportation("luxury", { distanceMeters: 0, durationSeconds: 0 }, 0, "hourly", 12).transportation, 1380);
+  assert.equal(quoteTransportation("luxury", { distanceMeters: 0, durationSeconds: 0 }, 0, "hourly", 24).transportation, 2760);
 });
 
 test("travel-duration labels round seconds up to minutes without confusing them with pickup time", () => {

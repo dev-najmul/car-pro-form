@@ -118,3 +118,18 @@ test('denied native picker falls back to visible editors without an unhandled ex
     await expect(input).toHaveValue(value);
   }
 });
+
+
+test('selected dates and times display client formats while preserving canonical native values', async ({ page }) => {
+  await visit(page);
+  await field(page, 'date').fill('2027-11-18');
+  await field(page, 'time').fill('12:21');
+  await expect(page.locator('[data-quick-display="date"]')).toHaveText('Nov 18, 2027');
+  await expect(page.locator('[data-quick-display="time"]')).toHaveText('12:21 PM');
+  await expect(field(page, 'date')).toHaveValue('2027-11-18');
+  await expect(field(page, 'time')).toHaveValue('12:21');
+  await field(page, 'time').fill('00:05');
+  await expect(page.locator('[data-quick-display="time"]')).toHaveText('12:05 AM');
+  await field(page, 'time').fill('23:59');
+  await expect(page.locator('[data-quick-display="time"]')).toHaveText('11:59 PM');
+});

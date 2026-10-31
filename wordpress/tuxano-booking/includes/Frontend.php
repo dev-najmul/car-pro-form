@@ -16,7 +16,7 @@ final class Frontend
         add_action('template_redirect', [self::class, 'frame']);
         add_action('admin_init', static function (): void {
             if (function_exists('wp_add_privacy_policy_content')) {
-                wp_add_privacy_policy_content('Tuxano Booking', '<p>Transportation requests contain contact, passenger, billing, itinerary and pricing details. Google Maps/Places/Routes receive location queries and chosen points. The current-location button uses optional browser geolocation. Requests are available only to authorized site administrators and notified email recipients. Configure retention and mail recipients in Tuxano Booking settings. Email transport providers may also process these details. No card or payment information is collected by this plugin.</p>');
+                wp_add_privacy_policy_content('Tuxano Booking', '<p>Transportation requests contain contact, passenger, billing, itinerary and pricing details. Google Maps/Places/Geocoding/Routes receive location queries and chosen points. The current-location button uses optional browser geolocation. Requests are available only to authorized site administrators and notified email recipients. Configure retention and mail recipients in Tuxano Booking settings. Email transport providers may also process these details. No card or payment information is collected by this plugin.</p>');
             }
         });
     }
@@ -55,7 +55,7 @@ final class Frontend
         header('X-Frame-Options: SAMEORIGIN');
         $frame = isset($_GET['frame_id']) && is_string($_GET['frame_id']) ? preg_replace('/[^A-Za-z0-9_-]/', '', substr($_GET['frame_id'], 0, 100)) : '';
         $assets = TUXANO_BOOKING_URL . 'public/' . TUXANO_BOOKING_VERSION . '/';
-        $boot = ['restUrl' => rest_url('tuxano-booking/v1/'), 'nonce' => wp_create_nonce('wp_rest'), 'assetUrl' => $assets, 'frameId' => $frame, 'timezone' => wp_timezone_string()];
+        $boot = ['restUrl' => rest_url('tuxano-booking/v1/'), 'nonce' => wp_create_nonce('wp_rest'), 'assetUrl' => $assets, 'frameId' => $frame, 'timezone' => Timezones::DEFAULT_ZONE];
         $settings = Settings::get();
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'HEAD') { exit; }
         if ($full_page && !$standalone) {

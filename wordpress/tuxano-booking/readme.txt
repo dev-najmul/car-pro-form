@@ -4,7 +4,7 @@ Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.3.1
+Stable tag: 2.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,11 +17,11 @@ extras and gratuity, private submissions, customer/admin emails and retention.
 No payment gateway is included. Requests require manual availability review.
 
 == Installation ==
-1. Upload tuxano-booking-2.3.1.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.4.0.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
-4. Configure Terms/Privacy page URLs and your WordPress timezone.
+4. Configure Terms/Privacy page URLs. Pickup times use the pickup location time zone.
 5. Add [tuxano_booking] to a page. The same-origin iframe isolates the design
    from theme styles. The standalone form also uses ?tuxano_booking_form=1.
    For the complete reference layout, select the page template
@@ -71,7 +71,7 @@ booking. Pending/new/reviewing requests show an acknowledgement warning and may
 still be submitted. Another vehicle at that minute remains available. Cancelled
 and completed requests release their slot. Availability is rechecked before
 continuing from vehicle selection and again when saving/confirming on the server.
-Times use the WordPress website timezone; saved historical timezones are retained.
+Times use the pickup location time zone; saved historical timezones are retained.
 Lifecycle emails are automatic when customer notifications are enabled. Ordinary
 booking edits can still use the optional detailed-update email checkbox.
 Settings > Email supports a Media Library image or public image URL for the logo;
@@ -79,6 +79,8 @@ an empty value uses the bundled wordmark. The email header background is #0a121f
 
 == External services and privacy ==
 Google Maps JavaScript/Places receive typed location searches and chosen points.
+Google Geocoding receives precise device coordinates after location permission to
+look up a pickup address; coarse positions are not silently accepted.
 Google Routes receives the ordered route from the WordPress server. The Routes
 key is never sent to the visitor. Google usage requires enabled APIs, billing
 and suitable key restrictions. Maps browser keys are public by design.
@@ -99,6 +101,16 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+
+= 2.4.0 =
+* Automatically fill reverse-geocoded addresses for accurate current locations, with safe fallback.
+* Format dates and 12-hour times consistently in quick and main forms.
+* Add editable hourly minus/plus controls with default/minimum 3 and maximum 24 hours.
+* Select and continue directly from each vehicle after fresh availability checks.
+* Resolve pickup-local IANA timezones from licensed bundled boundaries and bind schedule authority to server quotes.
+* Handle reservation-date DST and retain historical schedules during unrelated edits.
+* Match revised customer receipt wording, name casing, full request-ID subjects and readable full-zone schedules.
+
 
 = 2.3.1 =
 * Recover the initial iframe height when a footer-loaded parent bridge starts after the form.
@@ -150,3 +162,10 @@ Add tested PHP 7.4 compatibility without changing booking validation or prices.
 = 2.0.0 =
 WordPress conversion with configurable fleet/pricing, server-authoritative
 route quotes, validated/idempotent submissions, administration and notifications.
+
+== Geographic timezone data ==
+Geographic boundaries are derived from geo-tz 8.1.10 / timezone-boundary-builder,
+© OpenStreetMap contributors, under ODbL 1.0. English timezone labels are derived
+from Unicode CLDR 49 under the Unicode License. Full notices, licenses and hashes
+are included in data/timezones; the source repository includes the lossless
+build script. No additional timezone API key is required.

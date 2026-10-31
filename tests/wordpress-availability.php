@@ -113,18 +113,20 @@ try {
     $check($session_response->get_status() === 200, 'A public session starts.'); $token = $session['token'];
     $session_name = 'tuxano_session_' . hash('sha256', $token); $transients[] = $session_name;
     $stored = get_transient($session_name); $stored['created'] = time() - 3; set_transient($session_name, $stored, 2 * HOUR_IN_SECONDS);
-    $body = ['vehicleId' => (string) $vehicle_ids[0], 'date' => $date, 'time' => '15:01'];
+    $availability_quote = str_repeat('c', 64); $availability_quote_name = 'tuxano_quote_' . hash('sha256', $availability_quote); $transients[] = $availability_quote_name;
+    set_transient($availability_quote_name, ['session' => hash('sha256', $token), 'points' => Rest::booking_points($booking), 'route' => $route, 'pickupTimezone' => 'UTC', 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
+    $body = ['vehicleId' => (string) $vehicle_ids[0], 'date' => $date, 'time' => '15:01', 'quoteToken' => $availability_quote];
     $reply = $request('availability', $body, $token); $data = $reply->get_data();
     $check($reply->get_status() === 200 && $data['state'] === 'unavailable' && array_keys($data) === ['state', 'message'], 'Public availability returns only a bounded state/message.');
     $check(strpos(wp_json_encode($data), $run) === false && strpos(wp_json_encode($data), '@') === false, 'Reference and customer data do not enter availability output.');
     $check(strpos($reply->get_headers()['Cache-Control'] ?? '', 'no-store') !== false, 'Availability responses cannot be cached.');
-    foreach ([[$body, '', [], 403], [$body, $token, ['Origin' => 'https://elsewhere.invalid'], 403], [array_merge($body, ['timezone' => 'UTC']), $token, [], 400], [array_merge($body, ['date' => '2020-01-01']), $token, [], 400], [array_merge($body, ['vehicleId' => '999999999']), $token, [], 400], [array_merge($body, ['time' => []]), $token, [], 400]] as $case) {
+    foreach ([[$body, '', [], 403], [$body, $token, ['Origin' => 'https://elsewhere.invalid'], 403], [array_merge($body, ['timezone' => 'UTC']), $token, [], 400], [array_merge($body, ['date' => '2020-01-01']), $token, [], 400], [array_merge($body, ['vehicleId' => '999999999']), $token, [], 400], [array_merge($body, ['time' => []]), $token, [], 400], [array_diff_key($body, ['quoteToken' => true]), $token, [], 400], [array_merge($body, ['quoteToken' => str_repeat('0', 64)]), $token, [], 409]] as $case) {
         $check($request('availability', $case[0], $case[1], $case[2])->get_status() === $case[3], 'Malformed, stale, cross-origin and unauthenticated availability checks reject.');
     }
     // A stale page can never skip the final server check; replays remain safe.
     $public_booking = $booking; $public_booking['trip']['time'] = '16:10';
     $quote = str_repeat('d', 64); $quote_name = 'tuxano_quote_' . hash('sha256', $quote); $transients[] = $quote_name;
-    set_transient($quote_name, ['session' => hash('sha256', $token), 'points' => Rest::booking_points($public_booking), 'route' => $route, 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
+    set_transient($quote_name, ['session' => hash('sha256', $token), 'points' => Rest::booking_points($public_booking), 'route' => $route, 'pickupTimezone' => 'UTC', 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
     $submission = ['booking' => $public_booking, 'requestKey' => 'availability-' . $run . '-public', 'quoteToken' => $quote, 'website' => ''];
     $received = $request('bookings', $submission, $token); $check($received->get_status() === 200, 'A pending public request saves normally.');
     $reference = $received->get_data()['requestId']; $public_id = (int) $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . Database::table() . ' WHERE reference=%s', $reference)); $ids[] = $public_id;

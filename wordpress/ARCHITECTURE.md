@@ -1,6 +1,6 @@
 # WordPress implementation contract
 
-Plugin: `tuxano-booking`, version 2.3.1, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
+Plugin: `tuxano-booking`, version 2.4.0, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
 
 ## Runtime and UI
 - One top-level **Tuxano Booking** menu: dashboard, submissions (custom private table, detail/status/admin notes, search/status/date filters/pagination), vehicles (private CPT `tuxano_vehicle` with native CRUD and taxonomy `tuxano_collection`), pricing, settings.
@@ -84,3 +84,12 @@ plain-text alternatives; the configured logo is display-only HTTP(S) branding,
 never fetched by the server, exposed publicly or included in pricing revisions.
 
 Version 2.3.1 adds a same-origin parent/frame readiness handshake. A late footer bridge requests the current child height even when the first resize was already sent. Source, origin and frame identity are checked; normal size-change deduplication still prevents resize loops.
+
+
+## Pickup-local schedules and client revisions (2.4.0)
+
+`Timezones` resolves selected coordinates using a licensed, indexed geo-tz 1970 boundary derivative. Lossless microdegree rings are streamed from small binary tiles inside bounded gzip groups; production WordPress needs no Node runtime or separate timezone API. Labels use bundled CLDR generic English names; PHP IANA rules determine offsets on the actual reservation date. Boundaries/labels include source manifests, licenses and regeneration script.
+
+Session capability `pickupTimezones:true` and default `America/New_York` support display. Session-bound POST `/timezone` accepts exactly numeric latitude/longitude and returns only `{timezone,label}` for UI previews. It cannot set a booking timezone. Google Routes requests additionally retrieve the first leg's provider start coordinate for Place-ID origins; explicit coordinate origins retain the exact selected point. The server resolves and stores `pickupTimezone` in the session-bound quote. Route responses include `pickupTimezone`/`pickupTimezoneLabel`; availability requires that quote token, and final booking ignores client-supplied timezone/Place coordinates. Native admin itinerary changes use the same provider authority, while unrelated edits preserve the accepted historical zone and UTC instant. New schedules reject nonexistent DST hours and ambiguous repeated hours. Existing folds remain readable and unchanged.
+
+Both form variants use editable bounded hourly quantity controls and canonical native date/time inputs with formatted overlays. Precise fresh GPS results are reverse-geocoded without replacing original routing coordinates; inaccurate results are never silently accepted. Vehicle actions perform fresh quote-bound availability checks and advance directly on success; pending acknowledgement and confirmed conflict blocking remain. A once-only route refresh recovers expired availability quotes. Receipt subjects include the complete durable reference, name casing is presentation-only, and email banner/trip schedule values share one saved-zone formatter.

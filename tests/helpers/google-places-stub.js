@@ -85,10 +85,20 @@ export function installPlacesStub() {
       return { places: nearby.places || [] };
     }
   }
+  class Geocoder {
+    async geocode(request) {
+      control.calls.push({ kind: 'geocode', request });
+      const geocode = window.__geocodeMock || {};
+      if (geocode.hold) await new Promise(resolve => control.pending.push({ kind: 'geocode', key: 'geocode', resolve }));
+      if (geocode.fail) throw new Error('REQUEST_DENIED: fixture geocoding service is unavailable.');
+      return { results: geocode.results || [] };
+    }
+  }
   const point = value => value instanceof Place ? { kind: 'place', placeId: value.id } : { kind: 'coordinates', lat: value.lat, lng: value.lng };
   window.google = { maps: { importLibrary: async name => {
     control.libraries.push(name);
     if (name === 'maps') return { Map: MockMap };
+    if (name === 'geocoding') return { Geocoder };
     if (name === 'routes') return { Route: { computeRoutes: async request => {
       const key = request.destination.id || 'coordinates';
       control.calls.push({ kind: 'route', key, request: {

@@ -12,7 +12,7 @@ final class Rest
     public static function register(): void
     {
         register_rest_route(self::NAMESPACE, '/session', ['methods' => 'POST', 'callback' => [self::class, 'session'], 'permission_callback' => [self::class, 'origin']]);
-        foreach (['route', 'bookings', 'availability'] as $path) {
+        foreach (['route', 'bookings', 'availability', 'timezone'] as $path) {
             register_rest_route(self::NAMESPACE, '/' . $path, ['methods' => 'POST', 'callback' => [self::class, $path], 'permission_callback' => [self::class, 'permission']]);
         }
         register_rest_route(self::NAMESPACE, '/admin/route', ['methods' => 'POST', 'callback' => [self::class, 'admin_route'], 'permission_callback' => [self::class, 'admin_permission']]);
@@ -122,20 +122,43 @@ final class Rest
     public static function availability(\WP_REST_Request $request)
     {
         $body = $request->get_json_params();
-        if (!is_array($body) || count($body) !== 3 || array_diff(array_keys($body), ['vehicleId', 'date', 'time']) || !is_string($body['date'] ?? null) || !is_string($body['time'] ?? null)) {
+        if (!is_array($body) || count($body) !== 4 || array_diff(array_keys($body), ['vehicleId', 'date', 'time', 'quoteToken']) || !is_string($body['date'] ?? null) || !is_string($body['time'] ?? null)) {
             return self::fail('tuxano_availability_input', 'Choose a vehicle and valid pickup date and time.');
         }
         if (!self::rate('availability-session', hash('sha256', self::token($request)), 60, MINUTE_IN_SECONDS) || !self::rate('availability-client', self::client(), 120, MINUTE_IN_SECONDS)) { return self::fail('tuxano_rate', 'Please wait before checking vehicle availability again.', 429); }
+        $quote = self::bound_quote($body['quoteToken'] ?? null, $request);
+        if (!$quote || !is_string($quote['pickupTimezone'] ?? null)) { return self::fail('tuxano_quote_expired', 'Refresh your route before checking vehicle availability.', 409); }
         try {
-            $slot = Availability::slot($body['vehicleId'] ?? null, $body['date'], $body['time']);
+            Timezones::local($body['date'], $body['time'], $quote['pickupTimezone']);
+            $slot = Availability::slot($body['vehicleId'] ?? null, $body['date'], $body['time'], $quote['pickupTimezone']);
             if (!Vehicles::find((string) $slot['vehicle_id'])) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
             $pickup = new \DateTimeImmutable($slot['pickup_utc'], new \DateTimeZone('UTC'));
-            if ($pickup->getTimestamp() <= time() || $pickup->getTimestamp() > time() + 5 * YEAR_IN_SECONDS) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the booking website timezone.'); }
+            if ($pickup->getTimestamp() <= time() || $pickup->getTimestamp() > time() + 5 * YEAR_IN_SECONDS) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the pickup location time zone.'); }
         } catch (\InvalidArgumentException $error) { return self::fail('tuxano_availability_input', $error->getMessage()); }
         return Availability::write(static function () use ($slot) {
             Availability::backfill();
             return Availability::check($slot);
         });
+    }
+
+    /** Display preview only. Final availability and storage use the route quote. */
+    public static function timezone(\WP_REST_Request $request)
+    {
+        try { $point = self::point($request->get_json_params()); }
+        catch (\TypeError $error) { return self::fail('tuxano_timezone_input', 'Choose a valid pickup map point.'); }
+        catch (\InvalidArgumentException $error) { return self::fail('tuxano_timezone_input', $error->getMessage()); }
+        if (isset($point['placeId'])) { return self::fail('tuxano_timezone_input', 'Choose a pickup with a valid map position.'); }
+        if (!self::rate('timezone-session', hash('sha256', self::token($request)), 60, MINUTE_IN_SECONDS) || !self::rate('timezone-client', self::client(), 120, MINUTE_IN_SECONDS)) { return self::fail('tuxano_rate', 'Please wait before checking another pickup time zone.', 429); }
+        try { $zone = Timezones::resolve($point['latitude'], $point['longitude']); return ['timezone' => $zone, 'label' => Timezones::label($zone)]; }
+        catch (\InvalidArgumentException $error) { return self::fail('tuxano_timezone_input', $error->getMessage()); }
+        catch (\RuntimeException $error) { return self::fail('tuxano_timezone_unavailable', 'Pickup time zone could not be verified. Please try again or contact the booking team.', 503); }
+    }
+
+    /** No client-supplied zone or unbound quote can influence a saved UTC slot. */
+    private static function bound_quote($token, \WP_REST_Request $request): ?array
+    {
+        $quote = is_string($token) && preg_match('/^[a-f0-9]{64}$/D', $token) ? get_transient('tuxano_quote_' . hash('sha256', $token)) : false;
+        return is_array($quote) && is_string($quote['session'] ?? null) && hash_equals($quote['session'], hash('sha256', self::token($request))) ? $quote : null;
     }
 
     /** PHP 7.4 equivalent of array_is_list(), preserving key order and types. */
@@ -194,7 +217,7 @@ final class Rest
         $metrics = self::measure_route($points);
         if (is_wp_error($metrics)) { return $metrics; }
         $quote = bin2hex(random_bytes(32));
-        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
+        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'pickupTimezone' => $metrics['pickupTimezone'], 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
         return array_merge($metrics, ['quoteToken' => $quote]);
     }
 
@@ -211,7 +234,7 @@ final class Rest
         // This endpoint is fixed, never visitor-controlled, and redirects are
         // disabled. The normal HTTP API also supports managed proxies with
         // remote DNS; wp_safe_remote_post would require unrelated local DNS.
-        $response = wp_remote_post('https://routes.googleapis.com/directions/v2:computeRoutes', ['timeout' => 15, 'redirection' => 0, 'sslverify' => true, 'limit_response_size' => 262144, 'headers' => ['Content-Type' => 'application/json', 'X-Goog-Api-Key' => $key, 'X-Goog-FieldMask' => 'routes.distanceMeters,routes.duration'], 'body' => wp_json_encode($payload)]);
+        $response = wp_remote_post('https://routes.googleapis.com/directions/v2:computeRoutes', ['timeout' => 15, 'redirection' => 0, 'sslverify' => true, 'limit_response_size' => 262144, 'headers' => ['Content-Type' => 'application/json', 'X-Goog-Api-Key' => $key, 'X-Goog-FieldMask' => 'routes.distanceMeters,routes.duration,routes.legs.startLocation.latLng'], 'body' => wp_json_encode($payload)]);
         if (is_wp_error($response)) { return self::fail('tuxano_google_unavailable', 'Google Routes is temporarily unavailable. Please try again.', 502); }
         $status = wp_remote_retrieve_response_code($response);
         $data = json_decode(wp_remote_retrieve_body($response), true);
@@ -219,7 +242,15 @@ final class Rest
         if ($status !== 200 || !is_array($route) || !isset($route['distanceMeters'], $route['duration']) || !is_numeric($route['distanceMeters']) || !preg_match('/^(\d+(?:\.\d+)?)s$/D', (string) $route['duration'], $match) || (float) $route['distanceMeters'] < 0 || (float) $route['distanceMeters'] > 100000000 || (float) $match[1] > 31536000) {
             return self::fail('tuxano_google_route', $status === 200 ? 'No driving route was found. Please check your selected locations.' : 'Google could not calculate this route. Please try again or contact the transportation team.', 502);
         }
-        $metrics = ['distanceMeters' => (float) $route['distanceMeters'], 'durationSeconds' => (float) $match[1], 'provider' => 'google', 'calculatedAt' => gmdate('c')];
+        try {
+            // Coordinates are the requested point; place identities are resolved
+            // by Google's route origin, never by visitor-supplied display text.
+            $origin = isset($points['origin']['placeId']) ? self::point($route['legs'][0]['startLocation']['latLng'] ?? null) : $points['origin'];
+            if (isset($origin['placeId'])) { throw new \InvalidArgumentException('Missing route origin.'); }
+            $timezone = Timezones::resolve($origin['latitude'], $origin['longitude']);
+        } catch (\InvalidArgumentException $error) { return self::fail('tuxano_google_origin', 'The pickup time zone could not be verified. Select an exact pickup point and calculate the route again.', 502); }
+        catch (\RuntimeException $error) { return self::fail('tuxano_timezone_unavailable', 'Pickup time zone could not be verified. Please try again or contact the booking team.', 503); }
+        $metrics = ['distanceMeters' => (float) $route['distanceMeters'], 'durationSeconds' => (float) $match[1], 'provider' => 'google', 'calculatedAt' => gmdate('c'), 'pickupTimezone' => $timezone, 'pickupTimezoneLabel' => Timezones::label($timezone)];
         return $metrics;
     }
 
@@ -355,14 +386,16 @@ final class Rest
         if (wp_json_encode($points) !== wp_json_encode($quote['points'])) { throw new \InvalidArgumentException('Your route changed. Calculate the route again before submitting.'); }
         $service = $trip['service'] ?? '';
         if (!in_array($service, ['transfer', 'hourly'], true)) { throw new \InvalidArgumentException('Choose a valid service.'); }
-        $hours = self::integer($trip['hours'] ?? null, $admin ? 1 : (int) $settings['min_hours'], $admin ? 24 : (int) $settings['max_hours']);
+        $hours = self::integer($trip['hours'] ?? null, $admin ? 1 : max(3, (int) $settings['min_hours']), $admin ? 24 : (int) $settings['max_hours']);
         $date = self::text($trip['date'] ?? '', 10, true); $time = self::text($trip['time'] ?? '', 5, true);
-        $scheduled = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $date . ' ' . $time, wp_timezone());
-        if (!$scheduled || $scheduled->format('Y-m-d H:i') !== $date . ' ' . $time || ($admin ? ((int) $scheduled->format('Y') < 1970 || (int) $scheduled->format('Y') > 2100) : ($scheduled->getTimestamp() <= time() || $scheduled->getTimestamp() > time() + 5 * YEAR_IN_SECONDS))) { throw new \InvalidArgumentException($admin ? 'Enter a valid pickup date and time between 1970 and 2100.' : 'Choose a future pickup date and time within five years, in the booking website timezone.'); }
+        $timezone = $quote['pickupTimezone'] ?? null;
+        if (!is_string($timezone) || $timezone === '') { throw new \InvalidArgumentException('Refresh the route to verify the pickup time zone before submitting.'); }
+        $scheduled = Timezones::local($date, $time, $timezone, $admin && ($quote['allowLegacyTime'] ?? false) === true);
+        if (!$admin && ($scheduled->getTimestamp() <= time() || $scheduled->getTimestamp() > time() + 5 * YEAR_IN_SECONDS)) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the pickup location time zone.'); }
         $vehicle_id = self::text($body['vehicle'] ?? '', 20, true);
         $vehicle = $admin && $historical_vehicle && (string) ($historical_vehicle['id'] ?? '') === $vehicle_id ? $historical_vehicle : Vehicles::find($vehicle_id);
         if (!$vehicle) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
-        $clean = ['trip' => ['service' => $service, 'hours' => $hours, 'date' => $date, 'time' => $time, 'timezone' => wp_timezone_string(), 'pickup' => self::text($trip['pickup'] ?? '', 1024, true), 'dropoff' => self::text($trip['dropoff'] ?? '', 1024, true), 'pickupPlace' => self::selected_metadata($points['origin'], $trip['pickupPlace']), 'dropoffPlace' => self::selected_metadata($points['destination'], $trip['dropoffPlace']), 'stops' => []], 'vehicle' => $vehicle['id'], 'passengers' => self::integer($body['passengers'] ?? null, 1, $vehicle['capacity']), 'luggage' => self::integer($body['luggage'] ?? null, 0, $vehicle['luggageCapacity'])];
+        $clean = ['trip' => ['service' => $service, 'hours' => $hours, 'date' => $date, 'time' => $time, 'timezone' => $timezone, 'pickup' => self::text($trip['pickup'] ?? '', 1024, true), 'dropoff' => self::text($trip['dropoff'] ?? '', 1024, true), 'pickupPlace' => self::selected_metadata($points['origin'], $trip['pickupPlace']), 'dropoffPlace' => self::selected_metadata($points['destination'], $trip['dropoffPlace']), 'stops' => []], 'vehicle' => $vehicle['id'], 'passengers' => self::integer($body['passengers'] ?? null, 1, $vehicle['capacity']), 'luggage' => self::integer($body['luggage'] ?? null, 0, $vehicle['luggageCapacity'])];
         foreach ($trip['stops'] as $index => $stop) {
             $wait = self::integer($stop['waitMinutes'] ?? null, 0, 120);
             if (!in_array($wait, self::WAIT_OPTIONS, true)) { throw new \InvalidArgumentException('Select an available stop waiting time.'); }
@@ -434,6 +467,8 @@ final class Rest
     private static function receipt(array $row): array
     {
         $original = $row['history'][0]['original'] ?? null;
-        return ['requestId' => $row['reference'], 'pricing' => is_array($original) ? $original['pricing'] : $row['pricing'], 'route' => is_array($original) ? $original['route'] : $row['route']];
+        $payload = is_array($original) ? ($original['payload'] ?? []) : ($row['payload'] ?? []);
+        $payload = is_array($payload['booking'] ?? null) ? $payload['booking'] : $payload;
+        return ['requestId' => $row['reference'], 'pricing' => is_array($original) ? $original['pricing'] : $row['pricing'], 'route' => is_array($original) ? $original['route'] : $row['route'], 'pickupTimezone' => $payload['trip']['timezone'] ?? wp_timezone_string()];
     }
 }

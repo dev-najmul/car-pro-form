@@ -100,9 +100,8 @@ async function reachVehicles(page) {
 async function reachPassengers(page, vehicle = "Luxury SUV") {
   await reachVehicles(page);
   await page
-    .getByRole("button", { name: `Select ${vehicle}`, exact: true })
+    .getByRole("button", { name: `Select & continue with ${vehicle}`, exact: true })
     .click();
-  await page.getByRole("button", { name: /continue to passengers/i }).click();
   await route(page, "passengers");
 }
 
@@ -266,7 +265,7 @@ test("stops and Hourly service can be edited without losing trip values", async 
   await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('0');
   await page.getByRole("button", { name: "HOURLY", exact: true }).click();
   await expect(page.getByLabel("Hours", { exact: true })).toBeVisible();
-  await page.getByLabel("Hours", { exact: true }).selectOption("4");
+  await page.getByLabel("Hours", { exact: true }).fill("4");
   await page.getByRole("button", { name: "TRANSFER", exact: true }).click();
   await expect(page.getByLabel("Pickup location", { exact: true })).toHaveValue(
     fixture.pickup,
@@ -279,9 +278,8 @@ test("stops and Hourly service can be edited without losing trip values", async 
   await page.getByRole("button", { name: "CHECK PRICE", exact: true }).click();
   await route(page, "vehicles");
   await page
-    .getByRole("button", { name: "Select Luxury SUV", exact: true })
+    .getByRole("button", { name: "Select & continue with Luxury SUV", exact: true })
     .click();
-  await page.getByRole("button", { name: /continue to passengers/i }).click();
   await route(page, "passengers");
   // Four hours × $115 + 20 miles × $3 = $520; 20% gratuity = $104.
   await expectTotal(page, 624);
@@ -299,11 +297,10 @@ test("all six vehicle prices are used and only one choice is selected", async ({
   page,
 }) => {
   await reachVehicles(page);
-  await page.getByRole("button", { name: /continue to passengers/i }).click();
   await route(page, "vehicles");
-  await expect(page.getByRole("alert")).toContainText(
-    "Please select a vehicle",
-  );
+  await expect(page.getByRole("button", { name: /continue to passengers/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Step 3: Passengers & Extras", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^Select & continue with /, pressed: true })).toHaveCount(0);
   for (const [name, price] of [
     ["Premium SUV", 195],
     ["Luxury SUV", 225],
@@ -313,12 +310,8 @@ test("all six vehicle prices are used and only one choice is selected", async ({
     ["Rolls-Royce Phantom", 3250],
   ]) {
     await page
-      .getByRole("button", { name: `Select ${name}`, exact: true })
+      .getByRole("button", { name: `Select & continue with ${name}`, exact: true })
       .click();
-    await expect(
-      page.getByRole("button", { name: /^Select /, pressed: true }),
-    ).toHaveCount(1);
-    await page.getByRole("button", { name: /continue to passengers/i }).click();
     await route(page, "passengers");
     await setToggle(page, "Meet & Greet", false);
     await setToggle(page, "Child Seats", false);
@@ -327,6 +320,8 @@ test("all six vehicle prices are used and only one choice is selected", async ({
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "BACK", exact: true }).click();
     await route(page, "vehicles");
+    await expect(page.getByRole("button", { name: /^Select & continue with /, pressed: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: `Select & continue with ${name}`, exact: true })).toHaveAttribute('aria-pressed', 'true');
   }
 });
 
@@ -560,7 +555,7 @@ test("changing vehicle during review updates transportation and percentage gratu
   await reachReview(page);
   await editReviewSection(page, "2. SELECTED VEHICLE");
   await page
-    .getByRole("button", { name: "Select Executive SUV", exact: true })
+    .getByRole("button", { name: "Select & continue with Executive SUV", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
@@ -614,7 +609,7 @@ test("consent is required and successful static submission preserves details and
     .click();
   await editReviewSection(page, "2. SELECTED VEHICLE");
   await page
-    .getByRole("button", { name: "Select Rolls-Royce Ghost", exact: true })
+    .getByRole("button", { name: "Select & continue with Rolls-Royce Ghost", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
@@ -629,7 +624,7 @@ test("consent is required and successful static submission preserves details and
     .getByRole("button", { name: "Step 2: Select Vehicle", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Select Luxury SUV", exact: true })
+    .getByRole("button", { name: "Select & continue with Luxury SUV", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
@@ -911,7 +906,7 @@ test("editing a submitted vehicle or extra blocks direct confirmation until vali
   await route(page, "review");
   await editReviewSection(page, "2. SELECTED VEHICLE");
   await page
-    .getByRole("button", { name: "Select Executive SUV", exact: true })
+    .getByRole("button", { name: "Select & continue with Executive SUV", exact: true })
     .click();
   expect(
     await page.evaluate(
@@ -921,7 +916,7 @@ test("editing a submitted vehicle or extra blocks direct confirmation until vali
   await page.evaluate(() => {
     location.hash = "thank-you";
   });
-  await route(page, "vehicles");
+  await route(page, "passengers");
   await page.goto("/?edited-vehicle=1#thank-you");
   await expect(page).not.toHaveURL(/#thank-you$/);
   await page

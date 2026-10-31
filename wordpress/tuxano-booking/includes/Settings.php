@@ -51,8 +51,8 @@ final class Settings
             'terms_url' => '',
             'privacy_url' => (string) get_privacy_policy_url(),
             'max_stops' => 5,
-            'min_hours' => 2,
-            'max_hours' => 12,
+            'min_hours' => 3,
+            'max_hours' => 24,
             'admin_email' => (string) get_option('admin_email', ''),
             'email_customer' => true,
             'email_admin' => true,
@@ -233,9 +233,10 @@ final class Settings
             $color = $settings[$private_key];
             $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
-        $public['timezone'] = wp_timezone_string();
+        $public['timezone'] = Timezones::DEFAULT_ZONE;
         $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
         $public['availabilityChecks'] = true;
+        $public['pickupTimezones'] = true;
         return $public;
     }
 

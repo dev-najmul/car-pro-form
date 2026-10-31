@@ -85,14 +85,14 @@ $new_quote = static function (string $token) use ($request, $check, $points, &$q
 $http_mock = static function ($preempt, array $args, string $url) use ($check, &$provider_calls, &$provider_mode, &$provider_stops, $fixture_key, $points) {
     ++$provider_calls;
     $check($url === 'https://routes.googleapis.com/directions/v2:computeRoutes', 'Provider URL must remain the fixed Google endpoint.');
-    $check($args['headers']['X-Goog-Api-Key'] === $fixture_key && $args['headers']['X-Goog-FieldMask'] === 'routes.distanceMeters,routes.duration', 'Server must send the private fixture key and bounded field mask.');
+    $check($args['headers']['X-Goog-Api-Key'] === $fixture_key && $args['headers']['X-Goog-FieldMask'] === 'routes.distanceMeters,routes.duration,routes.legs.startLocation.latLng', 'Server must send the private fixture key and bounded field mask.');
     $check($args['timeout'] <= 15 && $args['redirection'] === 0 && $args['limit_response_size'] === 262144, 'Provider calls must bound time, redirects and response size.');
     $sent = json_decode($args['body'], true);
     $check($sent === ['origin' => $points['origin'], 'destination' => ['location' => ['latLng' => $points['destination']]], 'intermediates' => $provider_stops, 'travelMode' => 'DRIVE', 'routingPreference' => 'TRAFFIC_UNAWARE', 'computeAlternativeRoutes' => false, 'optimizeWaypointOrder' => false, 'units' => 'METRIC'], 'Google payload must preserve ordered locations and agreed routing options.');
     if ($provider_mode === 'unavailable') {
         return new WP_Error('fixture_unavailable', 'Deterministic provider outage.');
     }
-    return ['headers' => [], 'response' => ['code' => $provider_mode === 'denied' ? 403 : 200, 'message' => 'Fixture'], 'body' => wp_json_encode($provider_mode === 'malformed' ? ['routes' => [['distanceMeters' => 1, 'duration' => '-1s']]] : ['routes' => [['distanceMeters' => 16093.44, 'duration' => '1200s']]]), 'cookies' => []];
+    return ['headers' => [], 'response' => ['code' => $provider_mode === 'denied' ? 403 : 200, 'message' => 'Fixture'], 'body' => wp_json_encode($provider_mode === 'malformed' ? ['routes' => [['distanceMeters' => 1, 'duration' => '-1s']]] : ['routes' => [['distanceMeters' => 16093.44, 'duration' => '1200s', 'legs' => [['startLocation' => ['latLng' => ['latitude' => 40.758, 'longitude' => -73.9855]]]]]]]), 'cookies' => []];
 };
 $mail_mock = static function ($preempt, array $args) use ($check, &$mail, &$created_ids, &$mail_results, $wpdb) {
     $kind = $args['to'] === 'booking-admin@example.test' ? 'admin' : 'customer';
@@ -159,6 +159,7 @@ try {
     $check($quote['distanceMeters'] === 16093.44 && $quote['durationSeconds'] === 1200.0 && $quote['provider'] === 'google', 'Only provider metrics may form the server quote.');
     $quote_name = 'tuxano_quote_' . hash('sha256', $quote['quoteToken']);
     $check(get_transient($quote_name)['session'] === hash('sha256', $token), 'Quote must be bound to the creating session.');
+    $check($quote['pickupTimezone'] === 'America/New_York' && $quote['pickupTimezoneLabel'] === 'Eastern Time' && get_transient($quote_name)['pickupTimezone'] === 'America/New_York', 'The route quote binds the pickup geographic zone without using a browser-supplied timezone.');
     $other_token = $new_session();
     $premium = null;
     foreach (Vehicles::all() as $vehicle) {
@@ -218,6 +219,7 @@ try {
     $check(!isset($row['payload']['total'], $row['payload']['pricing'], $row['payload']['route']) && $row['payload']['passenger']['first'] === 'Ada & Co', 'Persisted payload must discard forged fields and normalize same-as-billing contact.');
     $check(isset($row['payload']['vehicleSnapshot']['tariff']['perMile']) && $row['payload']['vehicleSnapshot']['id'] === $booking['vehicle'], 'The original selected vehicle and tariff must be retained independently of future fleet edits.');
     $check(count($mail) === 2 && $row['customer_mail'] === 'accepted' && $row['admin_mail'] === 'failed', 'Customer/admin transport acceptance must be recorded independently without losing a booking.');
+    $check($mail[0]['args']['subject'] === 'TUXANO Reservation Request Received – ' . $row['reference'] && $row['payload']['trip']['timezone'] === 'America/New_York', 'The full receipt subject/reference and pickup timezone agree with the saved request.');
     $check(strpos($mail[0]['args']['message'], 'Ada &amp; Co') !== false && strpos($mail[0]['args']['message'], 'USD 421.88') !== false && strpos($mail[1]['args']['message'], 'Review in WordPress') !== false, 'Escaped notification HTML must include authoritative total and administrator review link.');
     $check(strpos(wp_json_encode($receipt) . wp_json_encode($mail), $fixture_key) === false, 'Receipts and notifications must never expose the server key.');
     delete_transient('tuxano_quote_' . hash('sha256', $quote['quoteToken']));

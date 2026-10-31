@@ -54,7 +54,7 @@ async function chooseQuick(page, key, query) {
 }
 async function prepareQuick(page, hourly = false) {
   await page.goto('/quick-test/');
-  if (hourly) { await page.getByRole('button', { name: 'HOURLY', exact: true }).click(); await page.getByLabel('Hours', { exact: true }).selectOption('7'); }
+  if (hourly) { await page.getByRole('button', { name: 'HOURLY', exact: true }).click(); await page.getByLabel('Hours', { exact: true }).fill('7'); }
   await chooseQuick(page, 'pickup', 'AlphaPickup'); await chooseQuick(page, 'dropoff', 'BetaDropoff');
   await page.getByLabel('Date', { exact: true }).fill(pickupDate); await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
 }

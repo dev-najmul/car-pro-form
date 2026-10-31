@@ -172,6 +172,22 @@
   appearance: auto;
 }
 [data-tuxano-quick-booking] option { background: #fff; color: #14223a; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours > .tuxano-quick-booking-control { min-height: 68px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-title { flex: 1 1 0; min-width: 0; margin: 0; padding-right: 8px; color: var(--tq-ink); font-size: 12px; line-height: 1.5; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-stepper { display: flex; flex: 0 0 auto; align-items: stretch; min-width: 0; height: 42px; margin-right: 10px; border: 1px solid var(--tq-line); border-radius: 4px; overflow: hidden; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-stepper > button { display: grid; place-items: center; width: 36px; min-width: 36px; min-height: 40px; margin: 0; padding: 0; border: 0; border-radius: 0; color: var(--tq-ink); background: var(--tq-control); box-shadow: none; font-size: 22px; cursor: pointer; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-stepper > button:disabled { opacity: .4; cursor: not-allowed; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor { display: flex; align-items: center; min-width: 0; border-inline: 1px solid var(--tq-line); padding: 0 6px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor > input { appearance: textfield; -moz-appearance: textfield; display: block; width: 27px; min-width: 0; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tq-ink); box-shadow: none; text-align: center; font-size: 14px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor > input::-webkit-inner-spin-button,
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor > input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor > span { padding-left: 2px; color: var(--tq-ink); font-size: 11px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-limit { margin: 5px 0 0; color: var(--tq-muted); font-size: 11px; text-align: right; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-error { margin: 8px 0; padding: 8px 10px; border: 1px solid #eab9ba; border-radius: 3px; color: #fff; background: #6e1a26d9; font-size: 12px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-help { display: grid; gap: 5px; margin: 10px 0 0; padding: 11px 12px; border: 1px solid var(--tq-line); border-radius: 4px; background: var(--tq-control); color: var(--tq-muted); font-size: 11px; line-height: 1.6; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-hours-help strong { color: var(--tq-ink); font-size: 11px; font-weight: 600; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-timezone { margin: -6px 0 14px; color: var(--tq-muted); font-size: 11px; line-height: 1.6; }
+
 [data-tuxano-quick-booking] .tuxano-quick-booking-locate {
   display: inline-flex;
   flex: 0 0 44px;
@@ -319,9 +335,11 @@
   [data-tuxano-quick-booking] .tuxano-quick-booking-title { font-size: 21px; margin-bottom: 20px; }
   [data-tuxano-quick-booking] .tuxano-quick-booking-segments > button { min-height: 50px; }
   [data-tuxano-quick-booking] .tuxano-quick-booking-control > .input,
+  [data-tuxano-quick-booking] .tuxano-quick-booking-hours-editor > input,
   [data-tuxano-quick-booking] .tuxano-quick-booking-date-time .input { font-size: 16px; }
   [data-tuxano-quick-booking] .tuxano-quick-booking-date-time { gap: 12px; }
   [data-tuxano-quick-booking] .tuxano-quick-booking-control > .input { min-height: 52px; }
+  [data-tuxano-quick-booking] .tuxano-quick-booking-hours-error,
   [data-tuxano-quick-booking] .tuxano-quick-booking-error { color: #8b2436; background: #fff2f4; border-color: #f0c5cd; }
 }
 @media (max-width: 359px) {

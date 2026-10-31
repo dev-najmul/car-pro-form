@@ -53,8 +53,8 @@ final class Pricing
         $miles = $distance / self::METERS_PER_MILE;
         $driving_minutes = $duration / 60;
         if ($service === 'hourly') {
-            $min_hours = self::integer($settings['min_hours'] ?? 2, 1, 24, 'minimum hours');
-            $max_hours = self::integer($settings['max_hours'] ?? 12, $min_hours, 24, 'maximum hours');
+            $min_hours = self::integer($settings['min_hours'] ?? 3, 1, 24, 'minimum hours');
+            $max_hours = self::integer($settings['max_hours'] ?? 24, $min_hours, 24, 'maximum hours');
             $hours = self::integer($trip['hours'] ?? null, $min_hours, $max_hours, 'booked hours');
             $driving_charge = max($hours, $driving_minutes / 60) * $tariff['hourly'] + $miles * $tariff['perMile'];
         } else {

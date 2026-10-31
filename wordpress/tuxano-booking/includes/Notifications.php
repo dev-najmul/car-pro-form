@@ -27,7 +27,7 @@ final class Notifications
             // Claim the send atomically to prevent simultaneous admin retries.
             $claimed = $wpdb->query($wpdb->prepare('UPDATE ' . Database::table() . " SET {$column} = 'sending', {$started_column} = %s WHERE id = %d AND {$column} = %s", $claim_time, $id, $row[$column]) . $lease);
             if ($claimed !== 1) { continue; }
-            $subject = $kind === 'admin' ? 'New transportation request ' : 'Your transportation request ';
+            $subject = 'TUXANO Reservation Request Received – ';
             $accepted = self::deliver($recipient, $subject . $row['reference'], $row, $settings, $kind);
             $wpdb->update(Database::table(), [$column => $accepted ? 'accepted' : 'failed'], ['id' => $id, $started_column => $claim_time]);
         }
@@ -224,6 +224,26 @@ final class Notifications
         return $minutes >= 60 ? (string) intdiv($minutes, 60) . ' hr' . ($minutes % 60 ? ' ' . ($minutes % 60) . ' min' : '') : $minutes . ' min';
     }
 
+    /** Greeting presentation never rewrites the customer's stored name. */
+    private static function greeting_name($value): string
+    {
+        $name = trim(self::value($value));
+        if ($name === '') { return 'there'; }
+        return mb_strtoupper(mb_substr($name, 0, 1, 'UTF-8'), 'UTF-8') . mb_strtolower(mb_substr($name, 1, mb_strlen($name, 'UTF-8'), 'UTF-8'), 'UTF-8');
+    }
+
+    /** Saved pickup-local time and zone are shared by every email section. */
+    private static function pickup_display(array $trip): string
+    {
+        try {
+            return Timezones::display(self::value($trip['date'] ?? ''), self::value($trip['time'] ?? ''), self::value($trip['timezone'] ?? wp_timezone_string()));
+        } catch (\InvalidArgumentException $error) {
+            // A malformed historical record must not prevent the notification
+            // lease from completing or invent an unrelated pickup instant.
+            return 'Pickup schedule unavailable';
+        }
+    }
+
     /** Prepare the same authoritative values for rich HTML and plain-text mail. */
     private static function message_data(array $row, array $settings, string $kind): array
     {
@@ -235,12 +255,13 @@ final class Notifications
         $pricing = is_array($row['pricing'] ?? null) ? $row['pricing'] : [];
         $route = is_array($row['route'] ?? null) ? $row['route'] : [];
         $currency = self::value($pricing['currency'] ?? $row['currency'] ?? 'USD');
-        $status_labels = ['new' => 'Awaiting review', 'reviewing' => 'Being reviewed', 'confirmed' => 'Confirmed', 'cancelled' => 'Cancelled', 'completed' => 'Completed'];
-        $status = $status_labels[$row['status'] ?? 'new'] ?? 'Awaiting review';
-        $title = $kind === 'admin' ? 'New reservation request' : ($kind === 'update' ? 'Your request has been updated' : 'Thank you, ' . (self::value($billing['first'] ?? '') ?: 'there'));
-        $intro = $kind === 'admin' ? 'A new transportation request is ready for your team to review. Check availability and the details below before confirming with the customer.' : ($kind === 'update' ? 'Your booking team has updated your request. Please review the latest itinerary and estimate below, and contact us if anything needs changing.' : 'Your reservation request has been received and is awaiting availability review. Your booking team will contact you about confirmation and payment arrangements.');
-        $timezone = self::value($trip['timezone'] ?? wp_timezone_string());
-        $journey = ['Service' => ($trip['service'] ?? '') === 'hourly' ? 'Hourly (' . self::value($trip['hours'] ?? '') . ' booked hours)' : 'Transfer', 'Pickup date & time' => trim(self::value($trip['date'] ?? '') . ' ' . self::value($trip['time'] ?? '')) . ' (' . $timezone . ')', 'Pickup location' => $trip['pickup'] ?? ''];
+        $status_labels = ['new' => 'Pending Confirmation', 'reviewing' => 'Being reviewed', 'confirmed' => 'Confirmed', 'cancelled' => 'Cancelled', 'completed' => 'Completed'];
+        $status = $status_labels[$row['status'] ?? 'new'] ?? 'Pending Confirmation';
+        $first_name = self::greeting_name($billing['first'] ?? '');
+        $title = $kind === 'admin' ? 'New reservation request' : ($kind === 'update' ? 'Your request has been updated' : 'Thank you, ' . $first_name . '.');
+        $intro = $kind === 'admin' ? 'A new transportation request is ready for your team to review. Check availability and the details below before confirming with the customer.' : ($kind === 'update' ? 'Your booking team has updated your request. Please review the latest itinerary and estimate below, and contact us if anything needs changing.' : "We've received your reservation request. Our team will review the details and contact you to confirm availability and arrange payment.");
+        $pickup_display = self::pickup_display($trip);
+        $journey = ['Service' => ($trip['service'] ?? '') === 'hourly' ? 'Hourly (' . self::value($trip['hours'] ?? '') . ' booked hours)' : 'Transfer', 'Pickup date & time' => $pickup_display, 'Pickup location' => $trip['pickup'] ?? ''];
         $waiting = 0;
         foreach (is_array($trip['stops'] ?? null) ? $trip['stops'] : [] as $index => $stop) {
             if (!is_array($stop)) { continue; }
@@ -271,7 +292,6 @@ final class Notifications
             break;
         }
         $event = self::status_event($row, $kind);
-        $first_name = self::value($billing['first'] ?? '') ?: 'there';
         if ($event === 'confirmed') {
             $title = 'Your reservation is confirmed';
             $intro = 'Thank you, ' . $first_name . '. Your reservation has been confirmed. We look forward to welcoming you on board.';
@@ -282,7 +302,6 @@ final class Notifications
             $title = 'Thank you for travelling with us';
             $intro = 'Thank you, ' . $first_name . ', for choosing us for your journey. We hope you enjoyed your trip and look forward to welcoming you again.';
         }
-        $pickup_display = trim(self::value($trip['date'] ?? '') . ' ' . self::value($trip['time'] ?? '')) . ' (' . $timezone . ')';
         $summary = ['Pickup date & time' => $pickup_display, 'Pickup location' => $trip['pickup'] ?? '', 'Drop-off location' => $trip['dropoff'] ?? '', 'Vehicle' => $row['vehicle_name'] ?? ''];
         return ['status_event' => $event, 'admin' => $kind === 'admin', 'update' => $kind === 'update', 'pickup_display' => $pickup_display, 'summary' => $summary, 'title' => $title, 'intro' => $intro, 'eyebrow' => $kind === 'admin' ? 'New request · action required' : ($kind === 'update' ? 'Reservation update' : 'Reservation request received'), 'preheader' => $title . ' · ' . self::value($row['reference'] ?? '') . (in_array($event, ['cancelled', 'completed'], true) ? '' : ' · ' . self::money($pricing['total'] ?? 0, $currency)), 'status' => $status, 'trip' => $journey, 'contact' => $contact, 'additional' => $additional, 'charges' => $charges, 'total' => self::money($pricing['total'] ?? 0, $currency), 'waiting_note' => $waiting > 0 ? 'Transportation includes ' . $waiting . ' min of selected stop waiting (' . self::money($pricing['fare']['waitingCharge'] ?? 0, $currency) . '); it is not charged again below.' : 'No stop waiting has been added to this estimate.', 'changes' => $changes, 'previous_total' => $previous_total];
     }

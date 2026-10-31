@@ -31,7 +31,7 @@ $row = [
 foreach (['customer', 'admin'] as $kind) {
     $html = Notifications::template($row, $settings, $kind);
     $plain = Notifications::plain_text($row, $settings, $kind);
-    foreach (['#0a121f', 'tuxano-wordmark.png', 'TUX-2026-NOTIFICATIONTEST', 'Ada &amp; Co', 'Pickup &amp; Plaza', 'USD 335.00', 'Pricing summary', 'Vehicle selected', 'America/New_York'] as $needle) {
+    foreach (['#0a121f', 'tuxano-wordmark.png', 'TUX-2026-NOTIFICATIONTEST', 'Ada &amp; Co', 'Pickup &amp; Plaza', 'USD 335.00', 'Pricing summary', 'Vehicle selected', 'November 8, 2027 at 2:30 PM (Eastern Time)'] as $needle) {
         $check(strpos($html, $needle) !== false, 'Initial ' . $kind . ' email must include ' . $needle);
     }
     $check(($kind === 'admin') === (strpos($html, 'Review in WordPress') !== false), 'Private administrator link must be scoped to admin mail.');
@@ -63,12 +63,12 @@ foreach (['confirmed', 'cancelled', 'completed'] as $status) {
     $check(strpos($html . $plain, 'INTERNAL_SECRET_NOTE') === false && strpos($html . $plain, 'PRIVATE_IDEMPOTENCY_KEY') === false, 'Lifecycle email must not expose private data.');
     $check(strpos($plain, $row['reference']) !== false, 'Plain lifecycle email must retain request reference.');
     if ($status === 'confirmed') {
-        foreach (['Your reservation is confirmed', 'Ada &amp; Co', 'Pickup &amp; Plaza', 'JFK Airport', '2027-11-08', '14:30', 'Luxury SUV', 'USD 335.00', 'not a payment receipt'] as $needle) {
+        foreach (['Your reservation is confirmed', 'Ada &amp; co', 'Pickup &amp; Plaza', 'JFK Airport', 'November 8, 2027', '2:30 PM (Eastern Time)', 'Luxury SUV', 'USD 335.00', 'not a payment receipt'] as $needle) {
             $check(strpos($html, $needle) !== false, 'Confirmed notification must include ' . $needle);
         }
         $check(strpos($plain, 'USD 335.00') !== false && strpos($plain, 'Pickup & Plaza') !== false, 'Confirmed plain text retains authoritative trip and price.');
     } elseif ($status === 'cancelled') {
-        $check(strpos($html, 'Sorry, Ada &amp; Co') !== false && strpos($html, 'has been cancelled') !== false && strpos($html, 'Questions about this cancellation') !== false, 'Cancelled mail needs a short apology and help invitation.');
+        $check(strpos($html, 'Sorry, Ada &amp; co') !== false && strpos($html, 'has been cancelled') !== false && strpos($html, 'Questions about this cancellation') !== false, 'Cancelled mail needs a short apology and help invitation.');
         $check(strpos($html . $plain, 'USD 335.00') === false && strpos($html . $plain, 'Pickup & Plaza') === false && strpos($html, 'Pickup &amp; Plaza') === false, 'Cancellation message must not resend a long itinerary/estimate.');
     } else {
         $check(strpos($html, 'Thank you for travelling with us') !== false && strpos($html, 'next journey') !== false, 'Completed mail thanks the customer and welcomes another journey.');
@@ -86,4 +86,32 @@ $hostile['payload']['trip']['pickup'] = '<script>bad()</script>';
 $hostile['payload']['vehicleSnapshot']['image'] = 'javascript:alert(1)';
 $html = Notifications::template($hostile, $settings, 'customer');
 $check(strpos($html, '<img src=x') === false && strpos($html, '&lt;img src=x') !== false && strpos($html, '<script>bad()') === false && strpos($html, 'javascript:alert') === false, 'Stored user content/image URL must be safely escaped.');
+
+// Client-approved receipt wording, without changing stored contact spelling.
+$receipt = $row;
+$receipt['reference'] = 'TUX-2026-C0010D4E7BDA';
+$receipt['payload']['billing']['first'] = 'PAVEL';
+$receipt['payload']['trip'] = array_replace($row['payload']['trip'], ['date' => '2026-10-30', 'time' => '17:50', 'timezone' => 'America/Indiana/Indianapolis']);
+$html = Notifications::template($receipt, $settings, 'customer');
+$plain = Notifications::plain_text($receipt, $settings, 'customer');
+$expected_pickup = 'October 30, 2026 at 5:50 PM (Eastern Time)';
+$expected_intro = "We've received your reservation request. Our team will review the details and contact you to confirm availability and arrange payment.";
+$check(strpos($html, 'Thank you, Pavel.') !== false && strpos($plain, 'Thank you, Pavel.') !== false, 'The receipt greeting must use sentence case and a full stop.');
+$check(strpos($html, esc_html($expected_intro)) !== false && strpos($plain, $expected_intro) !== false, 'The customer receipt must use the approved review and payment explanation.');
+$check(strpos($html, 'Status: Pending Confirmation') !== false && strpos($plain, 'Status: Pending Confirmation') !== false, 'A new request is explicitly pending confirmation.');
+$check(substr_count($html, $expected_pickup) === 2 && substr_count($plain, $expected_pickup) === 1, 'The banner and trip details must show the identical formatted pickup-local schedule.');
+$check(strpos($html . $plain, '17:50') === false && strpos($html . $plain, 'America/Indiana') === false && strpos($html . $plain, '2026-10-30') === false, 'Human-readable email dates must not expose raw storage dates or timezone identifiers.');
+$check(strpos($html, 'Booking contact</th>') !== false && strpos($html, 'PAVEL Customer') !== false, 'Greeting presentation must preserve the original stored contact name.');
+$check(strpos($html, $receipt['reference']) !== false && strpos($plain, $receipt['reference']) !== false, 'The complete request reference must be retained in both alternatives.');
+foreach (['ÉMILIE' => 'Émilie', '李明' => '李明', '' => 'there'] as $input_name => $greeting_name) {
+    $receipt['payload']['billing']['first'] = $input_name;
+    $check(strpos(Notifications::plain_text($receipt, $settings, 'customer'), 'Thank you, ' . $greeting_name . '.') !== false, 'Greeting formatting must safely handle Unicode names and an empty legacy name.');
+}
+foreach (['America/Chicago' => 'Central Time', 'America/Los_Angeles' => 'Pacific Time', 'America/Phoenix' => 'Mountain Time'] as $zone => $label) {
+    $receipt['payload']['trip']['timezone'] = $zone;
+    $expected = 'October 30, 2026 at 5:50 PM (' . $label . ')';
+    $check(substr_count(Notifications::template($receipt, $settings, 'customer'), $expected) === 2, 'The receipt must consistently honor its saved pickup timezone: ' . $zone);
+}
+$receipt['payload']['trip']['timezone'] = 'Invalid/Timezone';
+$check(substr_count(Notifications::template($receipt, $settings, 'customer'), 'Pickup schedule unavailable') === 2, 'A corrupt legacy timezone must not crash rendering or invent an unrelated pickup time.');
 WP_CLI::success('WordPress email template checks passed: ' . $checks);

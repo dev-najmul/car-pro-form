@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "data": "geo-tz 8.1.10 / timezones-1970",
+  "boundaryLicense": "ODbL-1.0",
+  "boundarySource": "https://github.com/evansiroky/timezone-boundary-builder",
+  "attribution": "Timezone boundaries © OpenStreetMap contributors; indexed by Evan Siroky / geo-tz.",
+  "sourcePackage": "https://registry.npmjs.org/geo-tz/-/geo-tz-8.1.10.tgz",
+  "sourceIndexSha256": "9ef48a399c4b0d1394e6c90065673d697a1ee7b91288373b68acae488e7149da",
+  "sourceGeometrySha256": "f9a59c9aec9c2470f4e72a1625298bfe347115c3637daca00d8e3bf47e6fb3f7",
+  "labelData": "Unicode CLDR 49.0.0",
+  "conversion": "Original quadtree and decoded geometries preserved. Boundary leaves use TZB1 binary varints in bounded gzip groups. Coordinates are signed zigzag longitude/latitude deltas in microdegrees, starting from 0,0 for each ring. Rings close implicitly; their duplicate final source points are omitted from the stream. Source coordinates already use microdegree precision; no simplification or additional quantization is added.",
+  "zones": 301,
+  "tiles": 20362,
+  "groups": 25,
+  "sourceCoordinates": 6953751,
+  "encodedCoordinates": 6919039,
+  "rings": 34712,
+  "bytes": 21765938,
+  "maximumCompressedTileBytes": 941975,
+  "maximumDecodedTileBytes": 1048526,
+  "maximumBinaryTileBytes": 77804,
+  "maximumCoordinateRoundTripDeviation": 0,
+  "files": {
+    "index.json": "3476b775d7d3231bec888670198696622039fe01e4cc067096a2db22cd57ecf4",
+    "tiles.dat": "dc44ab4145d097b8eb00c007c1b759d4234fa247e26bb89e118b5b169938a4ca",
+    "names.json": "ea678ec9f21506293d41eecd25c2d446a6e0aaf440e44402d9318140756eeca2"
+  }
+}

@@ -68,8 +68,7 @@ test('a real static subpath build searches locations and prices stops without an
   await page.getByLabel('Date', { exact: true }).fill('2027-11-12');
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
-  await page.getByRole('button', { name: 'Select Luxury SUV', exact: true }).click();
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await page.getByRole('button', { name: 'Select & continue with Luxury SUV', exact: true }).click();
   await expect(page.getByTestId('estimated-total').last()).toHaveText('$297.00');
   expect(requests).toContain('/car-pro-form/maps-config.json');
   expect(requests.filter(path => path.includes('/api/'))).toEqual([]);
@@ -102,7 +101,7 @@ test('a Pages form can use a separate private Routes backend with real CORS and 
     await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
     await page.getByLabel('Date', { exact: true }).fill('2027-11-12'); await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
     await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
-    await page.getByRole('button', { name: 'Select Luxury SUV', exact: true }).click(); await page.getByRole('button', { name: /continue to passengers/i }).click();
+    await page.getByRole('button', { name: 'Select & continue with Luxury SUV', exact: true }).click();
     await expect(page.getByTestId('estimated-total').last()).toHaveText('$297.00');
     expect(upstreamRequests).toHaveLength(2);
     expect(upstreamRequests[0].options.headers['X-Goog-Api-Key']).toBe('private-server-only.fixture');

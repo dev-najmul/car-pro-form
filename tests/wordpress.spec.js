@@ -87,8 +87,7 @@ async function trip(page, { stop = false } = {}) {
 async function passengers(page, options) {
   await trip(page, options);
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
-  await page.getByRole('button', { name: 'Select City Sedan', exact: true }).click();
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await expect(page).toHaveURL(/#passengers$/);
 }
 async function toggle(page, name, checked) {
@@ -120,10 +119,9 @@ test('admin fleet, categories, tariffs, currency, extras and separate luggage ca
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'AIRPORT COLLECTION', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'GROUP TRAVEL', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Select / })).toHaveCount(2);
-  await expect(page.locator('.vehicle-card').filter({ has: page.getByRole('button', { name: 'Select City Sedan', exact: true }) })).toContainText('£150');
-  await page.getByRole('button', { name: 'Select City Sedan', exact: true }).click();
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await expect(page.getByRole('button', { name: /^Select & continue with / })).toHaveCount(2);
+  await expect(page.locator('.vehicle-card').filter({ has: page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }) })).toContainText('£150');
+  await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await expect(page.getByRole('button', { name: '12.5%', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await total(page, 168.75); // (50 + 20mi*2 + 30min*1 + 10min*3) * 1.125.
   await page.getByRole('button', { name: 'Increase passengers', exact: true }).click();
@@ -150,11 +148,12 @@ test('admin stop and hourly bounds govern controls and hourly quotation', async 
   expect(await addStop.count() === 0 || await addStop.isDisabled()).toBe(true);
   await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
   const hours = page.getByLabel('Hours', { exact: true });
-  await expect(hours.locator('option')).toHaveText(['4 hours', '5 hours', '6 hours', '7 hours', '8 hours']);
+  await expect(hours).toHaveAttribute('type', 'number');
+  await expect(hours).toHaveAttribute('min', '4');
+  await expect(hours).toHaveAttribute('max', '8');
   await expect(hours).toHaveValue('4');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
-  await page.getByRole('button', { name: 'Select City Sedan', exact: true }).click();
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await total(page, 438.75); // (4hr*80 + 20mi*2 + 10min*3) * 1.125.
 });
 
@@ -246,9 +245,8 @@ test('reopening an unchanged receipt avoids a duplicate while editing starts a f
   expect(control.submissions).toHaveLength(1);
 
   await page.evaluate(() => { location.hash = 'vehicles'; });
-  await page.getByRole('button', { name: 'Select Group Shuttle', exact: true }).click();
   control.routeResult = { ...metrics, quoteToken: 'd'.repeat(64) };
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await page.getByRole('button', { name: 'Select & continue with Group Shuttle', exact: true }).click();
   await page.getByRole('button', { name: 'Step 5: Review & Submit', exact: true }).click();
   await page.getByRole('checkbox', { name: /I agree to the Terms/i }).check();
   await submitButton(page).click();

@@ -68,11 +68,11 @@ $admin_request = static function (string $path, array $body = [], string $nonce 
 $http_mock = static function ($preempt, array $args, string $url) use (&$provider_calls, &$provider_mode, &$provider_key, &$during_provider, $check) {
     $provider_calls[] = ['url' => $url, 'args' => $args];
     $check($url === 'https://routes.googleapis.com/directions/v2:computeRoutes', 'Administrative provider calls must use the fixed Google Routes URL.');
-    $check(($args['headers']['X-Goog-Api-Key'] ?? '') === $provider_key && ($args['headers']['X-Goog-FieldMask'] ?? '') === 'routes.distanceMeters,routes.duration', 'Admin route measurements must keep the server key private and request only bounded metrics.');
+    $check(($args['headers']['X-Goog-Api-Key'] ?? '') === $provider_key && ($args['headers']['X-Goog-FieldMask'] ?? '') === 'routes.distanceMeters,routes.duration,routes.legs.startLocation.latLng', 'Admin route measurements must keep the server key private and request only bounded metrics.');
     $check(($args['sslverify'] ?? true) === true && $args['timeout'] <= 15 && $args['redirection'] === 0 && $args['limit_response_size'] === 262144, 'Administrative Google calls must preserve TLS verification and resource bounds.');
     if (is_callable($during_provider)) { $once = $during_provider; $during_provider = null; $once(); }
     if ($provider_mode === 'unavailable') { return new WP_Error('fixture_outage', 'Deterministic network outage.'); }
-    $body = $provider_mode === 'malformed' ? ['routes' => [['distanceMeters' => 1, 'duration' => '-1s']]] : ['routes' => [['distanceMeters' => 32186.88, 'duration' => '1800s']]];
+    $body = $provider_mode === 'malformed' ? ['routes' => [['distanceMeters' => 1, 'duration' => '-1s']]] : ['routes' => [['distanceMeters' => 32186.88, 'duration' => '1800s', 'legs' => [['startLocation' => ['latLng' => ['latitude' => 40.758, 'longitude' => -73.9855]]]]]]];
     return ['headers' => [], 'response' => ['code' => $provider_mode === 'denied' ? 403 : 200, 'message' => 'Fixture'], 'body' => wp_json_encode($body), 'cookies' => []];
 };
 $mail_mock = static function ($preempt, array $args) use (&$mail, &$mail_result, $reference, $check): bool {
@@ -195,11 +195,11 @@ try {
     Settings::save(['default_gratuity' => 24]);
     $legacy_tip = $booking; $legacy_tip['gratuity'] = '23';
     $legacy_points = Rest::booking_points($legacy_tip, true);
-    [$legacy_clean] = Rest::validate_booking($legacy_tip, ['points' => $legacy_points], true, $vehicle);
+    [$legacy_clean] = Rest::validate_booking($legacy_tip, ['points' => $legacy_points, 'pickupTimezone' => wp_timezone_string()], true, $vehicle);
     $check($legacy_clean['gratuity'] === '23', 'Administrative historical edits must retain a previously valid gratuity even if current presets/default changed.');
     $legacy_tip['trip']['date'] = wp_date('Y-m-d', time() + 2 * DAY_IN_SECONDS);
     $public_tip_rejected = false;
-    try { Rest::validate_booking($legacy_tip, ['points' => $legacy_points]); }
+    try { Rest::validate_booking($legacy_tip, ['points' => $legacy_points, 'pickupTimezone' => wp_timezone_string()]); }
     catch (InvalidArgumentException $expected) { $public_tip_rejected = true; }
     $check($public_tip_rejected, 'Historical administrator gratuity support must not relax public submission presets.');
     Settings::save(['default_gratuity' => 20]);
@@ -230,10 +230,10 @@ try {
     $check(count($mail) === 1 && $mail[0]['customer'] === $edited['billing']['email'] && $mail[0]['total'] === 421.88 && $updated['update_mail'] === 'accepted', 'Optional update mail must target the newly saved contact after commit.');
     $check($updated['customer_mail'] === 'accepted' && $updated['admin_mail'] === 'accepted', 'An update notification must not reset or resend the initial receipt/admin notifications.');
     $message = $mail[0]['args']['message'];
-    $check(strpos($message, 'Changed &amp; Customer') !== false && strpos($message, '421.88') !== false && strpos($message, $reference) !== false, 'Updated customer email must escape customer content and include its itemized authoritative estimate/reference.');
+    $check(strpos($message, 'Changed &amp; customer') !== false && strpos($message, '421.88') !== false && strpos($message, $reference) !== false, 'Updated customer email must escape its presentation-cased name and include the authoritative estimate/reference.');
     $check(strpos($message, $private_note) === false && strpos($message, $route_key) === false, 'Internal dispatch notes and API secrets must never appear in customer update email.');
     $plain = Notifications::plain_text($updated, Settings::get(), 'update');
-    $check(strpos($plain, 'Changed & Customer') !== false && strpos($plain, '421.88') !== false && stripos($plain, 'not a payment') !== false && strpos($plain, $private_note) === false, 'Accessible plain-text update email must retain the estimate and customer name without private dispatch notes.');
+    $check(strpos($plain, 'Changed & customer') !== false && strpos($plain, '421.88') !== false && stripos($plain, 'not a payment') !== false && strpos($plain, $private_note) === false, 'Accessible plain-text update email must retain the estimate and customer name without private dispatch notes.');
     $check(Notifications::send_update($id, 2) === true && count($mail) === 1, 'Repeated notification for an accepted revision must be idempotent.');
     $unchanged = BookingUpdates::save($id, $updated['payload'], BookingUpdates::revision($updated), 'confirmed', $private_note, false);
     $check(!is_wp_error($unchanged) && (int) $unchanged['revision'] === 2 && $unchanged['update_mail'] === 'accepted' && count($mail) === 1 && !$provider_calls, 'Saving an unchanged historical edit must preserve its revision/mail state even after current stop/hour limits become stricter.');

@@ -25,8 +25,9 @@ final class Availability
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) || !preg_match('/^\d{2}:\d{2}$/D', $time)) { throw new \InvalidArgumentException('Choose a valid pickup date and time.'); }
         try { $zone = $timezone === null || $timezone === '' ? wp_timezone() : new \DateTimeZone($timezone); }
         catch (\Exception $error) { throw new \InvalidArgumentException('The saved pickup timezone is invalid. Contact the booking team.'); }
-        $local = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $date . ' ' . $time, $zone);
-        if (!$local || $local->format('Y-m-d H:i') !== $date . ' ' . $time || (int) $local->format('Y') < 1970 || (int) $local->format('Y') > 2100) { throw new \InvalidArgumentException('Choose a valid pickup date and time.'); }
+        // Existing saved requests retain PHP's original fold choice. Public
+        // checks/new submissions separately reject newly ambiguous wall times.
+        $local = Timezones::local($date, $time, $zone->getName(), true);
         $utc = $local->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         return ['vehicle_id' => $id, 'pickup_utc' => $utc];
     }

@@ -72,8 +72,7 @@ async function trip(page, destination = 'Demo Destination') {
 async function passengers(page) {
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
-  await page.getByRole('button', { name: 'Select Luxury SUV', exact: true }).click();
-  await page.getByRole('button', { name: /continue to passengers/i }).click();
+  await page.getByRole('button', { name: 'Select & continue with Luxury SUV', exact: true }).click();
   await expect(page).toHaveURL(/#passengers$/);
 }
 async function total(page, expected) {
