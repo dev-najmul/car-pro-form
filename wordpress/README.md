@@ -1,8 +1,8 @@
-# Tuxano Booking 2.4.0
+# Tuxano Booking 2.4.1
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.4.0.zip) · [SHA-256](../releases/tuxano-booking-2.4.0.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.4.1.zip) · [SHA-256](../releases/tuxano-booking-2.4.1.zip.sha256)
 
 ## Install and configure
 
@@ -94,3 +94,6 @@ Version **2.3.1** adds branded receipts and concise automatic customer status em
 Client revisions in 2.4.0: precise GPS can fill a reverse-geocoded address automatically, quick/main date displays use US month names and 12-hour clocks, hourly service defaults to 3 hours with editable 3–24-hour controls, and SELECT & CONTINUE advances immediately after availability checks. Review saved service-hour limits and set 3–24 for the requested configuration.
 
 Pickup schedules now use geographic IANA timezones resolved on the server from bundled boundary data; no additional timezone API/key is needed. Google route quotes bind the authoritative pickup zone, so browser/WordPress timezone or forged client metadata cannot change saved UTC availability. Existing records retain their saved schedule semantics. Repeated/missing DST wall times require another unambiguous time. Receipts and emails show full zone names and the revised Pending Confirmation wording. Bundled geographic data is ODbL licensed, with attribution and reproducible source conversion in `data/timezones/`. Geocoding uses the existing Maps SDK/key; denied/unsupported reverse geocoding retains explicit manual/map fallback.
+
+
+Version **2.4.1** waits briefly for improved GPS/Wi-Fi readings instead of stopping on the first coarse estimate. Accurate fixes retain automatic address fill. Approximate fixes automatically open a searchable correction map in both forms; the estimate itself cannot select a pickup or change a price. Confirm a deliberate map point or address to proceed. Quick-map choices obtain a fresh server quote/timezone on the main page. Browser hardware/services determine reported accuracy; the plugin cannot turn a 100 km network estimate into an independently verified street position. See [UPGRADE-2.4.1.md](UPGRADE-2.4.1.md).

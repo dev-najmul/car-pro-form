@@ -93,12 +93,15 @@ test('a 100 km PC estimate offers an exact map correction without accepting its 
   const before = controls.get(page).requests.length;
   await detect(page).click();
   await respond(page, { latitude: 23.7891, longitude: 90.4126, accuracy: 100000 });
-  await expect(preview(page)).toContainText('100.0 km');
-  await openMap(page);
+  await expect(mapPicker(page)).toContainText('100.0 km');
+  await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
   await expect(mapConfirm(page)).toBeDisabled();
   expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).options.center)).toEqual({ lat: 23.7891, lng: 90.4126 });
   await page.evaluate(() => window.__mapPickerMock.maps.at(-1).emit('idle'));
   await expect(mapConfirm(page)).toBeDisabled();
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await expect(page).toHaveURL(/#trip$/);
+  await expect(page.locator('.form-error')).toContainText('Confirm the location on the map');
   await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
   await expect(mapConfirm(page)).toBeEnabled();
   await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
@@ -289,15 +292,15 @@ test('an imprecise Dhaka device result cannot replace a confirmed Barishal picku
   const initialRequests = controls.get(page).requests.length;
   await detect(page).click();
   await respond(page, { latitude: 23.7891, longitude: 90.4126, accuracy: 12000 });
-  await expect(preview(page)).toBeVisible();
-  await expect(preview(page)).toContainText(/accur|precis/i);
+  await expect(mapPicker(page)).toBeVisible();
+  await expect(mapPicker(page)).toContainText(/approximate|exact pickup/i);
   await expect(confirm(page)).toHaveCount(0);
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
   await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
   expect(controls.get(page).requests).toHaveLength(initialRequests);
   expect(await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'nearby'))).toHaveLength(0);
-  await page.getByRole('button', { name: 'Cancel location detection', exact: true }).click();
-  await expect(preview(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
+  await expect(mapPicker(page)).toHaveCount(0);
 });
 
 test('missing accuracy, invalid coordinates, and stale positions are rejected before nearby lookup or routing', async ({ page }) => {

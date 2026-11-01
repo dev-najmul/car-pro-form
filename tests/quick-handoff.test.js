@@ -109,3 +109,21 @@ test('pickup date/time uses the WordPress timezone including numeric offsets', (
   assert.throws(() => validateQuickPickupTime({ date: '2026-10-25', time: '17:59' }, '+06:00', now), /future/);
   assert.doesNotThrow(() => validateQuickPickupTime({ date: '2026-10-25', time: '18:01' }, '+06:00', now));
 });
+
+
+test('a deliberately confirmed map pickup transfers exact coordinates without GPS precision claims', () => {
+  const point = { source: 'map', latitude: 22.7095, longitude: 90.3667, query: 'Map-selected pickup', confirmedAt: now, text: 'Transient label', attributions: ['temporary'], price: 1, quoteToken: 'old-quote', countryCode: 'BD' };
+  const store = storage(); const value = { ...trip(), pickup: point };
+  const url = write(store, value); const restored = read(store, url);
+  assert.deepEqual(restored.pickup, { source: 'map', latitude: 22.7095, longitude: 90.3667, query: 'Map-selected pickup', confirmedAt: now });
+  assert.equal(store.length, 0);
+  assert.throws(() => read(store, url), /unavailable or already used/);
+});
+
+test('unconfirmed, malformed or GPS-disguised map points cannot transfer', () => {
+  const point = { source: 'map', latitude: 22.7095, longitude: 90.3667, query: 'Map-selected pickup', confirmedAt: now };
+  for (const patch of [{ confirmedAt: undefined }, { confirmedAt: 0 }, { confirmedAt: now + 6000 }, { latitude: '22.7' }, { longitude: 181 }, { accuracyMeters: 100000 }, { capturedAt: now }, { latitude: NaN }]) {
+    assert.throws(() => normalizeQuickTrip({ ...trip(), pickup: { ...point, ...patch } }, now));
+  }
+  assert.throws(() => normalizeQuickTrip({ ...trip(), dropoff: point }, now));
+});

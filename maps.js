@@ -33,7 +33,7 @@ export function assertLocationCountry(place, countryCode) {
   if (actual !== expected) throw new Error('Choose your drop-off and stops in the same country as your pickup location.');
 }
 
-export const DEVICE_LOCATION_POLICY = Object.freeze({ maxAccuracyMeters: 100, maxAgeMs: 60000, timeoutMs: 15000 });
+export const DEVICE_LOCATION_POLICY = Object.freeze({ maxAccuracyMeters: 100, maxAgeMs: 60000, timeoutMs: 15000, coarseRefinementMs: 6000 });
 
 export function normalizeDevicePosition(position, now = Date.now()) {
   const latitude = position?.coords?.latitude, longitude = position?.coords?.longitude;
@@ -47,30 +47,76 @@ export function normalizeDevicePosition(position, now = Date.now()) {
   return { latitude, longitude, accuracyMeters, capturedAt, precise: accuracyMeters <= DEVICE_LOCATION_POLICY.maxAccuracyMeters };
 }
 
-export function requestDeviceLocation(geolocation = globalThis.navigator?.geolocation) {
+export function requestDeviceLocation(geolocation = globalThis.navigator?.geolocation, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    if (typeof geolocation?.getCurrentPosition !== 'function') {
+    const watching = typeof geolocation?.watchPosition === 'function' && typeof geolocation?.clearWatch === 'function';
+    if (!watching && typeof geolocation?.getCurrentPosition !== 'function') {
       reject(new Error('Current location is unavailable on this device. Please enter your pickup address.'));
       return;
     }
-    let settled = false;
+    const abortError = () => new DOMException('Location detection was cancelled.', 'AbortError');
+    if (signal?.aborted) { reject(abortError()); return; }
+    let settled = false, best = null, lastFailure = null, refinementTimer;
+    let watchId, watchAssigned = false, watchCleared = false;
+    const stopWatching = () => {
+      if (!watching || !watchAssigned || watchCleared) return;
+      watchCleared = true;
+      try { geolocation.clearWatch(watchId); } catch { /* The request is already settled. */ }
+    };
     const finish = (failure, point) => {
       if (settled) return;
-      settled = true; clearTimeout(watchdog);
+      settled = true; clearTimeout(watchdog); clearTimeout(refinementTimer);
+      signal?.removeEventListener('abort', onAbort);
+      stopWatching();
       if (failure) reject(failure); else resolve(point);
     };
     const unavailable = () => new Error('Your device could not determine your location. Please try again or enter your pickup address.');
     const timedOut = () => new Error('Finding your location took too long. Please try again or enter your pickup address.');
+    const finishBest = fallback => {
+      if (!best) { finish(lastFailure || fallback); return; }
+      try {
+        // A reading may have aged while waiting for a better fix. Never return
+        // it with an obsolete freshness/precision classification.
+        const current = normalizeDevicePosition({ coords: { latitude: best.latitude, longitude: best.longitude, accuracy: best.accuracyMeters }, timestamp: best.capturedAt });
+        finish(null, current);
+      } catch (failure) { finish(failure); }
+    };
+    const onAbort = () => finish(abortError());
     // Some browser/platform providers do not honor their own timeout reliably.
-    const watchdog = setTimeout(() => finish(timedOut()), DEVICE_LOCATION_POLICY.timeoutMs + 5000);
+    const watchdog = setTimeout(() => finishBest(timedOut()), DEVICE_LOCATION_POLICY.timeoutMs + 5000);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const onPosition = position => {
+      if (settled) return;
+      let point;
+      try { point = normalizeDevicePosition(position); }
+      catch (failure) {
+        if (!watching) finish(failure);
+        else lastFailure = failure;
+        return;
+      }
+      if (!best || point.accuracyMeters < best.accuracyMeters || point.accuracyMeters === best.accuracyMeters && point.capturedAt > best.capturedAt) best = point;
+      if (point.precise || !watching) { finish(null, best); return; }
+      // Browsers commonly send a coarse network estimate before a GPS/Wi-Fi
+      // fix. Give that first estimate one bounded improvement window instead
+      // of either accepting it immediately or extending the wait indefinitely.
+      if (refinementTimer === undefined) refinementTimer = setTimeout(() => finishBest(timedOut()), DEVICE_LOCATION_POLICY.coarseRefinementMs);
+    };
+    const onFailure = failure => {
+      if (settled) return;
+      if (failure?.code === 1) { finish(new Error('Location permission was denied. Please allow location access or enter your pickup address.')); return; }
+      if (failure?.code === 3) { finishBest(timedOut()); return; }
+      if (!watching) finish(unavailable());
+      else lastFailure = unavailable(); // Temporary unavailability may recover.
+    };
     try {
-      geolocation.getCurrentPosition(position => {
-        try { finish(null, normalizeDevicePosition(position)); } catch (failure) { finish(failure); }
-      }, failure => {
-        finish(failure?.code === 1
-          ? new Error('Location permission was denied. Please allow location access or enter your pickup address.')
-          : failure?.code === 3 ? timedOut() : unavailable());
-      }, { enableHighAccuracy: true, maximumAge: 0, timeout: DEVICE_LOCATION_POLICY.timeoutMs });
+      const options = { enableHighAccuracy: true, maximumAge: 0, timeout: DEVICE_LOCATION_POLICY.timeoutMs };
+      if (watching) {
+        watchId = geolocation.watchPosition(onPosition, onFailure, options);
+        watchAssigned = true;
+        // Test providers and some native wrappers can call back synchronously,
+        // before returning the watch handle needed for cleanup.
+        if (settled) stopWatching();
+      } else geolocation.getCurrentPosition(onPosition, onFailure, options);
     } catch { finish(unavailable()); }
   });
 }

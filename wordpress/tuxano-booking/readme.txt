@@ -4,7 +4,7 @@ Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.4.0
+Stable tag: 2.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ extras and gratuity, private submissions, customer/admin emails and retention.
 No payment gateway is included. Requests require manual availability review.
 
 == Installation ==
-1. Upload tuxano-booking-2.4.0.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.4.1.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
@@ -101,6 +101,13 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+
+= 2.4.1 =
+* Wait briefly for better browser GPS/Wi-Fi readings and cancel tracking reliably.
+* Open an interactive correction map automatically for approximate device positions in quick and main forms.
+* Keep approximate estimates separate from confirmed pickups; require a deliberate exact map choice.
+* Transfer confirmed quick-map coordinates to a fresh server-quoted main booking.
+
 
 = 2.4.0 =
 * Automatically fill reverse-geocoded addresses for accurate current locations, with safe fallback.

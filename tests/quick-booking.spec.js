@@ -239,3 +239,29 @@ test('multiple quick forms use independent fields while sharing one fresh config
   await expect(cards.nth(1).getByLabel('Pickup Location', { exact: true })).toHaveValue('Canonical Pickup, New York, USA');
   expect(controls.get(page).sessions).toBe(1);
 });
+
+test('an approximate GPS estimate can be corrected on the quick map and hands off exact confirmed coordinates to a fresh main quote', async ({ page }) => {
+  await prepareQuick(page);
+  await page.evaluate(() => { Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 100000 }, timestamp: Date.now() }); } } }); });
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use this pickup point', exact: true })).toBeDisabled();
+  await page.evaluate(() => window.__mapPickerMock.click(41.8822, -87.6244));
+  await expect(page.getByRole('button', { name: 'Use this pickup point', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Use this pickup point', exact: true }).click();
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Map-selected pickup (41.88220, -87.62440)');
+  const frame = await openBooking(page);
+  await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
+  const control = controls.get(page);
+  expect(control.sessions).toBe(2);
+  expect(control.routes).toHaveLength(1);
+  expect(control.routes[0].headers['x-tuxano-session']).toBe('2'.repeat(64));
+  expect(control.routes[0].body).toEqual({ origin: { latitude: 41.8822, longitude: -87.6244 }, destination: { placeId: 'test-BetaDropoff' }, stops: [] });
+  expect(new URL(page.url()).search).toBe('?target=1');
+  expect(new URL(page.url()).hash).toBe('');
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('tuxano-quick-trip-v1:')))).toEqual([]);
+  await frame.getByRole('button', { name: /Edit Trip/i }).click();
+  await expect(frame.getByLabel('Pickup location', { exact: true })).toHaveValue('Map-selected pickup (41.88220, -87.62440)');
+  await expect(frame.getByLabel('Drop-off location', { exact: true })).toHaveValue('Canonical Destination, Queens, USA');
+  await expect(frame.getByText(/Manually selected map point: 41\.88220, -87\.62440/)).toBeVisible();
+});

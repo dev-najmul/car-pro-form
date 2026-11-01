@@ -1,4 +1,4 @@
-import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, DEVICE_LOCATION_POLICY, normalizeDevicePosition, requestDeviceLocation, assertSameCountry, countryCodeOf } from "./maps.js";
+import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, normalizeDevicePosition, requestDeviceLocation, assertSameCountry, countryCodeOf } from "./maps.js";
 import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
 import { COUNTRY_NAMES } from "./countries.js";
@@ -44,6 +44,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   let availabilityGeneration = 0, availabilityController = null, availabilityDialogClose = null, pendingAvailabilityAck = "";
   let restoringPlaces = false;
   let deviceLocation = { status: "idle", candidate: null, message: "" };
+  let deviceLocationController = null;
   let pickupMapCleanup;
   let pickupZone = null, pickupZoneController = null, hoursFeedback = "";
   const fieldErrors = new Map();
@@ -606,7 +607,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (deviceLocation.status === "idle" || (deviceLocation.status === "map" ? mapTarget() !== fieldId : fieldId !== "pickup")) return "";
     if (deviceLocation.status === "map") {
       const label = mapFieldLabel(fieldId), searchId = fieldId === "pickup" ? "pickup-map-search" : "map-search-" + fieldId.replace(/[^a-zA-Z0-9_-]/g, "-");
-      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4><p>Search to preview an address, then use this map point to add it. You can also choose a suggestion or move the pin before confirming.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button><button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
+      return `<section class="device-location-panel pickup-map-picker" data-map-picker data-testid="${fieldId === "pickup" ? "pickup-map-picker" : e(fieldId.replace(":", "-") + "-map-picker")}" aria-label="Choose ${label} on map"><h4>CHOOSE ${label.toUpperCase()} ON MAP</h4>${deviceLocation.message ? `<p class="device-location-notice" role="status" data-device-estimate-warning>${e(deviceLocation.message)}</p><p class="device-location-context" data-device-estimate-context hidden></p>` : ""}<p>Search to preview an address, then use this map point to add it. You can also choose a suggestion or move the pin before confirming.</p><label class="map-search-label" for="${searchId}">Search map for ${label}</label><div class="location-input"><input id="${searchId}" class="input" data-map-search aria-label="Search map for ${label}" placeholder="Search city, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading Google Maps…</p><div class="pickup-map-frame"><div data-pickup-map data-location-map class="pickup-map-canvas" aria-label="${label} point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon("pin")}</span></div><div data-map-selection aria-live="polite"></div><div class="device-location-actions"><button type="button" class="btn primary" data-action="use-map-location" disabled>Use this map point</button><button type="button" class="text-link" data-action="choose-map" data-map-field="${e(fieldId)}">Reload map</button>${deviceLocation.estimate ? '<button type="button" class="text-link" data-action="locate">Try location again</button>' : ""}<button type="button" class="text-link" data-action="cancel-device-location">Cancel map selection</button></div></section>`;
     }
     const candidate = deviceLocation.candidate;
     const url = candidate ? googlePlaceUrl(candidate) : "";
@@ -625,6 +626,8 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (!panel || deviceLocation.status !== "map") return;
     const candidate = deviceLocation.candidate || deviceLocation.mapPreview;
     const previewOnly = !deviceLocation.candidate && Boolean(deviceLocation.mapPreview);
+    const estimateContext = panel.querySelector('[data-device-estimate-context]');
+    if (estimateContext && candidate) estimateContext.hidden = true;
     panel.querySelector('[data-action="use-map-location"]').disabled = !candidate;
     panel.querySelector('[data-map-selection]').innerHTML = candidate ? `<p class="device-location-context">${e(candidate.text)}</p><p>${previewOnly ? "Previewed address — not yet added" : candidate.placeId ? "Address shown on map" : "Selected pin"}: ${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}. Check the surroundings, then use this map point to confirm.</p><a href="${e(googlePlaceUrl(candidate))}" target="_blank" rel="noopener noreferrer">View ${previewOnly ? "previewed" : "selected"} ${candidate.placeId ? "place" : "pin"} in Google Maps</a>${candidate.nearbyName ? `<p>Nearby landmark, not an exact address.</p>${attributionsMarkup(candidate.attributions || [])}` : ""}${candidate.placeId && !previewOnly ? attributionsMarkup(candidate.attributions || []) : ""}` : '<p>No point selected yet. Search for an address, choose a suggestion, or tap the map.</p>';
   }
@@ -683,9 +686,11 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   }
   function choosePickupMap(fieldId = "pickup") {
     if (fieldId.startsWith("stop:") && !state.trip.stops.some(stop => stop.id === fieldId.slice(5))) return;
-    const initial = (mapTarget() === fieldId ? deviceLocation.candidate : null) || mapFieldPoint(fieldId);
+    deviceLocationController?.abort(); deviceLocationController = null;
+    const previous = deviceLocation.status === "map" && mapTarget() === fieldId ? deviceLocation : null;
+    const initial = (mapTarget() === fieldId ? deviceLocation.candidate : null) || previous?.mapInitial || mapFieldPoint(fieldId);
     ++locationGeneration;
-    deviceLocation = { status: "map", fieldId, candidate: null, mapInitial: initial, message: "" };
+    deviceLocation = { status: "map", fieldId, candidate: null, mapInitial: initial, message: previous?.message || "", estimate: previous?.estimate };
     refreshDeviceLocation();
   }
   function useMapLocation() {
@@ -696,23 +701,35 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     commitMapPlace(fieldId, candidate, generation);
   }
   function cancelDeviceLocation() {
+    deviceLocationController?.abort(); deviceLocationController = null;
     ++locationGeneration;
     deviceLocation = { status: "idle", candidate: null, message: "" };
     refreshDeviceLocation();
   }
   async function detectDeviceLocation() {
+    deviceLocationController?.abort();
+    const controller = new AbortController(); deviceLocationController = controller;
     const generation = ++locationGeneration, navigation = navigationGeneration, originalState = state;
     const pickupBefore = state.trip.pickup;
     const current = () => generation === locationGeneration && navigation === navigationGeneration && state === originalState && step === 0 && state.trip.pickup === pickupBefore;
     deviceLocation = { status: "locating", candidate: null, message: "Requesting your current location. Allow location access in your browser to fill your pickup address." };
     refreshDeviceLocation();
     try {
-      const point = await requestDeviceLocation();
+      const point = await requestDeviceLocation(undefined, { signal: controller.signal });
       if (!current()) return;
       const candidate = { ...point, text: "Detected coordinates — address unavailable", attributions: [] };
       if (!point.precise) {
-        deviceLocation = { status: "coarse", candidate, message: `Your browser only provided an approximate position (within ${accuracyLabel(point.accuracyMeters)}). Automatic pickup needs accuracy within ${DEVICE_LOCATION_POLICY.maxAccuracyMeters} m. On a PC this may be an estimate in another city. Choose pickup on map below to search your correct city and set an exact pin, or enter your address above.` };
-        refreshDeviceLocation(); return;
+        const initial = { ...candidate, source: "device-estimate" };
+        deviceLocation = { status: "map", fieldId: "pickup", candidate: null, mapInitial: initial, estimate: point, message: `Your browser found an approximate area (within ${accuracyLabel(point.accuracyMeters)}). Tap your exact pickup on the map or search an address, then confirm.` };
+        refreshDeviceLocation();
+        announce("Choose your exact pickup on the map. The approximate device position has not changed your pickup.");
+        try {
+          const address = await maps.reverseGeocode(point);
+          if (!current() || deviceLocation.status !== "map" || deviceLocation.mapInitial !== initial || deviceLocation.candidate || deviceLocation.mapPreview || app.querySelector('[data-map-search]')?.value.trim()) return;
+          const context = app.querySelector('[data-device-estimate-context]');
+          if (context) { context.textContent = `Approximate area shown: ${address.text}`; context.hidden = false; }
+        } catch { /* Map selection remains available without a street label. */ }
+        return;
       }
       deviceLocation = { status: "resolving", candidate, message: "Finding the address for your current location…" };
       refreshDeviceLocation();
@@ -738,6 +755,8 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       if (!current()) return;
       deviceLocation = { status: "error", candidate: null, message: failure.message || "Your device could not determine a reliable location. Please search for your pickup address." };
       refreshDeviceLocation();
+    } finally {
+      if (deviceLocationController === controller) deviceLocationController = null;
     }
   }
   function useDeviceLocation(automatic = false) {
@@ -1225,6 +1244,9 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     document.querySelector("#main")?.focus({ preventScroll: true });
   }
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  window.addEventListener("pagehide", () => {
+    deviceLocationController?.abort(); deviceLocationController = null;
+  });
   function go(index, replace = false) {
     if (submitting) return;
     if (index < 0 || index > 5) return;
@@ -1450,6 +1472,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   }
   function validate() {
     if (restoringPlaces) { error("Please wait while your selected locations are restored."); return false; }
+    if (step === 0 && deviceLocation.status === "map") { error("Confirm the location on the map, or cancel map selection to keep the existing trip."); return false; }
     updateValidity();
     const form = app.querySelector("form");
     if (!showInvalidFields(form)) return false;

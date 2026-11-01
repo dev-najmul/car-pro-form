@@ -27,6 +27,12 @@ function pointOf(point, pickup, now) {
     // Google labels, country components, route metrics and prices are restored.
     return { placeId: point.placeId, query };
   }
+  if (pickup && point.source === 'map') {
+    if (Object.hasOwn(point, 'accuracyMeters') || Object.hasOwn(point, 'capturedAt') || !Number.isFinite(point.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point.longitude) || Math.abs(point.longitude) > 180 || !Number.isFinite(point.confirmedAt) || point.confirmedAt <= 0 || point.confirmedAt > now + 5000) throw new Error('Choose and confirm a valid pickup point on the map.');
+    // This is a deliberate map selection, not a GPS accuracy claim. The
+    // destination obtains its own server route/zone/price before step 2.
+    return { source: 'map', query, latitude: point.latitude, longitude: point.longitude, confirmedAt: point.confirmedAt };
+  }
   if (!pickup || point.source !== 'device') throw new Error('Choose a valid pickup or drop-off location.');
   const fresh = normalizeDevicePosition({ coords: { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracyMeters }, timestamp: point.capturedAt }, now);
   if (!fresh.precise || !Number.isFinite(point.confirmedAt) || point.confirmedAt < point.capturedAt - 5000 || point.confirmedAt > now + 5000 || now - point.confirmedAt > DEVICE_LOCATION_POLICY.maxAgeMs) throw new Error('Your current location needs a fresh confirmation. Detect it again or search for an address.');

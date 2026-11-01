@@ -1,5 +1,6 @@
 import { MapsClient, mountAutocomplete, assertSameCountry, countryCodeOf, requestDeviceLocation, normalizeDevicePosition } from './maps.js';
 import { createQuickHandoff, quickDestination, quickWebsiteClock, validateQuickPickupTime } from './quick-handoff.js';
+import { mountPickupMap } from './pickup-map.js';
 
 const sessions = new Map();
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -60,6 +61,7 @@ async function initialize(container) {
     const output = form.querySelector('.tuxano-quick-booking-error');
     const deviceBox = form.querySelector('[data-quick-device]');
     let service = 'transfer', locating = 0, deviceCandidate = null, navigating = false;
+    let locatingController = null, deviceMapCleanup = null, deviceMapInitial = null;
     let pickupTimezone = null, timezoneGeneration = 0, timezoneController = null, timezonePromise = null;
     const timezoneOutput = form.querySelector('[data-quick-timezone]');
     const showError = message => { output.textContent = message; output.hidden = !message; };
@@ -135,7 +137,49 @@ async function initialize(container) {
       event.preventDefault(); syncHours(true);
     });
     syncHours();
-    const clearDevice = () => { ++locating; deviceCandidate = null; deviceBox.replaceChildren(); deviceBox.hidden = true; };
+    const clearDevice = () => {
+      ++locating; locatingController?.abort(); locatingController = null;
+      deviceMapCleanup?.(); deviceMapCleanup = null; deviceMapInitial = null;
+      deviceCandidate = null; deviceBox.replaceChildren(); deviceBox.hidden = true;
+      const locate = form.querySelector('[data-quick-locate]');
+      if (locate && !navigating) { locate.disabled = false; locate.removeAttribute('aria-busy'); }
+    };
+    const applyPickup = point => {
+      const query = (point.query || point.text).slice(0, 256).replace(/[\uD800-\uDBFF]$/u, '').trim();
+      points.pickup = { ...point, query }; fields.pickup.value = point.text; queries.pickup = query;
+      syncField(fields.pickup); fields.pickup.setCustomValidity(''); fields.pickup.removeAttribute('aria-invalid');
+      clearDevice(); refreshPickupTimezone(); showError('');
+    };
+    const openDeviceMap = point => {
+      const generation = locating;
+      deviceMapInitial = { latitude: point.latitude, longitude: point.longitude, accuracyMeters: point.accuracyMeters };
+      const accuracy = point.accuracyMeters >= 1000 ? `${(point.accuracyMeters / 1000).toFixed(1)} km` : `${Math.ceil(point.accuracyMeters)} m`;
+      deviceBox.innerHTML = `<section class="tuxano-quick-booking-map" aria-label="Confirm pickup on map"><h3>CONFIRM YOUR PICKUP</h3><p>Your browser found an approximate area (within ${accuracy}). Search for your address or tap the map to set your exact pickup.</p><p data-quick-estimate-context hidden></p><label class="tuxano-quick-booking-map-label" for="${id}-map-search">Search for your pickup address</label><div class="location-input tuxano-quick-booking-map-search"><input id="${id}-map-search" data-map-search aria-label="Search map for pickup" placeholder="City, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading your pickup map…</p><div class="tuxano-quick-booking-map-frame"><div data-location-map aria-label="Pickup point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon('pin')}</span></div><p data-quick-map-selection aria-live="polite">No pickup selected yet. Choose your exact point before confirming.</p><button type="button" data-quick-use-map disabled>Use this pickup point</button><div class="tuxano-quick-booking-map-actions"><button type="button" data-quick-reload-map>Reload map</button><button type="button" data-quick-cancel-map>Cancel location selection</button></div></section>`;
+      deviceBox.hidden = false; showError('');
+      const current = () => alive() && !navigating && generation === locating && deviceBox.isConnected;
+      let mapInteracted = false;
+      const mapSearch = deviceBox.querySelector('[data-map-search]');
+      const estimateContext = deviceBox.querySelector('[data-quick-estimate-context]');
+      mapSearch.addEventListener('input', () => { mapInteracted = true; estimateContext.hidden = true; });
+      const showChoice = candidate => {
+        if (!current()) return;
+        if (candidate) { mapInteracted = true; estimateContext.hidden = true; }
+        const output = deviceBox.querySelector('[data-quick-map-selection]');
+        output.textContent = candidate ? `Check this pickup: ${candidate.text}` : 'No pickup selected yet. Choose your exact point before confirming.';
+        deviceBox.querySelector('[data-quick-use-map]').disabled = !candidate;
+      };
+      deviceMapCleanup = mountPickupMap(deviceBox.querySelector('section'), {
+        client, initial: deviceMapInitial, fieldId: `${id}-device-pickup`, label: 'pickup',
+        onPick: showChoice, onPreview: showChoice,
+      });
+      // An estimated address is context only. It never populates the field,
+      // chooses a map point, or overrides a later visitor selection.
+      client.reverseGeocode(point).then(address => {
+        if (!current() || mapInteracted || mapSearch.value.trim()) return;
+        estimateContext.textContent = `Estimated area: ${address.text}. Confirm your actual pickup on the map.`;
+        estimateContext.hidden = false;
+      }).catch(() => {});
+    };
     const restoreNavigation = () => {
       if (!alive()) return;
       navigating = false; clearDevice();
@@ -143,6 +187,7 @@ async function initialize(container) {
       const locate = form.querySelector('[data-quick-locate]'); locate.disabled = false; locate.removeAttribute('aria-busy');
     };
     window.addEventListener('pageshow', event => { if (event.persisted) restoreNavigation(); });
+    window.addEventListener('pagehide', clearDevice);
     for (const input of form.querySelectorAll('[data-quick-picker] input')) {
       const field = input.closest('[data-quick-picker]');
       if (typeof input.showPicker !== 'function') continue;
@@ -209,14 +254,30 @@ async function initialize(container) {
         } catch (failure) { clearDevice(); showError(failure.message); }
         return;
       }
+      if (button.hasAttribute('data-quick-use-map')) {
+        const point = deviceMapCleanup?.confirmSelection?.();
+        if (!point) return;
+        if (!['map', 'map-place'].includes(point.source) || !Number.isFinite(point.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point.longitude) || Math.abs(point.longitude) > 180 || typeof point.text !== 'string' || !point.text.trim() || point.text.length > 1024) return;
+        applyPickup({ ...point, source: point.placeId ? 'map-place' : 'map', confirmedAt: Date.now() });
+        return;
+      }
+      if (button.hasAttribute('data-quick-reload-map')) {
+        const point = deviceMapInitial;
+        if (point) { clearDevice(); openDeviceMap(point); }
+        return;
+      }
+      if (button.hasAttribute('data-quick-cancel-map')) { clearDevice(); showError(''); return; }
       if (!button.hasAttribute('data-quick-locate')) return;
       clearDevice(); const generation = locating;
+      const controller = new AbortController(); locatingController = controller;
       button.disabled = true; button.setAttribute('aria-busy', 'true');
-      showError('Finding your current pickup address…');
+      showError('');
+      deviceBox.innerHTML = '<p role="status">Checking your current location… Allow location access if your browser asks.</p>';
+      deviceBox.hidden = false;
       try {
-        const point = await requestDeviceLocation();
+        const point = await requestDeviceLocation(undefined, { signal: controller.signal });
         if (!alive() || navigating || generation !== locating) return;
-        if (!point.precise) throw new Error('Your device returned an approximate position. Search for your exact pickup address instead.');
+        if (!point.precise) { openDeviceMap(point); return; }
         deviceCandidate = point;
         try {
           const address = await client.reverseGeocode(point);
@@ -225,19 +286,23 @@ async function initialize(container) {
           if (!fresh.precise) throw new Error('Your location is approximate. Search for your pickup address instead.');
           // Reverse geocoding supplies a readable label, never a replacement
           // destination. Routing keeps the exact device point and provenance.
-          const query = address.text.slice(0, 256).replace(/[\uD800-\uDBFF]$/u, '').trim();
-          points.pickup = { ...address, ...fresh, source: 'device', text: address.text, query, confirmedAt: Date.now() };
-          fields.pickup.value = address.text; queries.pickup = query;
-          syncField(fields.pickup); fields.pickup.setCustomValidity(''); fields.pickup.removeAttribute('aria-invalid');
-          clearDevice(); refreshPickupTimezone(); showError('');
+          applyPickup({ ...address, ...fresh, source: 'device', text: address.text, confirmedAt: Date.now() });
         } catch (failure) {
           if (!alive() || navigating || generation !== locating) return;
           deviceBox.innerHTML = `<p>Your device found a precise location, but its address could not be loaded. Check this point before using it: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} (accuracy within ${Math.ceil(point.accuracyMeters)}m).</p><button type="button" data-quick-use-device>Use this pickup location</button>`;
           deviceBox.hidden = false;
           showError(failure.message || 'The pickup address could not be loaded. Search for the address or check the detected point below.');
         }
-      } catch (failure) { if (alive() && generation === locating) showError(failure.message || 'Your location could not be detected. Search for your pickup address.'); }
-      finally { if (alive()) { button.disabled = false; button.removeAttribute('aria-busy'); } }
+      } catch (failure) {
+        if (alive() && generation === locating) {
+          deviceBox.replaceChildren(); deviceBox.hidden = true;
+          showError(failure.message || 'Your location could not be detected. Search for your pickup address.');
+        }
+      }
+      finally {
+        if (locatingController === controller) locatingController = null;
+        if (alive() && generation === locating) { button.disabled = false; button.removeAttribute('aria-busy'); }
+      }
     });
     const syncPicker = event => {
       const key = event.target.dataset.quickField;
@@ -259,6 +324,10 @@ async function initialize(container) {
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (navigating) return;
       showError('');
+      if (deviceMapCleanup) {
+        showError('Confirm your exact pickup on the map, or cancel location selection before checking prices.');
+        deviceBox.querySelector('[data-map-search]')?.focus(); return;
+      }
       for (const [key, input] of Object.entries(fields)) {
         input.setCustomValidity(!points[key] || input.value !== points[key].text ? 'Choose this location from the Google Maps suggestions.' : '');
       }

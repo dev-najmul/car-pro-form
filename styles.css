@@ -3946,6 +3946,7 @@ a {
 .device-location-panel h4 { margin: 0 0 8px; font-size: 13px; line-height: 1.5; font-weight: 600; }
 .device-location-panel p { margin: 8px 0; }
 .device-location-message { color: var(--muted); }
+.device-location-notice { padding: 10px 12px; border-left: 3px solid #b8842d; border-radius: 3px; background: #fff8e9; color: #62491e; }
 .device-location-context { font-weight: 500; }
 .device-location-panel dl { margin: 10px 0; }
 .device-location-panel dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin: 5px 0; }
