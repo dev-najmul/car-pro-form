@@ -256,6 +256,13 @@
   font-size: 12px;
 }
 [data-tuxano-quick-booking] .tuxano-quick-booking-device p { margin: 0 0 10px; color: inherit; font-size: 12px; line-height: 1.6; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion { min-width: 0; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion p { margin-bottom: 4px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion a { color: inherit; text-decoration: underline; overflow-wrap: anywhere; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion-actions > a,
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion-actions > button { display: inline-flex; align-items: center; min-height: 44px; margin: 0; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; text-align: left; box-shadow: none; cursor: pointer; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion .place-providers { color: var(--tq-muted); font-size: 10px; line-height: 1.6; }
 [data-tuxano-quick-booking] .tuxano-quick-booking-device > button,
 [data-tuxano-quick-booking] .tuxano-quick-booking-map > button,
 [data-tuxano-quick-booking] .tuxano-quick-booking-map-actions > button { min-height: 40px; width: 100%; margin: 0; padding: 9px 12px; border: 1px solid var(--tq-line); border-radius: 3px; color: var(--tq-ink); background: var(--tq-control); box-shadow: none; cursor: pointer; font-size: 12px; }

@@ -4,7 +4,7 @@ Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.4.1
+Stable tag: 2.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ extras and gratuity, private submissions, customer/admin emails and retention.
 No payment gateway is included. Requests require manual availability review.
 
 == Installation ==
-1. Upload tuxano-booking-2.4.1.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.4.2.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
@@ -79,20 +79,22 @@ an empty value uses the bundled wordmark. The email header background is #0a121f
 
 == External services and privacy ==
 Google Maps JavaScript/Places receive typed location searches and chosen points.
-Google Geocoding receives precise device coordinates after location permission to
-look up a pickup address; coarse positions are not silently accepted.
+After location permission, Google Geocoding/Places receive the detected point to
+look up its address or a nearby canonical suggested pickup. Suggestions are
+labelled and can be adjusted on the map; exact GPS is not claimed for estimates.
 Google Routes receives the ordered route from the WordPress server. The Routes
 key is never sent to the visitor. Google usage requires enabled APIs, billing
 and suitable key restrictions. Maps browser keys are public by design.
 Google terms: https://cloud.google.com/maps-platform/terms
 Google privacy: https://policies.google.com/privacy
-Optional device location is checked for accuracy and requires confirmation;
-PC network positions may be inaccurate. Users can choose an exact map point.
+Optional device location is checked for freshness and accuracy. Accurate fixes
+can fill an address directly; approximate fixes can fill a labelled nearby place.
+PC network positions may be inaccurate. Users can adjust or choose a map point.
 Contact/billing/passenger/itinerary details are stored privately and sent to
 configured mail recipients. Site operators must complete their privacy policy,
 review lawful retention and secure their hosting/backups/mail provider.
 WordPress privacy export/erase hooks and optional retention are provided.
-Live traffic is excluded; pickup time uses the WordPress site timezone.
+Live traffic is excluded; pickup time uses its geographic IANA timezone.
 
 == Data lifecycle ==
 Deactivation retains settings and bookings. Deleting the plugin retains them
@@ -101,6 +103,12 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+
+= 2.4.2 =
+* Fill a nearby real Google place/address when exact GPS is unavailable, in quick and main forms.
+* Show a compact suggested-pickup notice with an immediate map adjustment action.
+* Preserve canonical place identity and its actual coordinates, cancellation guards and fresh quick-to-main quoting.
+* Retain accurate GPS behavior and searchable-map fallback when no valid nearby place is available.
 
 = 2.4.1 =
 * Wait briefly for better browser GPS/Wi-Fi readings and cancel tracking reliably.

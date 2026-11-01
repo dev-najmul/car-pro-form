@@ -25,7 +25,7 @@ function pointOf(point, pickup, now) {
     if (typeof point.placeId !== 'string' || !/^[A-Za-z0-9_-]{3,512}$/.test(point.placeId) || Object.hasOwn(point, 'latitude') || Object.hasOwn(point, 'longitude')) throw new Error('Choose a valid Google location.');
     // Only the user query and Place identity travel between pages. Canonical
     // Google labels, country components, route metrics and prices are restored.
-    return { placeId: point.placeId, query };
+    return { placeId: point.placeId, query, ...(pickup && point.suggestedPickup === true ? { suggestedPickup: true } : {}) };
   }
   if (pickup && point.source === 'map') {
     if (Object.hasOwn(point, 'accuracyMeters') || Object.hasOwn(point, 'capturedAt') || !Number.isFinite(point.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point.longitude) || Math.abs(point.longitude) > 180 || !Number.isFinite(point.confirmedAt) || point.confirmedAt <= 0 || point.confirmedAt > now + 5000) throw new Error('Choose and confirm a valid pickup point on the map.');

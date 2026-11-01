@@ -13,11 +13,12 @@ const vehicles = [{ id: '104', name: 'CITY SEDAN', display: 'City Sedan', capaci
 const controls = new WeakMap();
 
 test.beforeEach(async ({ page, context }) => {
-  const control = { sessions: 0, routes: [], bookings: 0, errors: [], routeStatus: 200, mainSettings: {}, formCount: 1, holdRestore: false, holdRoute: false, routeResolvers: [] };
+  const control = { sessions: 0, routes: [], timezones: [], bookings: 0, errors: [], routeStatus: 200, mainSettings: {}, formCount: 1, holdRestore: false, holdRoute: false, routeResolvers: [] };
   controls.set(page, control);
   await context.addInitScript(() => {
-    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-AlphaPickup': 'US', 'test-BetaDropoff': 'US' } };
-    window.__placeCanonicalLabels = { 'test-AlphaPickup': 'Canonical Pickup, New York, USA', 'test-BetaDropoff': 'Canonical Destination, Queens, USA' };
+    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-AlphaPickup': 'US', 'test-BetaDropoff': 'US', 'nearby-chicago-pickup': 'US' }, locations: { 'nearby-chicago-pickup': { lat: 41.8831, lng: -87.6251 } } };
+    window.__placeCanonicalLabels = { 'test-AlphaPickup': 'Canonical Pickup, New York, USA', 'test-BetaDropoff': 'Canonical Destination, Queens, USA', 'nearby-chicago-pickup': 'Refreshed Chicago Pickup, Chicago, IL, USA' };
+    window.__nearbyPickupMock = { places: [] };
   });
   await context.route('https://maps.googleapis.com/maps/api/js?**', route => {
     const callback = new URL(route.request().url()).searchParams.get('callback');
@@ -30,7 +31,11 @@ test.beforeEach(async ({ page, context }) => {
   await context.route(restUrl + 'route', async route => {
     control.routes.push({ body: route.request().postDataJSON(), headers: await route.request().allHeaders() });
     if (control.holdRoute) await new Promise(resolve => control.routeResolvers.push(resolve));
-    await route.fulfill({ status: control.routeStatus, json: control.routeStatus === 200 ? metrics : { message: 'The configured route is unavailable. Please choose another destination.' } });
+    await route.fulfill({ status: control.routeStatus, json: control.routeStatus === 200 ? { ...metrics, ...(control.mainSettings.pickupTimezones ? { pickupTimezone: 'America/Chicago', pickupTimezoneLabel: 'Central Time' } : {}) } : { message: 'The configured route is unavailable. Please choose another destination.' } });
+  });
+  await context.route(restUrl + 'timezone', route => {
+    control.timezones.push({ point: route.request().postDataJSON(), token: route.request().headers()['x-tuxano-session'] });
+    return route.fulfill({ json: { timezone: 'America/Chicago', label: 'Central Time' } });
   });
   await context.route(restUrl + 'bookings', route => { control.bookings++; return route.abort(); });
   await context.route(origin + '/quick-test/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/quick-booking.css"><style>body{margin:0;padding:24px;background:linear-gradient(135deg,#183b3c,#a56242);min-height:100vh;box-sizing:border-box}button,input,select{font-family:serif}input{color:red}button{background:red}</style></head><body>${Array.from({ length: control.formCount }, (_, i) => `<div id="tuxano-quick-test-${i}" data-tuxano-quick-booking data-rest-url="${restUrl}" data-asset-url="${origin}/" data-booking-url="${bookingUrl}"><p>Loading…</p></div>`).join('')}<script type="module" src="/quick-booking.js"></script></body></html>` }));
@@ -264,4 +269,29 @@ test('an approximate GPS estimate can be corrected on the quick map and hands of
   await expect(frame.getByLabel('Pickup location', { exact: true })).toHaveValue('Map-selected pickup (41.88220, -87.62440)');
   await expect(frame.getByLabel('Drop-off location', { exact: true })).toHaveValue('Canonical Destination, Queens, USA');
   await expect(frame.getByText(/Manually selected map point: 41\.88220, -87\.62440/)).toBeVisible();
+});
+
+test('a suggested nearby quick pickup is freshly restored, time-zoned and quoted by canonical Place ID on the booking page', async ({ page }) => {
+  controls.get(page).mainSettings = { pickupTimezones: true };
+  await prepareQuick(page);
+  await page.evaluate(() => {
+    window.__nearbyPickupMock = { places: [{ id: 'nearby-chicago-pickup', displayName: 'Chicago Pickup', formattedAddress: 'Chicago Pickup, 123 State Street, Chicago, IL, USA', location: { lat: 41.8821, lng: -87.6235 }, addressComponents: [{ shortText: 'US', longText: 'United States', types: ['country'] }] }] };
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 100000 }, timestamp: Date.now() }); } } });
+  });
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Chicago Pickup, 123 State Street, Chicago, IL, USA');
+  await expect(page.locator('[data-quick-device]')).toContainText('Suggested pickup nearby.');
+  const frame = await openBooking(page);
+  await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
+  const control = controls.get(page);
+  expect(control.sessions).toBe(2);
+  expect(control.routes).toHaveLength(1);
+  expect(control.routes[0].headers['x-tuxano-session']).toBe('2'.repeat(64));
+  expect(control.routes[0].body).toEqual({ origin: { placeId: 'nearby-chicago-pickup' }, destination: { placeId: 'test-BetaDropoff' }, stops: [] });
+  expect(control.timezones).toEqual([{ point: { latitude: 41.8831, longitude: -87.6251 }, token: '2'.repeat(64) }]);
+  await expect(frame.locator('.vehicle-price strong').first()).toHaveText('$120USD');
+  await frame.getByRole('button', { name: /Edit Trip/i }).click();
+  await expect(frame.getByLabel('Pickup location', { exact: true })).toHaveValue('Refreshed Chicago Pickup, Chicago, IL, USA');
+  await expect(frame.locator('[data-suggested-pickup]')).toContainText('Suggested pickup nearby. Check or adjust on map.');
+  await expect(frame.getByLabel('Pickup location', { exact: true })).not.toHaveValue(/Device pickup/);
 });

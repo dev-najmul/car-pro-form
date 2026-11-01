@@ -6,6 +6,7 @@ const restUrl = origin + '/wp-json/tuxano-booking/v1/';
 const controls = new WeakMap();
 const date = '2030-11-18';
 const geoAddress = '312 Sype Dr, Carol Stream, IL 60188, USA';
+const nearbyAddress = 'Chicago Pickup, 123 State Street, Chicago, IL, USA';
 
 test.beforeEach(async ({ page, context }) => {
   const control = { errors: [], minHours: 3, maxHours: 24, timezones: false, timezoneStatus: 200, timezone: 'America/Chicago', timezoneLabel: 'Central Time', timezoneRequests: [], holdTimezone: false, timezoneResolvers: [], bookingPosts: 0, redirects: [] };
@@ -14,6 +15,7 @@ test.beforeEach(async ({ page, context }) => {
   await context.addInitScript(address => {
     window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-Dropoff': 'US', 'test-Pickup': 'US', 'test-Other': 'US' }, locations: { 'test-Pickup': { lat: 41.8818, lng: -87.6232 }, 'test-Other': { lat: 40.7128, lng: -74.006 } } };
     window.__geocodeMock = { results: [{ formatted_address: address, geometry: { location: { lat: 41.8819, lng: -87.6233 } }, types: ['street_address'], address_components: [{ short_name: 'US', long_name: 'United States', types: ['country'] }] }] };
+    window.__nearbyPickupMock = { places: [] };
     Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 80 }, timestamp: Date.now() }); } } });
   }, geoAddress);
   await context.route('https://maps.googleapis.com/maps/api/js?**', route => {
@@ -113,7 +115,7 @@ test('approximate GPS opens a corrective map and a missing precise address offer
   await visit(page);
   await page.evaluate(() => { Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 100000 }, timestamp: Date.now() }); } } }); });
   await page.getByRole('button', { name: 'Use current location' }).click();
-  await expect(page.locator('[data-quick-device]')).toContainText('approximate area');
+  await expect(page.locator('[data-quick-device]')).toContainText('CHOOSE YOUR PICKUP');
   await expect(page.getByRole('button', { name: 'Use this pickup point', exact: true })).toBeDisabled();
   await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('');
   await page.evaluate(() => {
@@ -207,7 +209,13 @@ test.describe('phone quick booking updated controls', () => {
 async function coarseLocation(page) {
   await page.evaluate(() => { Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 100000 }, timestamp: Date.now() }); } } }); });
   await page.getByRole('button', { name: 'Use current location', exact: true }).click();
-  await expect(page.locator('[data-quick-device]')).toContainText('approximate area');
+  await expect(page.locator('[data-quick-device]')).toContainText('CHOOSE YOUR PICKUP');
+}
+async function holdMapContext(page) {
+  await coarseLocation(page);
+  await page.evaluate(() => { window.__geocodeMock.hold = true; });
+  await page.getByRole('button', { name: 'Reload map', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__mapsMock.pending.filter(entry => entry.kind === 'geocode').length)).toBe(1);
 }
 async function mapPoint(page, latitude = 41.8822, longitude = -87.6244) {
   await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
@@ -221,6 +229,101 @@ async function finishFromCurrentPickup(page) {
   await page.waitForURL(url => url.pathname === '/quick-destination/');
   return page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('tuxano-quick-trip-v1:')))).trip.pickup);
 }
+async function nearbyPickup(page, options = {}) {
+  await page.evaluate(({ address, options }) => {
+    window.__nearbyPickupMock = { ...options, places: [{ id: 'nearby-chicago-pickup', displayName: 'Chicago Pickup', formattedAddress: address, location: { lat: 41.8821, lng: -87.6235 }, addressComponents: [{ shortText: 'US', longText: 'United States', types: ['country'] }], attributions: [{ provider: 'Nearby Map Provider', providerURI: 'https://example.com/nearby-attribution' }] }] };
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: options.precise ? 80 : 100000 }, timestamp: Date.now() }); } } });
+  }, { address: nearbyAddress, options });
+  await page.getByRole('button', { name: 'Use current location', exact: true }).click();
+}
+
+test('an approximate device position fills a real nearby pickup and hands off its canonical identity', async ({ page }) => {
+  controls.get(page).timezones = true;
+  await visit(page); await nearbyPickup(page);
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+  await expect(page.locator('[data-quick-device]')).toContainText('Suggested pickup nearby. Check or adjust on map.');
+  await expect(page.locator('[data-quick-device]')).not.toContainText(/100\.0|precise|accuracy|approximate area/);
+  await expect(page.locator('[data-location-map]')).toHaveCount(0);
+  const link = page.getByRole('link', { name: 'View on Google Maps', exact: true });
+  expect(new URL(await link.getAttribute('href')).searchParams.get('query_place_id')).toBe('nearby-chicago-pickup');
+  await expect(page.getByRole('link', { name: 'Nearby Map Provider', exact: true })).toHaveAttribute('href', 'https://example.com/nearby-attribution');
+  await expect(page.locator('[data-quick-timezone]')).toHaveText('Pickup time: Central Time.');
+  expect(controls.get(page).timezoneRequests[0].point).toEqual({ latitude: 41.8821, longitude: -87.6235 });
+  await page.locator('.tuxano-quick-booking').screenshot({ path: 'wordpress-test-results/gps-242/quick-nearby-desktop.png' });
+  expect(await finishFromCurrentPickup(page)).toEqual({ placeId: 'nearby-chicago-pickup', query: nearbyAddress, suggestedPickup: true });
+});
+
+test('a nearby canonical pickup also recovers when precise GPS has no readable address', async ({ page }) => {
+  await visit(page); await page.evaluate(() => { window.__geocodeMock.fail = true; });
+  await nearbyPickup(page, { precise: true });
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+  await expect(page.locator('[data-quick-device]')).toContainText('Suggested pickup nearby.');
+  await expect(page.getByRole('button', { name: 'Use this pickup location', exact: true })).toHaveCount(0);
+});
+
+for (const failure of [false, true]) {
+  test(`late nearby ${failure ? 'failure' : 'success'} cannot replace a manually selected pickup or reopen its map`, async ({ page }) => {
+    await visit(page); await nearbyPickup(page, { hold: true, fail: failure });
+    await expect.poll(() => page.evaluate(() => window.__mapsMock.pending.filter(entry => entry.kind === 'nearby').length)).toBe(1);
+    await choose(page, 'pickup', 'Other');
+    await page.evaluate(() => window.__mapsMock.pending.find(entry => entry.kind === 'nearby').resolve());
+    await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Other');
+    await expect(page.locator('[data-quick-device]')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Use current location', exact: true })).toBeEnabled();
+  });
+}
+
+test('unavailable nearby and address providers leave a friendly usable map instead of inventing a pickup', async ({ page }) => {
+  await visit(page); await page.evaluate(() => { window.__nearbyPickupMock = { fail: true }; window.__geocodeMock.fail = true; });
+  await coarseLocation(page);
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('');
+  await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
+  await expect(page.locator('[data-quick-device]')).not.toContainText(/REQUEST_DENIED|100\.0|approximate area/);
+  await expect(page.getByRole('button', { name: 'Use this pickup point', exact: true })).toBeDisabled();
+  await mapPoint(page); await page.getByRole('button', { name: 'Use this pickup point', exact: true }).click();
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Map-selected pickup (41.88220, -87.62440)');
+});
+
+test('adjusting a suggested pickup preserves its canonical pin and deliberate confirmation clears the suggestion', async ({ page }) => {
+  await visit(page); await nearbyPickup(page);
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+  await page.getByRole('button', { name: 'Adjust pickup on map', exact: true }).click();
+  await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
+  const initial = await page.evaluate(() => { const map = window.__mapPickerMock.maps.at(-1); map.emit('idle'); return map.options; });
+  expect(initial.center).toEqual({ lat: 41.8821, lng: -87.6235 }); expect(initial.zoom).toBe(17);
+  await expect(page.getByRole('button', { name: 'Use this pickup point', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Use this pickup point', exact: true }).click();
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+  await expect(page.locator('[data-quick-device]')).toBeHidden();
+  expect(await finishFromCurrentPickup(page)).toEqual({ placeId: 'nearby-chicago-pickup', query: nearbyAddress });
+});
+
+test('cancelling adjustment restores the suggestion and manual typing removes it', async ({ page }) => {
+  await visit(page); await nearbyPickup(page);
+  await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+  await page.getByRole('button', { name: 'Adjust pickup on map', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel location selection', exact: true }).click();
+  await expect(page.locator('[data-quick-device]')).toContainText('Suggested pickup nearby.');
+  await page.getByLabel('Pickup Location', { exact: true }).fill('My actual pickup');
+  await expect(page.locator('[data-quick-device]')).toBeHidden();
+});
+
+test.describe('phone suggested nearby pickup', () => {
+  test.use({ viewport: { width: 320, height: 800 }, isMobile: true, hasTouch: true });
+  test('compact suggestion and map adjustment fit the phone and accept a corrected point', async ({ page }) => {
+    await visit(page); await nearbyPickup(page);
+    await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(nearbyAddress);
+    await expect(page.locator('[data-location-map]')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.locator('.tuxano-quick-booking').screenshot({ path: 'wordpress-test-results/gps-242/quick-nearby-phone.png' });
+    await page.getByRole('button', { name: 'Adjust pickup on map', exact: true }).tap();
+    await mapPoint(page, 41.8825, -87.625);
+    await page.getByRole('button', { name: 'Use this pickup point', exact: true }).tap();
+    await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Map-selected pickup (41.88250, -87.62500)');
+    await expect(page.locator('[data-quick-device]')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  });
+});
 
 test('100 km estimate is only map context and an explicit corrected pin transfers without fake GPS accuracy', async ({ page }) => {
   await visit(page); await coarseLocation(page);
@@ -253,9 +356,7 @@ test('a named address on the approximate-location map retains its canonical Plac
 
 for (const action of ['cancel', 'edit']) {
   test(`late approximate address context cannot reopen a ${action === 'cancel' ? 'cancelled map' : 'map after pickup editing'}`, async ({ page }) => {
-    await visit(page); await page.evaluate(() => { window.__geocodeMock.hold = true; });
-    await coarseLocation(page);
-    await expect.poll(() => page.evaluate(() => window.__mapsMock.pending.filter(entry => entry.kind === 'geocode').length)).toBe(1);
+    await visit(page); await holdMapContext(page);
     if (action === 'cancel') await page.getByRole('button', { name: 'Cancel location selection', exact: true }).click();
     else await choose(page, 'pickup', 'Other');
     await page.evaluate(() => window.__mapsMock.pending.find(entry => entry.kind === 'geocode').resolve());
@@ -304,9 +405,7 @@ test.describe('phone approximate GPS correction', () => {
 
 for (const action of ['search', 'pin']) {
   test(`late estimated-area address stays hidden after the visitor chooses a different ${action}`, async ({ page }) => {
-    await visit(page); await page.evaluate(() => { window.__geocodeMock.hold = true; });
-    await coarseLocation(page);
-    await expect.poll(() => page.evaluate(() => window.__mapsMock.pending.filter(entry => entry.kind === 'geocode').length)).toBe(1);
+    await visit(page); await holdMapContext(page);
     if (action === 'search') {
       const input = page.getByLabel('Search map for pickup', { exact: true });
       await expect(input).toBeEditable(); await input.fill('Other');

@@ -355,7 +355,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     const safePlace = (point, fallback) => {
       if (!point || typeof point !== "object" || Array.isArray(point)) return null;
       const text = typeof point.text === "string" ? point.text.slice(0, 1024) : fallback;
-      if (typeof point.placeId === "string" && point.placeId.length > 0 && point.placeId.length <= 512) return { placeId: point.placeId, text };
+      if (typeof point.placeId === "string" && point.placeId.length > 0 && point.placeId.length <= 512) return { placeId: point.placeId, text, ...(point.suggestedPickup === true ? { suggestedPickup: true } : {}) };
       // A saved device coordinate is not a newly verified current pickup.
       // Keep manually selected Place IDs, but require fresh device confirmation.
       return null;
@@ -434,9 +434,9 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (runtime) return; // WordPress drafts and receipts never persist personal information in browser storage.
     try {
       const snapshot = structuredClone(state);
-      // Keep only place IDs and the user's own queries across reload. Google
+      // Keep only place IDs, suggestion hints and the user's queries across reload. Google
       // formatted addresses, provider attributions, and route metrics stay in memory.
-      const persistPlace = (point, query) => point?.placeId ? { placeId: point.placeId, text: query } : point ? { latitude: point.latitude, longitude: point.longitude, text: query } : null;
+      const persistPlace = (point, query) => point?.placeId ? { placeId: point.placeId, text: query, ...(point.suggestedPickup === true ? { suggestedPickup: true } : {}) } : point ? { latitude: point.latitude, longitude: point.longitude, text: query } : null;
       if (!DEMO_MODE) {
         for (const key of ["pickup", "dropoff"]) {
           const query = state.trip[key + "Query"] || "";
@@ -653,7 +653,9 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (!place || !Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
     try { if (fieldId !== "pickup") assertSameCountry([state.trip.pickupPlace, place]); } catch (failure) { announce(failure.message); return; }
     cancelDeviceLocation(); dirty(); invalidateRoute();
-    if (!assignLocation(fieldId, { ...place, confirmedAt: Date.now() })) return;
+    const confirmed = { ...place, confirmedAt: Date.now() };
+    delete confirmed.suggestedPickup;
+    if (!assignLocation(fieldId, confirmed)) return;
     save(); render(); calculateRoute();
     app.querySelector(`[data-place-field="${CSS.escape(fieldId)}"]`)?.focus({ preventScroll: true });
     announce(`${mapFieldLabel(fieldId)} selected from Google Maps.`);
@@ -688,7 +690,8 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (fieldId.startsWith("stop:") && !state.trip.stops.some(stop => stop.id === fieldId.slice(5))) return;
     deviceLocationController?.abort(); deviceLocationController = null;
     const previous = deviceLocation.status === "map" && mapTarget() === fieldId ? deviceLocation : null;
-    const initial = (mapTarget() === fieldId ? deviceLocation.candidate : null) || previous?.mapInitial || mapFieldPoint(fieldId);
+    let initial = (mapTarget() === fieldId ? deviceLocation.candidate : null) || previous?.mapInitial || mapFieldPoint(fieldId);
+    if (initial?.placeId && initial.suggestedPickup === true) initial = { ...initial, source: "map-place" };
     ++locationGeneration;
     deviceLocation = { status: "map", fieldId, candidate: null, mapInitial: initial, message: previous?.message || "", estimate: previous?.estimate };
     refreshDeviceLocation();
@@ -706,6 +709,13 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     deviceLocation = { status: "idle", candidate: null, message: "" };
     refreshDeviceLocation();
   }
+  function useSuggestedPickup(place) {
+    if (!place || typeof place.placeId !== "string" || !/^[A-Za-z0-9_-]{3,512}$/.test(place.placeId) || typeof place.text !== "string" || !place.text.trim() || !Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) throw new Error("Choose a valid pickup address.");
+    cancelDeviceLocation(); dirty(); invalidateRoute();
+    assignLocation("pickup", { ...place, suggestedPickup: true });
+    save(); render(); calculateRoute();
+    announce("Nearby pickup suggested. Check the address or adjust it on the map.");
+  }
   async function detectDeviceLocation() {
     deviceLocationController?.abort();
     const controller = new AbortController(); deviceLocationController = controller;
@@ -719,6 +729,13 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       if (!current()) return;
       const candidate = { ...point, text: "Detected coordinates — address unavailable", attributions: [] };
       if (!point.precise) {
+        deviceLocation = { status: "resolving", candidate: null, message: "Finding a nearby pickup address…" };
+        refreshDeviceLocation();
+        try {
+          const place = await maps.suggestDevicePickup(point, { signal: controller.signal });
+          if (!current()) return;
+          useSuggestedPickup(place); return;
+        } catch { if (!current() || controller.signal.aborted) return; }
         const initial = { ...candidate, source: "device-estimate" };
         deviceLocation = { status: "map", fieldId: "pickup", candidate: null, mapInitial: initial, estimate: point, message: `Your browser found an approximate area (within ${accuracyLabel(point.accuracyMeters)}). Tap your exact pickup on the map or search an address, then confirm.` };
         refreshDeviceLocation();
@@ -741,6 +758,11 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
         return;
       } catch { /* An unavailable address never becomes a guessed street. */ }
       if (!current()) return;
+      try {
+        const place = await maps.suggestDevicePickup(point, { signal: controller.signal });
+        if (!current()) return;
+        useSuggestedPickup(place); return;
+      } catch { if (!current() || controller.signal.aborted) return; }
       let description, lookupFailed = false;
       try { description = await maps.describeDeviceLocation(point); } catch { lookupFailed = true; }
       if (!current()) return;
@@ -786,7 +808,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (!selectedPoint(point, value)) return "";
     const label = stop ? `stop ${stopIndex + 1}` : `${fieldId} location`;
     const url = googlePlaceUrl(point);
-    return `<span class="selected-location-label">Selected ${e(label)}</span><span class="selected-location-address">${e(point.text)}</span>${point.source === "device" ? `<span class="selected-location-label">Device coordinates: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} · accuracy within ${accuracyLabel(point.accuracyMeters)}. Confirmed ${e(new Date(point.confirmedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))}.</span>` : point.source === "map" ? `<span class="selected-location-label">Manually selected map point: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}. Nearby names are approximate context.</span>` : ""}${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="View selected ${e(label)} in Google Maps">View place in Google Maps</a>` : ""}`;
+    return `<span class="selected-location-label">Selected ${e(label)}</span><span class="selected-location-address">${e(point.text)}</span>${fieldId === "pickup" && point.suggestedPickup === true ? `<span class="pickup-suggestion-notice" data-suggested-pickup>Suggested pickup nearby. Check or adjust on map. <button type="button" class="text-link" data-action="choose-map" data-map-field="pickup">Adjust on map</button></span>` : ""}${point.source === "device" ? `<span class="selected-location-label">Device coordinates: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} · accuracy within ${accuracyLabel(point.accuracyMeters)}. Confirmed ${e(new Date(point.confirmedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))}.</span>` : point.source === "map" ? `<span class="selected-location-label">Manually selected map point: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}. Nearby names are approximate context.</span>` : ""}${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="View selected ${e(label)} in Google Maps">View place in Google Maps</a>` : ""}${fieldId === "pickup" && point.suggestedPickup === true ? attributionsMarkup(point.attributions || []) : ""}`;
   }
   function selectedLocationBox(fieldId) {
     const content = selectedLocationMarkup(fieldId);
@@ -946,7 +968,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   async function restoreLocations() {
     const originalState = state;
     const points = [
-      ...["pickup", "dropoff"].map(key => ({ point: state.trip[key + "Place"], current: () => state.trip[key + "Place"], apply: place => { state.trip[key + "Place"] = place; if (place) state.trip[key] = place.text; } })),
+      ...["pickup", "dropoff"].map(key => ({ point: state.trip[key + "Place"], current: () => state.trip[key + "Place"], apply: place => { const suggested = key === "pickup" && state.trip[key + "Place"]?.suggestedPickup === true; state.trip[key + "Place"] = place && suggested ? { ...place, suggestedPickup: true } : place; if (place) state.trip[key] = place.text; } })),
       ...state.trip.stops.map(stop => ({ point: stop.place, current: () => state.trip.stops.find(item => item.id === stop.id)?.place, apply: place => { stop.place = place; if (place) stop.text = place.text; } })),
     ].filter(item => item.point?.placeId);
     if (!points.length) { calculateRoute(); return; }
@@ -994,7 +1016,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       try {
         const place = await maps.restore(original.placeId);
         if (state === originalState && state.trip[key + "Place"] === original) {
-          state.trip[key + "Place"] = place; state.trip[key] = place.text;
+          state.trip[key + "Place"] = key === "pickup" && original.suggestedPickup === true ? { ...place, suggestedPickup: true } : place; state.trip[key] = place.text;
         }
       } catch {
         if (state === originalState && state.trip[key + "Place"] === original) { state.trip[key + "Place"] = null; failed = true; }

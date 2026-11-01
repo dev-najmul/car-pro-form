@@ -304,6 +304,71 @@ export class MapsClient {
       throw new Error(unavailable);
     } finally { clearTimeout(timer); }
   }
+  async suggestDevicePickup(point, { signal } = {}) {
+    if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to suggest a pickup.');
+    const unavailable = 'A nearby pickup could not be found. Choose your pickup on the map or search for an address.';
+    const aborted = () => new DOMException('Pickup suggestion was cancelled.', 'AbortError');
+    if (signal?.aborted) throw aborted();
+    let active = true, timer, rejectAbort;
+    const current = () => {
+      if (!active || signal?.aborted) throw aborted();
+    };
+    const clean = (value, maximum) => typeof value === 'string' && value.trim() && value.trim().length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value) ? value.trim() : '';
+    const valid = (place, radius, named = true) => {
+      if (!place || typeof place.placeId !== 'string' || !/^[A-Za-z0-9_-]{3,512}$/.test(place.placeId) || !Number.isFinite(place.latitude) || Math.abs(place.latitude) > 90 || !Number.isFinite(place.longitude) || Math.abs(place.longitude) > 180) return null;
+      const name = clean(place.name, 200), address = clean(place.address, 1024), countryCode = countryCodeOf(place.countryCode), countryName = clean(place.countryName, 120);
+      const distance = pointDistanceMeters(point, place);
+      if (!address || named && !name || !countryCode || !countryName || distance > radius) return null;
+      const label = name && !address.toLowerCase().includes(name.toLowerCase()) ? `${name}, ${address}` : address;
+      if (label.length > 1024) return null;
+      const attributions = (Array.isArray(place.attributions) ? place.attributions : []).slice(0, 20).map(entry => {
+        const displayName = clean(entry?.displayName, 200);
+        let url; try { url = new URL(entry?.uri); } catch { /* A plain provider name remains usable. */ }
+        return displayName ? { displayName, uri: url?.protocol === 'https:' && !url.username && !url.password && url.href.length <= 2048 ? url.href : '' } : null;
+      }).filter(Boolean);
+      return { placeId: place.placeId, latitude: place.latitude, longitude: place.longitude, countryCode, countryName, name, address, text: label, attributions, distanceFromEstimateMeters: distance };
+    };
+    const onAbort = () => { active = false; rejectAbort?.(aborted()); };
+    try {
+      const stopped = new Promise((_, reject) => {
+        rejectAbort = reject;
+        timer = setTimeout(() => { active = false; reject(new Error(unavailable)); }, 10000);
+      });
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const lookup = (async () => {
+        const { Place, SearchNearbyRankPreference } = await this.ready(); current();
+        for (const radius of [500, 1500]) {
+          let response;
+          try {
+            response = await Place.searchNearby({ fields: ['id', 'displayName', 'formattedAddress', 'location', 'addressComponents', 'attributions'], locationRestriction: { center: { lat: point.latitude, lng: point.longitude }, radius }, rankPreference: SearchNearbyRankPreference.DISTANCE, maxResultCount: 10 });
+          } catch { current(); break; }
+          current();
+          const places = (Array.isArray(response?.places) ? response.places : []).slice(0, 20).map(place => valid({ placeId: place?.id, ...coordinatesOf(place?.location), ...countryOfPlace(place), name: typeof place?.displayName === 'string' ? place.displayName : typeof place?.displayName?.text === 'string' ? place.displayName.text : '', address: typeof place?.formattedAddress === 'string' ? place.formattedAddress : '', attributions: (Array.isArray(place?.attributions) ? place.attributions : []).map(entry => ({ displayName: entry?.provider || '', uri: entry?.providerURI || '' })) }, radius)).filter(Boolean);
+          places.sort((a, b) => a.distanceFromEstimateMeters - b.distanceFromEstimateMeters || a.placeId.localeCompare(b.placeId));
+          if (places.length) return places[0];
+        }
+        // Reverse geocoding is an optional address fallback. Its geometry is
+        // never labelled with another place's identity: restore that real ID.
+        const { Geocoder } = await globalThis.google.maps.importLibrary('geocoding'); current();
+        const response = await new Geocoder().geocode({ location: { lat: point.latitude, lng: point.longitude } }); current();
+        const candidates = (Array.isArray(response?.results) ? response.results : []).slice(0, 20).map(result => ({ result, coordinates: coordinatesOf(result?.geometry?.location) })).filter(({ result, coordinates }) => typeof result?.place_id === 'string' && /^[A-Za-z0-9_-]{3,512}$/.test(result.place_id) && coordinates && pointDistanceMeters(point, coordinates) <= 1500 && Array.isArray(result.types) && result.types.some(type => ['street_address', 'premise', 'subpremise', 'route', 'intersection', 'point_of_interest', 'establishment', 'plus_code'].includes(type))).sort((a, b) => pointDistanceMeters(point, a.coordinates) - pointDistanceMeters(point, b.coordinates));
+        for (const { result } of candidates.slice(0, 2)) {
+          current();
+          let restored; try { restored = await this.restore(result.place_id); } catch { current(); continue; }
+          current();
+          const place = valid(restored, 1500, false);
+          if (place) return place;
+        }
+        throw new Error(unavailable);
+      })();
+      return await Promise.race([lookup, stopped]);
+    } catch (error) {
+      if (signal?.aborted) throw aborted();
+      throw new Error(unavailable);
+    } finally {
+      active = false; clearTimeout(timer); signal?.removeEventListener('abort', onAbort);
+    }
+  }
   async describeDeviceLocation(point) {
     if (!Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180) throw new Error('A valid detected position is required to find nearby landmarks.');
     let timer;

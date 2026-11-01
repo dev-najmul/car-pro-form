@@ -1,8 +1,8 @@
-# Tuxano Booking 2.4.1
+# Tuxano Booking 2.4.2
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.4.1.zip) · [SHA-256](../releases/tuxano-booking-2.4.1.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.4.2.zip) · [SHA-256](../releases/tuxano-booking-2.4.2.zip.sha256)
 
 ## Install and configure
 
@@ -21,7 +21,7 @@ The inline quick card has a dark glass/blurred desktop background and a white ph
 
 CHECK PRICE transfers only trip intent within the same browser tab. The destination restores canonical Google places and obtains a fresh server quote before opening vehicle selection (step 2). A malformed, expired or unresolvable transfer stays on step 1 with feedback. It does not create a booking, send an email or carry contact details, consent, a trusted price or an old quote. Handoff data expires after ten minutes and is consumed once; only an opaque random reference appears in the URL fragment. Browser session storage must be available.
 
-Use the current-location button only after granting permission and checking its detected pickup. A fresh accurate reading requires explicit confirmation; an approximate PC position cannot silently become a pickup. Address suggestions remain available.
+The current-location button uses a fresh accurate device reading when available. If the reading stays approximate or its address is unavailable, a nearby real Google place/address fills pickup with a compact “Suggested pickup nearby” notice. Check that address or choose Adjust on map. If no valid suggestion is available, the searchable correction map opens. Browser permission and address suggestions remain available.
 
 ## Admin controls
 
@@ -48,7 +48,7 @@ API cards show a masked configured value and deliberate Replace/Remove controls.
 - Google supplies measured route metrics. Live traffic and pickup-date traffic forecasting are excluded and labelled accordingly.
 - A 15-minute server quote binds exact pickup/destination/ordered stops, measured metrics, session and vehicle/pricing revision. Server validation rejects changed routes, invalid fields/capacities, expired quotes and changed fleet/prices. Client totals are discarded.
 - Persisted requests have unique server references and idempotency keys. Retries cannot duplicate the booking or its normal notifications. Original route, pricing and vehicle/tariff snapshots survive later fleet changes.
-- Device positions require fresh accuracy checks and confirmation. An inaccurate PC estimate cannot become a pickup automatically; users can search and choose an exact map point.
+- Device positions retain freshness/accuracy checks. A precise reverse-geocoded pickup retains the actual device coordinates. An approximate reading can suggest a real nearby canonical Google place, labelled for review and immediately adjustable; it never masquerades as exact GPS. Routes use that place’s own true point.
 - Map selection is available for pickup, every stop and drop-off. Unselected maps start with the US view. Typing previews the current provider prediction after a debounce without selecting a booking point. Once the map settles at that address, explicitly use the map point to add it, choose another result or move the pin before confirming. Phone keyboard dismissal/scrolling preserves the current preview; editing/Escape/map interactions invalidate obsolete previews. Choosing an address/POI inside the map keeps the map open for inspection. Confirmation retains its exact Place ID; a moved pin uses its actual coordinates. Main address autocomplete remains direct. Actual Google country components restrict subsequent suggestions and reject known conflicts. Country hints are a usability check, not independently verified server geographic authority; unknown coordinate countries are not guessed.
 - The public form uses a transparent background, a 1200px maximum for steps 2–5, compact responsive controls, secure parent-frame top scrolling and accessible inline validation. All 249 ISO countries are available; State/Province is always text, and region/postal code are optional internationally. The thank-you page restores the supplied original desktop/phone photographic hero and white receipt layout.
 
@@ -97,3 +97,5 @@ Pickup schedules now use geographic IANA timezones resolved on the server from b
 
 
 Version **2.4.1** waits briefly for improved GPS/Wi-Fi readings instead of stopping on the first coarse estimate. Accurate fixes retain automatic address fill. Approximate fixes automatically open a searchable correction map in both forms; the estimate itself cannot select a pickup or change a price. Confirm a deliberate map point or address to proceed. Quick-map choices obtain a fresh server quote/timezone on the main page. Browser hardware/services determine reported accuracy; the plugin cannot turn a 100 km network estimate into an independently verified street position. See [UPGRADE-2.4.1.md](UPGRADE-2.4.1.md).
+
+Version **2.4.2** replaces the successful coarse-location map prompt with an automatically filled nearby canonical Google place/address and a compact adjustment notice in both forms. Nearby searches are bounded, cancellable and use genuine provider results. Suggested provenance survives quick-to-main restoration until the user edits or confirms a map point; route, price and pickup timezone are calculated freshly for the selected canonical point. See [UPGRADE-2.4.2.md](UPGRADE-2.4.2.md).

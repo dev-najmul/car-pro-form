@@ -79,7 +79,7 @@ export function installPlacesStub() {
     constructor({ id }) { Object.assign(this, makePlace(id, 'restore')); }
     static async searchNearby(request) {
       control.calls.push({ kind: 'nearby', request });
-      const nearby = window.__nearbyMock || {};
+      const nearby = request.fields.includes('id') ? (window.__nearbyPickupMock || {}) : (window.__nearbyMock || {});
       if (nearby.hold) await new Promise(resolve => control.pending.push({ kind: 'nearby', key: 'nearby', resolve }));
       if (nearby.fail) throw new Error('Nearby place lookup is unavailable.');
       return { places: nearby.places || [] };

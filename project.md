@@ -1970,3 +1970,10 @@ Hosted [WordPress run41273365271](https://github.com/dev-najmul/car-pro-form/act
 
 
 Final2.4.1 delivery uses the pinned direct HTTPS ZIP: https://raw.githubusercontent.com/dev-najmul/car-pro-form/e84e386f333575fb408b5ef1f36b5d7145e13aaf/releases/tuxano-booking-2.4.1.zip . The complete unauthenticated application/zip download matched archivebytes/hash. Owner should replace current plugin, clear page/browser cache, and test precise auto-fill or approximate-map confirmation in quick/main. No claim of a live-site installation or physically improved PC hardware accuracy is made.
+
+
+## 28. Nearby suggested GPS pickup — 1 November 2026
+
+The owner reviewed 2.4.1 and requested a smoother outcome than the large 100 km correction-map prompt: if exact location/address is unavailable, fill the nearest actual Google place/address and let the visitor adjust it. Apply identically to home quick booking and the main form. This supersedes the earlier requirement that every coarse reading must open an unselected map. It does not authorize invented GPS precision or fake addresses. Target 2.4.2; retain 2.4.1 for rollback.
+
+Implementation: keep high-accuracy watch/refinement and accurate reverse-geocoded pickup behavior. For a coarse reading or failed precise address lookup, bounded provider searches select a genuine canonical nearby Place ID, label it as suggested, and fill the main pickup. The canonical point supplies route/zone/pricing, not the estimate’s coordinates. A compact notice and immediate map adjustment replace the large warning on success; explicit adjustment clears suggestion provenance. Preserve that hint across canonical restore and quick handoff while stripping estimate accuracy, contacts, prices and quotes. If no valid provider place exists, retain searchable-map recovery. Cancellation, retries, country checks, late callbacks, map confirmation and fresh server quotes remain guarded.

@@ -1,6 +1,6 @@
 # WordPress implementation contract
 
-Plugin: `tuxano-booking`, version 2.4.1, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
+Plugin: `tuxano-booking`, version 2.4.2, namespace `Tuxano\Booking`, WordPress >=6.6 / PHP >=7.4. Existing static form stays supported. Build copies shared root frontend and assets into plugin `public/`; do not duplicate tracked image files.
 
 ## Runtime and UI
 - One top-level **Tuxano Booking** menu: dashboard, submissions (custom private table, detail/status/admin notes, search/status/date filters/pagination), vehicles (private CPT `tuxano_vehicle` with native CRUD and taxonomy `tuxano_collection`), pricing, settings.
@@ -96,3 +96,5 @@ Both form variants use editable bounded hourly quantity controls and canonical n
 
 
 Version 2.4.1 uses a cancellable high-accuracy geolocation watch when supported, with six-second coarse refinement and a 20-second hard limit; current-position-only providers retain their compatibility fallback. A precise fix resolves immediately; the best remaining coarse reading supplies map context only. Every terminal path removes the watch/timers/abort listeners. Both forms open the shared interactive picker automatically for coarse results, preserving the current trip until deliberate confirmation. A raw quick map selection carries only source/map coordinates/query/confirmation timestamp; it cannot carry a GPS accuracy claim, trusted quote, price, contact or consent. The normal one-use destination-bound handoff and fresh main route/zone/fare checks remain.
+
+Version 2.4.2 adds `suggestDevicePickup` to the shared browser Places client. A bounded ten-second search ranks real nearby Places by measured distance (500 m then 1,500 m); an optional Geocoder fallback resolves a genuine address Place ID through canonical details. Missing identity/address/country, invalid coordinates and distant results are rejected. Routes always use the canonical place and its own true point, never coarse device coordinates paired with another place ID. The UI alone adds `suggestedPickup: true`, a compact notice and an adjustment action; the marker survives canonical restoration/one-use quick handoff, and manual editing/explicit map confirmation clears it. No new backend field authority, quote data, provider key or paid server endpoint is introduced. Precise GPS still reverse-geocodes first and keeps original sensor coordinates. Both forms retain their previous correction-map fallback if the bounded search cannot produce a valid provider suggestion. Abort/generation guards ignore stale provider callbacks.

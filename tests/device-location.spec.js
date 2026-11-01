@@ -23,6 +23,9 @@ test.beforeEach(async ({ page }) => {
       },
     };
     window.__deviceMock = { requests: [], pending: [] };
+    // Canonical pickup discovery is separate from the context-only landmark
+    // lookup used by these coordinate/map fallback regressions.
+    window.__nearbyPickupMock = { places: [] };
     Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
       getCurrentPosition(success, failure, options) {
         window.__deviceMock.requests.push(options);
@@ -287,7 +290,7 @@ test('precise device position requires confirmation and routes original coordina
   expect(stored).not.toContain('nearby-landmark-id');
 });
 
-test('an imprecise Dhaka device result cannot replace a confirmed Barishal pickup or calculate another price', async ({ page }) => {
+test('an imprecise device result with no usable nearby place keeps the confirmed pickup and price', async ({ page }) => {
   await originalTrip(page);
   const initialRequests = controls.get(page).requests.length;
   await detect(page).click();
@@ -298,7 +301,12 @@ test('an imprecise Dhaka device result cannot replace a confirmed Barishal picku
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
   await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
   expect(controls.get(page).requests).toHaveLength(initialRequests);
-  expect(await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'nearby'))).toHaveLength(0);
+  const lookups = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'nearby'));
+  expect(lookups.map(call => call.request.locationRestriction.radius)).toEqual([500, 1500]);
+  for (const { request } of lookups) {
+    expect(request.fields).toContain('id');
+    expect(request.locationRestriction.center).toEqual({ lat: 23.7891, lng: 90.4126 });
+  }
   await page.getByRole('button', { name: 'Cancel map selection', exact: true }).click();
   await expect(mapPicker(page)).toHaveCount(0);
 });

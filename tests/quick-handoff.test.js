@@ -127,3 +127,12 @@ test('unconfirmed, malformed or GPS-disguised map points cannot transfer', () =>
   }
   assert.throws(() => normalizeQuickTrip({ ...trip(), dropoff: point }, now));
 });
+
+
+test('suggested pickup provenance survives a canonical one-use handoff without device accuracy or prices', () => {
+  const value = trip(); value.pickup = { ...value.pickup, suggestedPickup: true, deviceAccuracyMeters: 100000, latitudeOfEstimate: 23.8, price: 1 };
+  const store = storage(); const url = write(store, value); const received = read(store, url);
+  assert.deepEqual(received.pickup, { placeId: value.pickup.placeId, query: value.pickup.query, suggestedPickup: true });
+  assert.ok(!Object.hasOwn(received.pickup, 'deviceAccuracyMeters') && !Object.hasOwn(received.pickup, 'price'));
+  assert.equal(store.length, 0);
+});

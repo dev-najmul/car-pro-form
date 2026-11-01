@@ -1,4 +1,4 @@
-import { MapsClient, mountAutocomplete, assertSameCountry, countryCodeOf, requestDeviceLocation, normalizeDevicePosition } from './maps.js';
+import { MapsClient, mountAutocomplete, assertSameCountry, countryCodeOf, requestDeviceLocation, normalizeDevicePosition, googlePlaceUrl } from './maps.js';
 import { createQuickHandoff, quickDestination, quickWebsiteClock, validateQuickPickupTime } from './quick-handoff.js';
 import { mountPickupMap } from './pickup-map.js';
 
@@ -144,17 +144,33 @@ async function initialize(container) {
       const locate = form.querySelector('[data-quick-locate]');
       if (locate && !navigating) { locate.disabled = false; locate.removeAttribute('aria-busy'); }
     };
+    const showSuggestedPickup = () => {
+      const point = points.pickup;
+      if (!point?.suggestedPickup || !point.placeId) return;
+      deviceBox.innerHTML = `<div class="tuxano-quick-booking-suggestion" role="status"><p>Suggested pickup nearby. Check or adjust on map.</p><div class="tuxano-quick-booking-suggestion-actions"><a href="${escape(googlePlaceUrl(point))}" target="_blank" rel="noopener noreferrer">View on Google Maps</a><button type="button" data-quick-adjust-pickup>Adjust pickup on map</button></div></div>`;
+      const providers = document.createElement('div'); providers.className = 'place-providers';
+      for (const entry of Array.isArray(point.attributions) ? point.attributions : []) {
+        if (typeof entry?.displayName !== 'string' || !entry.displayName.trim()) continue;
+        if (providers.childNodes.length) providers.append(document.createTextNode(' · '));
+        let url; try { url = new URL(entry.uri); } catch { /* Display plain provider text when a URL is unavailable. */ }
+        const label = url?.protocol === 'https:' ? document.createElement('a') : document.createElement('span');
+        label.textContent = entry.displayName;
+        if (label.tagName === 'A') { label.href = url.href; label.target = '_blank'; label.rel = 'noopener noreferrer'; }
+        providers.append(label);
+      }
+      if (providers.childNodes.length) deviceBox.firstElementChild.append(providers);
+      deviceBox.hidden = false;
+    };
     const applyPickup = point => {
       const query = (point.query || point.text).slice(0, 256).replace(/[\uD800-\uDBFF]$/u, '').trim();
       points.pickup = { ...point, query }; fields.pickup.value = point.text; queries.pickup = query;
       syncField(fields.pickup); fields.pickup.setCustomValidity(''); fields.pickup.removeAttribute('aria-invalid');
-      clearDevice(); refreshPickupTimezone(); showError('');
+      clearDevice(); showSuggestedPickup(); refreshPickupTimezone(); showError('');
     };
     const openDeviceMap = point => {
       const generation = locating;
-      deviceMapInitial = { latitude: point.latitude, longitude: point.longitude, accuracyMeters: point.accuracyMeters };
-      const accuracy = point.accuracyMeters >= 1000 ? `${(point.accuracyMeters / 1000).toFixed(1)} km` : `${Math.ceil(point.accuracyMeters)} m`;
-      deviceBox.innerHTML = `<section class="tuxano-quick-booking-map" aria-label="Confirm pickup on map"><h3>CONFIRM YOUR PICKUP</h3><p>Your browser found an approximate area (within ${accuracy}). Search for your address or tap the map to set your exact pickup.</p><p data-quick-estimate-context hidden></p><label class="tuxano-quick-booking-map-label" for="${id}-map-search">Search for your pickup address</label><div class="location-input tuxano-quick-booking-map-search"><input id="${id}-map-search" data-map-search aria-label="Search map for pickup" placeholder="City, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading your pickup map…</p><div class="tuxano-quick-booking-map-frame"><div data-location-map aria-label="Pickup point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon('pin')}</span></div><p data-quick-map-selection aria-live="polite">No pickup selected yet. Choose your exact point before confirming.</p><button type="button" data-quick-use-map disabled>Use this pickup point</button><div class="tuxano-quick-booking-map-actions"><button type="button" data-quick-reload-map>Reload map</button><button type="button" data-quick-cancel-map>Cancel location selection</button></div></section>`;
+      deviceMapInitial = point.placeId ? { ...point, source: 'map-place' } : { latitude: point.latitude, longitude: point.longitude, accuracyMeters: point.accuracyMeters };
+      deviceBox.innerHTML = `<section class="tuxano-quick-booking-map" aria-label="Confirm pickup on map"><h3>CHOOSE YOUR PICKUP</h3><p>${point.placeId ? 'Check the suggested pickup, search for an address, or move the pin before confirming.' : 'Choose your pickup on the map or search for your address, then confirm the point.'}</p><p data-quick-estimate-context hidden></p><label class="tuxano-quick-booking-map-label" for="${id}-map-search">Search for your pickup address</label><div class="location-input tuxano-quick-booking-map-search"><input id="${id}-map-search" data-map-search aria-label="Search map for pickup" placeholder="City, address or landmark" autocomplete="off"></div><p data-map-status role="status">Loading your pickup map…</p><div class="tuxano-quick-booking-map-frame"><div data-location-map aria-label="Pickup point map"></div><span class="pickup-map-pin" aria-hidden="true">${icon('pin')}</span></div><p data-quick-map-selection aria-live="polite">No pickup selected yet. Choose your exact point before confirming.</p><button type="button" data-quick-use-map disabled>Use this pickup point</button><div class="tuxano-quick-booking-map-actions"><button type="button" data-quick-reload-map>Reload map</button><button type="button" data-quick-cancel-map>Cancel location selection</button></div></section>`;
       deviceBox.hidden = false; showError('');
       const current = () => alive() && !navigating && generation === locating && deviceBox.isConnected;
       let mapInteracted = false;
@@ -174,7 +190,7 @@ async function initialize(container) {
       });
       // An estimated address is context only. It never populates the field,
       // chooses a map point, or overrides a later visitor selection.
-      client.reverseGeocode(point).then(address => {
+      if (!point.placeId) client.reverseGeocode(point).then(address => {
         if (!current() || mapInteracted || mapSearch.value.trim()) return;
         estimateContext.textContent = `Estimated area: ${address.text}. Confirm your actual pickup on the map.`;
         estimateContext.hidden = false;
@@ -182,7 +198,7 @@ async function initialize(container) {
     };
     const restoreNavigation = () => {
       if (!alive()) return;
-      navigating = false; clearDevice();
+      navigating = false; clearDevice(); showSuggestedPickup();
       const submit = form.querySelector('[type="submit"]'); submit.disabled = false; submit.textContent = 'CHECK PRICE';
       const locate = form.querySelector('[data-quick-locate]'); locate.disabled = false; locate.removeAttribute('aria-busy');
     };
@@ -258,7 +274,7 @@ async function initialize(container) {
         const point = deviceMapCleanup?.confirmSelection?.();
         if (!point) return;
         if (!['map', 'map-place'].includes(point.source) || !Number.isFinite(point.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point.longitude) || Math.abs(point.longitude) > 180 || typeof point.text !== 'string' || !point.text.trim() || point.text.length > 1024) return;
-        applyPickup({ ...point, source: point.placeId ? 'map-place' : 'map', confirmedAt: Date.now() });
+        applyPickup({ ...point, source: point.placeId ? 'map-place' : 'map', suggestedPickup: false, confirmedAt: Date.now() });
         return;
       }
       if (button.hasAttribute('data-quick-reload-map')) {
@@ -266,7 +282,12 @@ async function initialize(container) {
         if (point) { clearDevice(); openDeviceMap(point); }
         return;
       }
-      if (button.hasAttribute('data-quick-cancel-map')) { clearDevice(); showError(''); return; }
+      if (button.hasAttribute('data-quick-cancel-map')) { clearDevice(); showSuggestedPickup(); showError(''); return; }
+      if (button.hasAttribute('data-quick-adjust-pickup')) {
+        const point = points.pickup;
+        if (point?.placeId) { clearDevice(); openDeviceMap(point); }
+        return;
+      }
       if (!button.hasAttribute('data-quick-locate')) return;
       clearDevice(); const generation = locating;
       const controller = new AbortController(); locatingController = controller;
@@ -274,10 +295,25 @@ async function initialize(container) {
       showError('');
       deviceBox.innerHTML = '<p role="status">Checking your current location… Allow location access if your browser asks.</p>';
       deviceBox.hidden = false;
+      const current = () => alive() && !navigating && generation === locating && !controller.signal.aborted;
+      const suggestPickup = async point => {
+        deviceBox.innerHTML = '<p role="status">Finding a nearby pickup address…</p>';
+        try {
+          const place = await client.suggestDevicePickup(point, { signal: controller.signal });
+          if (!current()) return false;
+          applyPickup({ ...place, suggestedPickup: true });
+          return true;
+        } catch {
+          return false;
+        }
+      };
       try {
         const point = await requestDeviceLocation(undefined, { signal: controller.signal });
-        if (!alive() || navigating || generation !== locating) return;
-        if (!point.precise) { openDeviceMap(point); return; }
+        if (!current()) return;
+        if (!point.precise) {
+          if (await suggestPickup(point) || !current()) return;
+          openDeviceMap(point); return;
+        }
         deviceCandidate = point;
         try {
           const address = await client.reverseGeocode(point);
@@ -288,7 +324,8 @@ async function initialize(container) {
           // destination. Routing keeps the exact device point and provenance.
           applyPickup({ ...address, ...fresh, source: 'device', text: address.text, confirmedAt: Date.now() });
         } catch (failure) {
-          if (!alive() || navigating || generation !== locating) return;
+          if (!current()) return;
+          if (await suggestPickup(point) || !current()) return;
           deviceBox.innerHTML = `<p>Your device found a precise location, but its address could not be loaded. Check this point before using it: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} (accuracy within ${Math.ceil(point.accuracyMeters)}m).</p><button type="button" data-quick-use-device>Use this pickup location</button>`;
           deviceBox.hidden = false;
           showError(failure.message || 'The pickup address could not be loaded. Search for the address or check the detected point below.');
@@ -338,7 +375,7 @@ async function initialize(container) {
       if (invalid.length) { showError(invalid[0].validationMessage || 'Complete your trip details before checking prices.'); invalid[0].focus(); return; }
       const submitTimezoneGeneration = timezoneGeneration;
       try {
-        const selectedPoint = key => points[key].placeId ? { placeId: points[key].placeId, query: points[key].query } : points[key];
+        const selectedPoint = key => points[key].placeId ? { placeId: points[key].placeId, query: points[key].query, ...(points[key].suggestedPickup ? { suggestedPickup: true } : {}) } : points[key];
         const selectedPickup = points.pickup, selectedDropoff = points.dropoff;
         const trip = { service, hours: Number(form.querySelector('[data-quick-field="hours"]').value), date: form.querySelector('[data-quick-field="date"]').value, time: form.querySelector('[data-quick-field="time"]').value, pickup: selectedPoint('pickup'), dropoff: selectedPoint('dropoff') };
         const selectedTimezone = timezoneEnabled ? await resolvePickupTimezone() : defaultTimezone;
