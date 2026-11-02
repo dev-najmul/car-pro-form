@@ -96,6 +96,7 @@ try {
     $check(Settings::public_data()['backgrounds']['form'] === ['mode' => 'custom', 'desktopUrl' => $desktop_background, 'mobileUrl' => $desktop_background], 'An empty phone image falls back to the selected desktop image.');
     $check(Settings::save(['form_background_mobile_url' => $phone_background, 'thank_you_background_mode' => 'custom', 'thank_you_background_desktop_url' => $thank_you_background, 'thank_you_background_mobile_url' => $phone_background]) === true, 'Phone images and thank-you images may be customized independently.');
     $check(Settings::public_data()['backgrounds'] === ['form' => ['mode' => 'custom', 'desktopUrl' => $desktop_background, 'mobileUrl' => $phone_background], 'thankYou' => ['mode' => 'custom', 'desktopUrl' => $thank_you_background, 'mobileUrl' => $phone_background]], 'Public configuration exposes only the active display image URLs and modes.');
+    $check(Settings::revision() === $background_revision, 'Active custom backgrounds must not invalidate an accepted route quote.');
     $before = Settings::get();
     $check(Settings::save(['company_name' => $before['company_name']]) === true && Settings::get() === $before, 'Omitted background fields survive unrelated settings saves.');
     $check(Settings::save(['form_background_mobile_url' => '']) === true && Settings::public_data()['backgrounds']['form']['mobileUrl'] === $desktop_background, 'Clearing a custom phone image returns to desktop fallback.');
