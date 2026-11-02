@@ -1,11 +1,9 @@
 # Local design assets
 
-The four background files are unchanged copies of the originals supplied in `Car booking img.zip`.
+The two thank-you background files are unchanged copies of the originals supplied in `Car booking img.zip`. They remain the default receipt hero backgrounds and can be overridden from WordPress settings. Booking form backgrounds come from the host page or the configured Media Library image; unused prototype lobby artwork is not bundled.
 
 | Local file | Source file | Native dimensions |
 | --- | --- | --- |
-| `lobby-desktop.jpg` | `used bg imge for all form.jpg` | 2160 × 3066 |
-| `lobby-mobile.png` | `used bg imge for all form phone.png` | 585 × 4787 |
 | `thank-you-desktop.jpg` | `thank youpage bg .jpg` | 2160 × 717 |
 | `thank-you-mobile.jpg` | `thank youpage bg phone.jpg` | 585 × 527 |
 
@@ -25,31 +23,11 @@ The archive does not include standalone vehicle or logo originals. The following
 
 The Navigator crop has a white `#FFFFFF` background. The wordmark crop includes the original solid dark `#0B1220` footer background. Use that background behind the wordmark to avoid a visible rectangle. Screenshot-derived assets have the original raster-resolution limit; sharper standalone source files can replace them later without changing the layout.
 
-## Desktop lobby variants
+## Removed unused lobby artwork
 
-The source desktop screenshot backgrounds use distinct photo framing. The supplied `lobby-desktop.jpg` matches Step 3 exactly, while other desktop screenshots reveal photo beyond that asset's cropped edges or bottom. These five assets reproduce the reference framing using the supplied original photograph and photo-only regions from the corresponding screenshot. They are asset reconstruction for the supplied design, with no generated imagery or replacement scene.
+Version 2.4.3 removes `lobby-desktop.jpg`, `lobby-mobile.png` and `lobby-step-1.jpg` through `lobby-step-5.jpg`. No current CSS, JavaScript, HTML, WordPress vehicle default or template references these seven images. The form has used a transparent background since the earlier page-background update, allowing the host page design to show through. Removing this obsolete artwork saves approximately 8.5 MB from the ZIP without changing active vehicle images or the default thank-you design.
 
-| Local file | Reference screenshot | Output dimensions |
-| --- | --- | --- |
-| `lobby-step-1.jpg` | `step 1.png` | 1440 × 1232 |
-| `lobby-step-2.jpg` | `step 2.png` | 1440 × 2730 |
-| `lobby-step-3.jpg` | `step 3.png` | 1440 × 2044 |
-| `lobby-step-4.jpg` | `step 4.png` | 1440 × 1961 |
-| `lobby-step-5.jpg` | `step 5.png` | 1440 × 2047 |
-
-Each JPEG uses quality 95 and full chroma sampling. First, pixel registration determines the original photo's scale/position for each screenshot. The original photo fills the central header and every panel region, so source heading text, progress circles, labels, white panels, borders, form fields, and controls are excluded completely. Then only exposed photography from each screenshot restores the outer scene/floor. Conservative exclusion rectangles protect the full header UI zone `(300, 80, 1161, 301)` and all panel bounds, with extra padding around borders and rounded corners.
-
-| Page | Original photo's rendered width × height | Original photo's top-left offset |
-| --- | --- | --- |
-| Step 1 | 1244.8 × 1664.5 | +67.2, −13.0 |
-| Step 2 | 1653.1 × 2254.0 | −106.1, −11.4 |
-| Step 3 | 1440.0 × 2044.0 | 0.0, 0.0 |
-| Step 4 | 1244.8 × 1766.9 | +67.2, −98.6 |
-| Step 5 | 1244.8 × 1766.9 | +67.2, −55.6 |
-
-Where the supplied photo lacks pixels behind the reference's white panels, neighboring photo-only right-edge strips or the clean final 110 px of the corresponding screenshot's marble floor fill those unseen regions. Those fills contain photography only. They are behind the form surfaces at the reference dimensions and are not additional screenshot UI. The exposed background remains from the reference; naturally different page heights and widths scale the background with the live layout.
-
-Use the matching `lobby-step-N.jpg` with `background-size: 100% 100%` on desktop. All five phone references use the unchanged portrait `lobby-mobile.png` stretched to the full page dimensions, also with `background-size: 100% 100%` and top alignment. Pixel fitting confirmed this independently for each phone reference.
+Earlier prototype releases retain these files and their reconstruction notes in Git history. The desktop variants were assembled from the supplied original photograph and photography-only screenshot regions, with no generated imagery. They matched the original mockup framing before the form switched to inherited page backgrounds. Historical design notes in `project.md` describe that earlier version and are not current asset requirements.
 
 ## Fonts
 

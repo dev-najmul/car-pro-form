@@ -32,6 +32,33 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       }
     }
   }
+  // Background preferences supply image values only. CSS property names and
+  // selectors stay fixed; an image URL can never become arbitrary page CSS.
+  const backgroundImage = value => {
+    if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value) || /[\u0000-\u0020\u007f]/u.test(value)) return "";
+    try {
+      const url = new URL(value);
+      if (!url.hostname || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) return "";
+      return `url(${JSON.stringify(url.href)})`;
+    } catch { return ""; }
+  };
+  const backgrounds = settings.backgrounds;
+  if (backgrounds && typeof backgrounds === "object" && !Array.isArray(backgrounds)) {
+    for (const [key, prefix] of [["form", "form"], ["thankYou", "thank"]]) {
+      const preference = backgrounds[key];
+      if (!preference || typeof preference !== "object" || Array.isArray(preference)) continue;
+      if (key === "thankYou" && preference.mode === "none") {
+        document.documentElement.style.setProperty("--thank-background-desktop", "none");
+        document.documentElement.style.setProperty("--thank-background-mobile", "none");
+      } else if (preference.mode === "custom") {
+        const desktop = backgroundImage(preference.desktopUrl);
+        if (!desktop) continue;
+        document.documentElement.style.setProperty(`--${prefix}-background-desktop`, desktop);
+        document.documentElement.style.setProperty(`--${prefix}-background-mobile`, backgroundImage(preference.mobileUrl) || desktop);
+        if (key === "form") document.documentElement.dataset.formBackground = "custom";
+      }
+    }
+  }
   const STORAGE = "tuxano-booking-v1";
   let DEMO_MODE = !runtime && new URLSearchParams(location.search).get("demo") === "1";
   let receipt = null, requestKey = "", submitting = false;

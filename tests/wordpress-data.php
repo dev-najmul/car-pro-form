@@ -83,6 +83,53 @@ try {
     }
     $check(Settings::save(['form_title_color' => '#123456']) === true && Settings::get()['form_subtitle_color'] === '#aabbcc', 'Changing one appearance control preserves every omitted color.');
     $check(Settings::save(Settings::FORM_COLORS) === true && Settings::revision() === $appearance_revision, 'Original appearance may be restored without changing fares.');
+    $legacy_backgrounds = Settings::get();
+    foreach (array_keys(Settings::BACKGROUNDS) as $key) { unset($legacy_backgrounds[$key]); }
+    update_option(Settings::OPTION, $legacy_backgrounds, false);
+    $check(array_intersect_key(Settings::get(), Settings::BACKGROUNDS) === Settings::BACKGROUNDS, 'Older settings receive transparent form and original thank-you background defaults.');
+    $check(Settings::public_data()['backgrounds'] === ['form' => ['mode' => 'inherit', 'desktopUrl' => '', 'mobileUrl' => ''], 'thankYou' => ['mode' => 'default', 'desktopUrl' => '', 'mobileUrl' => '']], 'Default public backgrounds preserve existing page and thank-you designs.');
+    $background_revision = Settings::revision();
+    $desktop_background = 'https://images.example.test/form-desktop.webp?v=2&size=1600';
+    $phone_background = 'https://images.example.test/form-phone.jpg';
+    $thank_you_background = 'http://images.example.test/thank-you.jpg';
+    $check(Settings::save(['form_background_mode' => 'custom', 'form_background_desktop_url' => $desktop_background]) === true, 'A custom form background can be selected through a public image URL.');
+    $check(Settings::public_data()['backgrounds']['form'] === ['mode' => 'custom', 'desktopUrl' => $desktop_background, 'mobileUrl' => $desktop_background], 'An empty phone image falls back to the selected desktop image.');
+    $check(Settings::save(['form_background_mobile_url' => $phone_background, 'thank_you_background_mode' => 'custom', 'thank_you_background_desktop_url' => $thank_you_background, 'thank_you_background_mobile_url' => $phone_background]) === true, 'Phone images and thank-you images may be customized independently.');
+    $check(Settings::public_data()['backgrounds'] === ['form' => ['mode' => 'custom', 'desktopUrl' => $desktop_background, 'mobileUrl' => $phone_background], 'thankYou' => ['mode' => 'custom', 'desktopUrl' => $thank_you_background, 'mobileUrl' => $phone_background]], 'Public configuration exposes only the active display image URLs and modes.');
+    $before = Settings::get();
+    $check(Settings::save(['company_name' => $before['company_name']]) === true && Settings::get() === $before, 'Omitted background fields survive unrelated settings saves.');
+    $check(Settings::save(['form_background_mobile_url' => '']) === true && Settings::public_data()['backgrounds']['form']['mobileUrl'] === $desktop_background, 'Clearing a custom phone image returns to desktop fallback.');
+    foreach (['default', 'none'] as $mode) {
+        $check(Settings::save(['form_background_mode' => 'inherit', 'thank_you_background_mode' => $mode]) === true, 'Original or no-image thank-you modes can be saved while the main page stays transparent.');
+        $public_backgrounds = Settings::public_data()['backgrounds'];
+        $check($public_backgrounds['form'] === ['mode' => 'inherit', 'desktopUrl' => '', 'mobileUrl' => ''] && $public_backgrounds['thankYou'] === ['mode' => $mode, 'desktopUrl' => '', 'mobileUrl' => ''], 'Inactive custom URLs cannot appear as active public backgrounds.');
+        $check(Settings::get()['form_background_desktop_url'] === $desktop_background && Settings::get()['thank_you_background_desktop_url'] === $thank_you_background, 'Switching a mode preserves the previous custom image choice.');
+    }
+    $invalid_images = ['javascript:alert(1)', 'data:image/png;base64,AAAA', 'file:///tmp/image.png', '//images.example.test/image.png', 'https://user:pass@example.test/image.png', 'https://example.test/image.png#fragment', "https://example.test/image.png\r\nX-Bad: bad", 'https://example.test/image name.png', ['https://example.test/image.png'], str_repeat('https://example.test/', 200)];
+    foreach ($invalid_images as $invalid_image) {
+        $before = Settings::get();
+        $result = Settings::save(['company_name' => 'Must not partially save', 'form_background_desktop_url' => $invalid_image]);
+        $check(is_wp_error($result) && Settings::get() === $before, 'Unsafe background image input rejects the complete partial settings save.');
+    }
+    foreach (['form_background_mode' => 'default', 'thank_you_background_mode' => 'inherit', 'form_background_desktop_url' => ''] as $key => $value) {
+        $before = Settings::get();
+        $input = [$key => $value, 'company_name' => 'Must not partially save'];
+        if ($key === 'form_background_desktop_url') { $input['form_background_mode'] = 'custom'; }
+        $check(is_wp_error(Settings::save($input)) && Settings::get() === $before, 'Invalid modes or missing required custom desktop images reject the whole save.');
+    }
+    $check(is_wp_error(Settings::save(['thank_you_background_mode' => 'custom', 'thank_you_background_desktop_url' => ''])), 'A custom thank-you background also requires a desktop image.');
+    $corrupt_backgrounds = Settings::get();
+    $corrupt_backgrounds['form_background_mode'] = 'custom';
+    $corrupt_backgrounds['form_background_desktop_url'] = 'javascript:alert(1)';
+    $corrupt_backgrounds['thank_you_background_mode'] = 'custom';
+    $corrupt_backgrounds['thank_you_background_desktop_url'] = ['https://example.test/image.png'];
+    update_option(Settings::OPTION, $corrupt_backgrounds, false);
+    $check(Settings::public_data()['backgrounds'] === ['form' => ['mode' => 'inherit', 'desktopUrl' => '', 'mobileUrl' => ''], 'thankYou' => ['mode' => 'default', 'desktopUrl' => '', 'mobileUrl' => '']], 'Corrupt stored custom URLs fall back safely without exposing malformed CSS or URLs.');
+    $check(Settings::save(Settings::BACKGROUNDS) === true && Settings::revision() === $background_revision, 'Resetting all background preferences leaves accepted route pricing revisions unchanged.');
+    wp_set_current_user(0);
+    $before = Settings::get();
+    $check(is_wp_error(Settings::save(['form_background_mode' => 'custom', 'form_background_desktop_url' => $desktop_background])) && Settings::get() === $before, 'Anonymous visitors cannot change background preferences.');
+    wp_set_current_user((int) $admin[0]);
     $check($defaults['booking_page_id'] === 0, 'Quick booking has no assumed destination on a new installation.');
     $legacy_quick = Settings::get();
     unset($legacy_quick['booking_page_id']);

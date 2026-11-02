@@ -717,7 +717,9 @@ final class Admin {
         ] as $name => $label) {
             self::field($settings, $name, $label, 'color', sprintf(__('Saved color: %1$s. Default: %2$s.', 'tuxano-booking'), $settings[$name], Settings::FORM_COLORS[$name]), ['required' => 'required']);
         }
-        echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
+        echo '</table></section>';
+        self::background_settings($settings);
+        echo '<section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
         self::key_field($settings, 'browser_key', __('Maps browser API key', 'tuxano-booking'), __('Enable Maps JavaScript API and Places API (New). Restrict this browser key to the domains where this form is embedded.', 'tuxano-booking'));
         self::key_field($settings, 'routes_key', __('Routes server API key', 'tuxano-booking'), __('Enable Routes API. This key is used only for server-to-server route requests and is never returned to the form.', 'tuxano-booking'));
         self::field($settings, 'route_daily_limit', __('Daily Google route request budget', 'tuxano-booking'), 'number', __('Site-wide provider attempts per UTC day, including failed provider requests. Increase to match your booking volume and API budget.', 'tuxano-booking'), ['min' => 1, 'max' => 100000, 'step' => 1, 'required' => 'required']);
@@ -742,6 +744,30 @@ final class Admin {
         echo '</table></section>';
         submit_button(__('Save settings', 'tuxano-booking'));
         echo '</form></div>';
+    }
+
+    private static function background_settings(array $settings): void {
+        $safe = Settings::backgrounds($settings);
+        echo '<section class="tuxano-card"><h2>' . esc_html__('Background images', 'tuxano-booking') . '</h2><p>' . esc_html__('Choose Media Library images or paste public image URLs. Your images stay in the Media Library instead of being copied into the plugin ZIP. The home quick-booking card uses its page or hero background; set that in your page builder.', 'tuxano-booking') . '</p>';
+        foreach (['form' => __('Booking form', 'tuxano-booking'), 'thank_you' => __('Thank-you header', 'tuxano-booking')] as $key => $label) {
+            $default = $key === 'form' ? 'inherit' : 'default';
+            $mode = $safe[$key === 'form' ? 'form' : 'thankYou']['mode'];
+            $choices = $key === 'form'
+                ? ['inherit' => __('Use page background (transparent)', 'tuxano-booking'), 'custom' => __('Use custom images', 'tuxano-booking')]
+                : ['default' => __('Use original thank-you images', 'tuxano-booking'), 'custom' => __('Use custom images', 'tuxano-booking'), 'none' => __('No background image', 'tuxano-booking')];
+            echo '<div class="tuxano-background-group" data-tuxano-background-group="' . esc_attr($key === 'form' ? 'form' : 'thankYou') . '" data-default-mode="' . esc_attr($default) . '"><h3>' . esc_html($label) . '</h3><table class="form-table" role="presentation"><tr><th scope="row"><label for="tuxano-' . esc_attr($key) . '_background_mode">' . esc_html__('Background', 'tuxano-booking') . '</label></th><td><select id="tuxano-' . esc_attr($key) . '_background_mode" name="' . esc_attr($key) . '_background_mode" data-tuxano-background-mode>';
+            foreach ($choices as $value => $text) {
+                echo '<option value="' . esc_attr($value) . '" ' . selected($mode, $value, false) . '>' . esc_html($text) . '</option>';
+            }
+            echo '</select><p class="description">' . esc_html($key === 'form' ? __('Page background keeps the existing WordPress or Elementor page design visible. Custom images cover the five booking steps.', 'tuxano-booking') : __('The original thank-you photos remain the default. No background image keeps the dark navy header without a photograph.', 'tuxano-booking')) . '</p></td></tr>';
+            foreach (['desktop' => __('Desktop image', 'tuxano-booking'), 'mobile' => __('Phone image (optional)', 'tuxano-booking')] as $device => $device_label) {
+                $name = $key . '_background_' . $device . '_url';
+                $value = is_string($settings[$name] ?? null) ? $settings[$name] : '';
+                echo '<tr><th scope="row"><label for="tuxano-' . esc_attr($name) . '">' . esc_html($device_label) . '</label></th><td><div class="tuxano-background-image" data-tuxano-background-image data-background-device="' . esc_attr($device) . '"><div class="tuxano-background-preview"><img alt="' . esc_attr($label . ' — ' . $device_label) . '" width="280" data-tuxano-background-preview hidden></div><input class="regular-text" id="tuxano-' . esc_attr($name) . '" name="' . esc_attr($name) . '" type="url" value="' . esc_attr($value) . '" maxlength="2048" placeholder="https://example.com/background.webp" data-tuxano-background-url' . ($mode !== 'custom' ? ' disabled' : ($device === 'desktop' ? ' required' : '')) . '><div class="tuxano-background-actions"><button type="button" class="button" data-tuxano-background-select' . disabled($mode !== 'custom', true, false) . '>' . esc_html__('Choose image', 'tuxano-booking') . '</button><button type="button" class="button" data-tuxano-background-clear' . disabled($mode !== 'custom', true, false) . '>' . esc_html__('Clear image', 'tuxano-booking') . '</button></div><p class="description">' . esc_html($device === 'desktop' ? __('Required for custom backgrounds. Select a suitably sized WebP, JPEG or PNG image.', 'tuxano-booking') : __('Leave empty to use the selected desktop image on phones.', 'tuxano-booking')) . '</p><p class="description" role="status" aria-live="polite" data-tuxano-background-status></p></div></td></tr>';
+            }
+            echo '</table></div>';
+        }
+        echo '</section>';
     }
 
     private static function email_logo_field(array $settings): void {
@@ -770,7 +796,7 @@ final class Admin {
         $keys = $section === 'pricing'
             ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
             : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'email_logo_url', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit', 'booking_page_id'];
-        if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS)); }
+        if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS), array_keys(Settings::BACKGROUNDS)); }
         $values = [];
         foreach ($keys as $key) {
             if (!isset($_POST[$key])) {

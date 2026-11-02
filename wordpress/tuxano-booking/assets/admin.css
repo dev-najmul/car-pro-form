@@ -300,6 +300,15 @@ body.tuxano-native-screen .tuxano-vehicle-pricing .tuxano-rate-amount input { fo
 .tuxano-admin .tuxano-email-logo-preview img[hidden] { display: none; }
 .tuxano-admin .tuxano-email-logo input[type="url"] { width: 100%; max-width: 100%; }
 .tuxano-admin .tuxano-email-logo-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.tuxano-admin .tuxano-background-group + .tuxano-background-group { margin-top: 26px; padding-top: 22px; border-top: 1px solid #dce2eb; }
+.tuxano-admin .tuxano-background-group h3 { margin-bottom: 4px; }
+.tuxano-admin .tuxano-background-image { max-width: 540px; min-width: 0; }
+.tuxano-admin .tuxano-background-image input[type="url"] { width: 100%; max-width: 100%; }
+.tuxano-admin .tuxano-background-preview { width: fit-content; max-width: 100%; margin-bottom: 12px; border: 1px solid #dce2eb; border-radius: 7px; overflow: hidden; background: #f0f3f7; }
+.tuxano-admin .tuxano-background-preview img { display: block; width: 280px; max-width: 100%; height: 140px; object-fit: cover; }
+.tuxano-admin .tuxano-background-preview[hidden], .tuxano-admin .tuxano-background-preview img[hidden] { display: none; }
+.tuxano-admin .tuxano-background-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.tuxano-admin .tuxano-background-group select { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .tuxano-admin .tuxano-stat, .tuxano-admin .tuxano-tabs a { transition: none; }
 }

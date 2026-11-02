@@ -1489,7 +1489,7 @@ a {
 .thank-hero {
   height: 33.1944vw;
   max-height: 640px;
-  background: #0b1220 url("assets/thank-you-desktop.jpg") center / cover no-repeat;
+  background: #0b1220 var(--thank-background-desktop, url("assets/thank-you-desktop.jpg")) center / cover no-repeat;
   display: flex;
   align-items: center;
   padding-left: 8.3333vw;
@@ -3114,7 +3114,7 @@ a {
   .thank-hero {
     height: 352px;
     max-height: none;
-    background-image: url("assets/thank-you-mobile.jpg");
+    background-image: var(--thank-background-mobile, url("assets/thank-you-mobile.jpg"));
     background-size: 100% auto;
     background-position: top center;
     position: relative;
@@ -3985,6 +3985,15 @@ a {
 /* Version 2.1: calm, compact form layout with accessible field feedback. */
 html { background: transparent; }
 body.form-page { font-size: 15px; background: transparent; }
+html[data-form-background="custom"] body.form-page {
+  background-image: var(--form-background-desktop);
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+@media (max-width: 639px) {
+  html[data-form-background="custom"] body.form-page { background-image: var(--form-background-mobile); }
+}
 body.form-page .page-header {
   height: auto; padding: 42px 24px 34px; color: #172642;
 }

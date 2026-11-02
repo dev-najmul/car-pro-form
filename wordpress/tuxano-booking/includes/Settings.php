@@ -27,6 +27,16 @@ final class Settings
         'form_active_circle_text_color' => '#ffffff',
     ];
 
+    /** Background preferences remain independent of prices and booking records. */
+    public const BACKGROUNDS = [
+        'form_background_mode' => 'inherit',
+        'form_background_desktop_url' => '',
+        'form_background_mobile_url' => '',
+        'thank_you_background_mode' => 'default',
+        'thank_you_background_desktop_url' => '',
+        'thank_you_background_mobile_url' => '',
+    ];
+
     /** @return array<string,mixed> */
     public static function defaults(): array
     {
@@ -68,7 +78,7 @@ final class Settings
             'booking_hourly_limit' => 20,
             'dashboard_recent_limit' => 3,
             'booking_page_id' => 0,
-        ], self::FORM_COLORS);
+        ], self::FORM_COLORS, self::BACKGROUNDS);
     }
 
     /** @return array<string,mixed> */
@@ -131,6 +141,20 @@ final class Settings
                 } else {
                     $next[$key] = (int) $value;
                 }
+            } elseif (in_array($key, ['form_background_mode', 'thank_you_background_mode'], true)) {
+                $allowed = $key === 'form_background_mode' ? ['inherit', 'custom'] : ['default', 'custom', 'none'];
+                if (!in_array($value, $allowed, true)) {
+                    $errors->add('tuxano_invalid_settings', __('Choose an available background option.', 'tuxano-booking'));
+                } else {
+                    $next[$key] = $value;
+                }
+            } elseif (array_key_exists($key, self::BACKGROUNDS)) {
+                $url = self::image_url($value);
+                if ($value !== '' && $url === '') {
+                    $errors->add('tuxano_invalid_settings', __('Enter a public HTTP or HTTPS background image URL without credentials or a fragment.', 'tuxano-booking'));
+                } else {
+                    $next[$key] = $url;
+                }
             } elseif (array_key_exists($key, self::FORM_COLORS)) {
                 if (!preg_match('/^#[A-Fa-f0-9]{6}$/D', $value)) {
                     $errors->add('tuxano_invalid_settings', __('Choose a six-digit hexadecimal form color, such as #ffffff.', 'tuxano-booking'));
@@ -191,6 +215,11 @@ final class Settings
                 $next[$key] = '';
             }
         }
+        foreach (['form', 'thank_you'] as $background) {
+            if ($next[$background . '_background_mode'] === 'custom' && self::image_url($next[$background . '_background_desktop_url']) === '') {
+                $errors->add('tuxano_invalid_settings', __('Choose a desktop background image before selecting custom background.', 'tuxano-booking'));
+            }
+        }
         if ($next['min_hours'] > $next['max_hours']) {
             $errors->add('tuxano_invalid_settings', __('Minimum service hours cannot exceed maximum service hours.', 'tuxano-booking'));
         }
@@ -233,11 +262,42 @@ final class Settings
             $color = $settings[$private_key];
             $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
+        $public['backgrounds'] = self::backgrounds($settings);
         $public['timezone'] = Timezones::DEFAULT_ZONE;
         $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
         $public['availabilityChecks'] = true;
         $public['pickupTimezones'] = true;
         return $public;
+    }
+
+    /** Display-only URLs; no remote image is fetched by the server. */
+    private static function image_url($value): string
+    {
+        if (!is_string($value) || $value === '' || strlen($value) > 2048 || preg_match('/[\x00-\x20\x7f]/', $value)) { return ''; }
+        $url = esc_url_raw($value, ['http', 'https']);
+        $parts = $url !== '' ? wp_parse_url($url) : [];
+        if (!preg_match('#^https?://#i', $value) || !is_array($parts) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) || isset($parts['fragment'])) { return ''; }
+        return $url;
+    }
+
+    /** Safe public appearance contract, including mobile-to-desktop fallback. */
+    public static function backgrounds(array $settings): array
+    {
+        $backgrounds = [];
+        foreach (['form' => ['inherit', ['inherit', 'custom']], 'thank_you' => ['default', ['default', 'custom', 'none']]] as $key => $definition) {
+            [$default, $allowed] = $definition;
+            $mode = $settings[$key . '_background_mode'] ?? $default;
+            if (!is_string($mode) || !in_array($mode, $allowed, true)) { $mode = $default; }
+            $desktop = self::image_url($settings[$key . '_background_desktop_url'] ?? '');
+            $mobile = self::image_url($settings[$key . '_background_mobile_url'] ?? '');
+            if ($mode === 'custom' && $desktop === '') { $mode = $default; }
+            $backgrounds[$key === 'form' ? 'form' : 'thankYou'] = [
+                'mode' => $mode,
+                'desktopUrl' => $mode === 'custom' ? $desktop : '',
+                'mobileUrl' => $mode === 'custom' ? ($mobile ?: $desktop) : '',
+            ];
+        }
+        return $backgrounds;
     }
 
     /** Display-only email branding; no remote file is fetched by the server. */

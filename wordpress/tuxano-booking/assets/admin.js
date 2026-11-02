@@ -25,6 +25,49 @@
     image.onload = () => { image.hidden = false; };
     if (image.getAttribute('src') !== url) image.src = url;
   };
+  const updateBackground = group => {
+    if (!group) return;
+    const mode = group.querySelector('[data-tuxano-background-mode]');
+    const active = mode?.value === 'custom';
+    const desktopInput = group.querySelector('[data-background-device="desktop"] [data-tuxano-background-url]');
+    const safeUrl = value => {
+      try {
+        const parsed = new URL(value);
+        return value.length <= 2048 && !/[\u0000-\u0020\u007f]/.test(value) && ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.hash ? parsed.href : '';
+      } catch { return ''; }
+    };
+    const desktop = safeUrl(desktopInput?.value.trim() || '');
+    group.querySelectorAll('[data-tuxano-background-image]').forEach(card => {
+      const input = card.querySelector('[data-tuxano-background-url]');
+      const image = card.querySelector('[data-tuxano-background-preview]');
+      const status = card.querySelector('[data-tuxano-background-status]');
+      if (!input || !image || !status) return;
+      const mobile = card.dataset.backgroundDevice === 'mobile';
+      input.disabled = !active; input.required = active && !mobile;
+      card.querySelectorAll('[data-tuxano-background-select], [data-tuxano-background-clear]').forEach(button => { button.disabled = !active; });
+      const value = input.value.trim();
+      const valid = !value || Boolean(safeUrl(value));
+      input.setCustomValidity(active && !valid ? 'Enter a public HTTP or HTTPS image URL without credentials or a fragment.' : '');
+      const url = active && valid ? (safeUrl(value) || (mobile ? desktop : '')) : '';
+      image.hidden = !url;
+      const preview = image.closest('.tuxano-background-preview'); if (preview) preview.hidden = !url;
+      if (!active) status.textContent = mode?.value === 'inherit' ? 'The WordPress page background stays visible. Custom image choices are kept.' : mode?.value === 'none' ? 'No photograph will be shown. Custom image choices are kept.' : 'Using the original thank-you images. Custom image choices are kept.';
+      else if (!valid) status.textContent = 'Enter a valid HTTP/HTTPS image URL before saving.';
+      else if (value) status.textContent = 'Selected background preview. Save settings to apply it.';
+      else status.textContent = mobile ? 'Using the desktop image on phones. Choose a separate phone image if needed.' : (group.dataset.defaultMode === 'inherit' ? 'Choose a desktop image, or select Use page background above to remove the custom background.' : 'Choose a desktop image, or select No background image above to remove the photograph.');
+      if (!url) { image.removeAttribute('src'); return; }
+      image.onerror = () => {
+        if (image.getAttribute('src') !== url || mode?.value !== 'custom') return;
+        image.hidden = true; if (preview) preview.hidden = true;
+        status.textContent = 'The image could not be loaded. Check the image URL before saving.';
+      };
+      image.onload = () => {
+        if (image.getAttribute('src') !== url || mode?.value !== 'custom') return;
+        image.hidden = false; if (preview) preview.hidden = false;
+      };
+      if (image.getAttribute('src') !== url) image.src = url;
+    });
+  };
   const showKeyResult = (card, message, state = 'info') => {
     const result = card.querySelector('[data-tuxano-key-result]');
     if (!result) return;
@@ -104,6 +147,7 @@
   });
   document.addEventListener('change', event => {
     const target = event.target;
+    if (target instanceof HTMLSelectElement && target.matches('[data-tuxano-background-mode]')) { updateBackground(target.closest('[data-tuxano-background-group]')); return; }
     if (!(target instanceof HTMLInputElement)) return;
     if (target.matches('[data-tuxano-select-all]')) {
       const form = target.closest('form'); if (!form) return;
@@ -116,6 +160,7 @@
     if (!(target instanceof HTMLInputElement)) return;
     if (target.matches('[data-tuxano-rate]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
     if (target.matches('[data-tuxano-email-logo-input]')) updateEmailLogo(target.closest('[data-tuxano-email-logo]'));
+    if (target.matches('[data-tuxano-background-url]')) updateBackground(target.closest('[data-tuxano-background-group]'));
     if (target.matches('[data-tuxano-key-input]')) {
       const card = target.closest('[data-tuxano-key]'); if (!card) return;
       card.querySelector('[data-tuxano-key-clear-value]').value = '0';
@@ -133,6 +178,21 @@
   document.addEventListener('click', async event => {
     const button = event.target.closest('button, a');
     if (!button) return;
+    const background = button.closest('[data-tuxano-background-image]');
+    if (background && button.matches('[data-tuxano-background-select], [data-tuxano-background-clear]')) {
+      event.preventDefault();
+      const input = background.querySelector('[data-tuxano-background-url]');
+      if (!input || input.disabled) return;
+      if (button.matches('[data-tuxano-background-clear]')) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); return; }
+      if (!window.wp?.media) { background.querySelector('[data-tuxano-background-status]').textContent = 'The Media Library is unavailable. Paste a public image URL instead.'; return; }
+      const picker = window.wp.media({ title: 'Choose background image', library: { type: 'image' }, button: { text: 'Use this background' }, multiple: false });
+      picker.on('select', () => {
+        const photo = picker.state().get('selection').first()?.toJSON();
+        if (typeof photo?.url !== 'string' || input.disabled) return;
+        input.value = photo.url; input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      picker.open(); return;
+    }
     const logo = button.closest('[data-tuxano-email-logo]');
     if (logo && button.matches('[data-tuxano-email-logo-reset]')) {
       event.preventDefault(); const input = logo.querySelector('[data-tuxano-email-logo-input]');
@@ -227,4 +287,5 @@
   document.querySelectorAll('.tuxano-bulk-form').forEach(selection);
   document.querySelectorAll('.tuxano-vehicle-pricing').forEach(updateRates);
   document.querySelectorAll('[data-tuxano-email-logo]').forEach(updateEmailLogo);
+  document.querySelectorAll('[data-tuxano-background-group]').forEach(updateBackground);
 })();
