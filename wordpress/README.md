@@ -1,8 +1,8 @@
-# Tuxano Booking 2.4.4
+# Tuxano Booking 2.4.5
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.4.4.zip) · [SHA-256](../releases/tuxano-booking-2.4.4.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.4.5.zip) · [SHA-256](../releases/tuxano-booking-2.4.5.zip.sha256)
 
 ## Install and configure
 
@@ -103,3 +103,5 @@ Version **2.4.2** replaces the successful coarse-location map prompt with an aut
 Version **2.4.3** removes seven unused lobby images. Under **Settings → Background images**, choose a desktop and optional mobile image for the main booking form or thank-you hero from the Media Library, or paste a public image URL. Main booking defaults to the host page background; thank-you defaults to its original photographs and can also use no image. An empty custom mobile field uses the desktop image. Images selected from the Media Library stay in WordPress uploads and do not enlarge the plugin ZIP. The home quick card uses its host hero section’s background.
 
 Version **2.4.4** shows a secondary 24-hour clock below the existing 12-hour pickup time in summaries, review, receipts and email schedules, always using the same pickup timezone. **Settings → Form appearance → Letter spacing** provides separate title/text/button values from −1 to 5 px in 0.1 px steps; leave blank for the current design or enter 0 explicitly. These display preferences apply to main and quick forms. Native location requests now start synchronously with `getCurrentPosition` inside the visitor’s button tap, followed by a bounded watch only if needed. A real denied Safari/iOS permission cannot be overridden by JavaScript; the form explains website and Safari Websites Location Services settings and permits a fresh manual retry/address entry. See [UPGRADE-2.4.4.md](UPGRADE-2.4.4.md).
+
+Version **2.4.5** gives pickup/drop-off addresses their own responsive row in vehicle selection and places the date, both pickup clocks and Edit Trip beneath it. Long multilingual addresses remain fully visible and wrap naturally without squeezing schedule fields. Phone cards stack vertically. No address selection, quote, schedule, GPS or saved-setting behavior is changed.

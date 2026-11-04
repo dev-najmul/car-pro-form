@@ -4105,3 +4105,23 @@ html[data-button-spacing] body.form-page .progress button,
 html[data-button-spacing] body.form-page .progress button * { letter-spacing: var(--form-text-letter-spacing, normal); }
 html:is([data-text-spacing], [data-button-spacing]) body.form-page .progress .step-label { max-width: 100%; overflow-wrap: anywhere; }
 html:is([data-text-spacing], [data-title-spacing], [data-button-spacing]) :is(.icon, svg) { letter-spacing: normal; }
+
+/* Give long route addresses their own space; schedule and actions stay readable. */
+body.form-page .trip-strip { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.trip-strip .trip-route { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); align-items: start; gap: 24px; min-width: 0; }
+.trip-strip .trip-location { align-items: flex-start; min-width: 0; line-height: 1.65; }
+.trip-strip .trip-address { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+.trip-strip .trip-route > .route-arrow { align-self: center; transform: none; }
+.trip-strip .trip-schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; min-width: 0; padding-top: 16px; border-top: 1px solid #e0e5ed; }
+.trip-strip .trip-strip-date { flex: 0 0 auto; white-space: nowrap; overflow-wrap: normal; }
+.trip-strip .trip-strip-time { flex: 1 1 240px; min-width: 0; }
+.trip-strip .trip-strip-time > .time-12h,
+.trip-strip .trip-strip-time .time-24h { max-width: 100%; white-space: normal; overflow-wrap: normal; }
+.trip-strip .trip-schedule > button { flex: 0 0 auto; margin-left: auto; padding: 8px 0 8px 12px; border: 0; align-self: center; }
+@media (max-width: 639px) {
+  .trip-strip .trip-route { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .trip-strip .trip-route > .route-arrow { justify-self: start; transform: rotate(90deg); }
+  .trip-strip .trip-schedule { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .trip-strip .trip-strip-time { flex: none; width: 100%; }
+  .trip-strip .trip-schedule > button { align-self: flex-start; margin: 0; padding: 4px 0; }
+}
