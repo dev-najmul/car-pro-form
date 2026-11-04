@@ -59,6 +59,20 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       }
     }
   }
+  const typography = settings.typography;
+  if (typography && typeof typography === "object" && !Array.isArray(typography)) {
+    for (const [key, property, attribute] of [
+      ["titleLetterSpacing", "--form-title-letter-spacing", "titleSpacing"],
+      ["textLetterSpacing", "--form-text-letter-spacing", "textSpacing"],
+      ["buttonLetterSpacing", "--form-button-letter-spacing", "buttonSpacing"],
+    ]) {
+      const value = typography[key];
+      if (typeof value === "number" && Number.isFinite(value) && value >= -1 && value <= 5 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-8) {
+        document.documentElement.style.setProperty(property, `${value}px`);
+        document.documentElement.dataset[attribute] = "custom";
+      }
+    }
+  }
   const STORAGE = "tuxano-booking-v1";
   let DEMO_MODE = !runtime && new URLSearchParams(location.search).get("demo") === "1";
   let receipt = null, requestKey = "", submitting = false;
@@ -198,6 +212,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       '<rect x="3" y="5" width="18" height="16" rx="1"/><path d="M16 3v4M8 3v4M3 11h18M7 15h2M12 15h2M7 18h2M12 18h2"/>',
     pin: '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="m8 8 4 4 4-5"/>',
+    clock24: '<path d="M12 3a9 9 0 1 0 8.5 6M12 1v4M18.5 2.5 21 6h-4"/><text x="12" y="15" text-anchor="middle" fill="currentColor" stroke="none" font-family="Arial,sans-serif" font-size="8" font-weight="600">24</text>',
     car: '<path d="m5 7 2-4h10l2 4M3 10l2-3h14l2 3v8H3Z M6 18v3M18 18v3M3 13h18M6 10h2M16 10h2"/>',
     people:
       '<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3ZM16 4a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 5v2"/>',
@@ -550,6 +565,19 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   const pickupZoneName = () => usableRoute()?.pickupTimezone || (pickupZone?.signature === pickupZoneSignature() ? pickupZone.timezone : "") || (settings.pickupTimezones === true ? "America/New_York" : settings.timezone);
   const timeLabel = () => clockLabel() + (state.trip.time && zoneLabel() ? ` (${zoneLabel()})` : "");
   const fullDate = () => `${dateLabel(true)} at ${timeLabel()}`;
+  // Alternate display only: the stored pickup wall time and authoritative zone
+  // stay unchanged, including midnight/noon and daylight-saving validation.
+  const time24Label = () => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(state.trip.time)
+    ? state.trip.time + (zoneLabel() ? ` (${zoneLabel()})` : "") : "";
+  const time24Markup = (cls = "") => `<span class="time-24h ${cls}" data-time24 ${time24Label() ? "" : "hidden"}>${icon("clock24")}<span class="sr-only">24-hour time: </span><span data-time24-value>${e(time24Label())}</span></span>`;
+  function refreshTime24() {
+    app.querySelectorAll("[data-time24]").forEach(box => {
+      box.hidden = !time24Label();
+      const value = box.querySelector("[data-time24-value]");
+      if (value) value.textContent = time24Label();
+    });
+  }
+
   const seatText = () =>
     `${state.child ? state.carSeats : 0} car seats, ${state.child ? state.boosterSeats : 0} booster seat${state.boosterSeats === 1 ? "" : "s"}`;
   const model = () =>
@@ -618,7 +646,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     return `<div class="price-lines"><div><span>Transportation${compact ? `<span class="desktop-copy"> (${e(selected().display)})</span>` : ""}</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>Child Seats${compact ? ` <span class="seat-detail">(${seatText()})</span>` : `<small>${seatText()}</small>`}</span><strong>${money(c.seats)}</strong></div><div><span>${compact ? '<span class="desktop-copy">Chauffeur </span>' : ""}Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div>`;
   };
   const summary = () =>
-    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle">${selected().image ? `<img src="${e(asset(!runtime && state.vehicle === "luxury" ? "navigator-summary.png" : selected().image))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${bags()} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
+    `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${time24Markup("summary-time-24h")}${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle">${selected().image ? `<img src="${e(asset(!runtime && state.vehicle === "luxury" ? "navigator-summary.png" : selected().image))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${bags()} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
   const nextSteps = () =>
     `<aside class="next-card"><h3><span class="round-icon">${icon("circlecheck")}</span>WHAT HAPPENS NEXT</h3><ol><li>We review availability and trip details.</li><li>You’ll receive an email with confirmation details and any payment instructions.</li><li>Once confirmed, your reservation is secured.</li></ol><p>Reservation requests are typically reviewed within 2–4 business hours.</p></aside>`;
   const header = () =>
@@ -909,6 +937,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
         : pickupZoneSignature() ? "Checking the time zone for your pickup location…" : "Select your pickup to set its local time zone. Eastern Time is the default.";
     const input = app.querySelector('[data-field="trip.date"]');
     if (input && settings.pickupTimezones === true) input.min = pickupZoneSignature() && !zoneLabel() ? "" : quickWebsiteClock(pickupZoneName()).slice(0, 10);
+    refreshTime24();
   }
   async function resolvePickupTimezone() {
     if (!runtime || settings.pickupTimezones !== true) return;
@@ -1083,7 +1112,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   function tripPage() {
     const mapControls = fieldId => DEMO_MODE ? "" : `<button type="button" class="text-link location-map-open${fieldId === "pickup" ? " pickup-map-open" : ""}" data-action="choose-map" data-map-field="${e(fieldId)}" ${deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? mapTarget() === fieldId : fieldId === "pickup") ? "hidden" : ""}>Choose ${mapFieldLabel(fieldId)} on map</button><div class="location-map-wrap${fieldId === "pickup" ? " device-location-wrap" : ""}" data-map-wrap="${e(fieldId)}">${deviceLocationMarkup(fieldId)}</div>`;
     const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${mapControls(path)}`;
-    const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
+    const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span>${type === "time" ? time24Markup("picker-time-24h") : ""}</label>`;
     return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}${mapControls("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label>${hourControl()}</div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", clockLabel(), "time")}</div>${runtime ? `<p class="route-status" data-pickup-timezone>Pickup dates and times use ${e(zoneLabel() || "Eastern Time")}, local to your pickup location.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
@@ -1103,7 +1132,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     return groups.size ? [...groups].map(([name, group]) => `<section class="collection"><h2>${e(name)}</h2>${group.description ? `<p>${e(group.description)}</p>` : ""}<div class="vehicle-grid">${group.items.map(vehicleCard).join("")}</div></section>`).join("") : `<p role="status">No vehicles are currently available. Please contact ${e(settings.companyName)} for assistance.</p>`;
   }
   function vehiclesPage() {
-    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("arrow", "route-arrow")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}${dateLabel()}</p><p>${icon("clock")}${timeLabel()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div>${collections()}<div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div><div class="form-nav"><button class="btn secondary" type="button" data-action="back">${icon("back")} BACK</button></div></div>`;
+    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("arrow", "route-arrow")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}${dateLabel()}</p><p class="trip-strip-time"><span class="time-12h">${icon("clock")}${e(timeLabel())}</span>${time24Markup()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div>${collections()}<div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div><div class="form-nav"><button class="btn secondary" type="button" data-action="back">${icon("back")} BACK</button></div></div>`;
   }
 
   // Step 3: passenger counts, flight details, optional extras, and gratuity.
@@ -1129,7 +1158,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   const reviewHead = (num, title, symbol, target) =>
     `<div class="review-heading"><span class="tile">${icon(symbol)}</span><h3>${num}. ${title}</h3><button type="button" data-go="${target}">EDIT ${icon("edit")}</button></div>`;
   const rows = (pairs) =>
-    `<dl class="detail-rows">${pairs.map(([label, value]) => `<div><dt>${label}</dt><dd>${e(value)}</dd></div>`).join("")}</dl>`;
+    `<dl class="detail-rows">${pairs.map(([label, value, dualTime]) => `<div><dt>${label}</dt><dd>${e(value)}${dualTime ? time24Markup() : ""}</dd></div>`).join("")}</dl>`;
   const billingAddress = () =>
     [
       state.billing.street,
@@ -1142,7 +1171,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       .filter(Boolean)
       .join(", ");
   function reviewPage() {
-    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", stopDescription()]] : []), ["Date & Time:", fullDate()], ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"], ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle">${vehicleImage() ? `<img src="${e(asset(vehicleImage()))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${bags()} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
+    return `<div class="panel review-panel" data-step="5"><form id="booking-form" class="review-main">${panelHeader(5, "REVIEW & SUBMIT", "document", "Please review all the information before submitting your reservation request.")}<section class="review-block">${reviewHead(1, "TRIP DETAILS", "calendar", 0)}${rows([["Service Type:", state.trip.service === "hourly" ? `Hourly (${state.trip.hours} hours)` : "Transfer"], ["Pickup:", state.trip.pickup], ["Destination:", state.trip.dropoff || "As directed"], ...(state.trip.stops.length ? [["Stops:", stopDescription()]] : []), ["Date & Time:", fullDate(), true], ["Distance:", usableRoute() ? `${(usableRoute().distanceMeters / 1000).toFixed(1)} km / ${(usableRoute().distanceMeters / 1609.344).toFixed(1)} mi` : "Not calculated"], ["Travel time:", usableRoute() ? `${formatDuration(usableRoute().durationSeconds + waitingMinutes() * 60)} (${waitingMinutes()} min waiting)` : "Not calculated"], ["Airport Details:", state.airline || state.flight ? `${state.flightType === "commercial" ? "Commercial Flight" : "Private Aviation"} — ${state.airline} ${state.flight}` : "Not provided"]])}</section><section class="review-block">${reviewHead(2, "SELECTED VEHICLE", "car", 1)}<div class="review-vehicle">${vehicleImage() ? `<img src="${e(asset(vehicleImage()))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p><div class="capacities">${icon("people")}<span>Up to ${selected().capacity} Passengers</span>${icon("luggage")}<span>Up to ${bags()} Bags</span></div></div></div></section><section class="review-block">${reviewHead(3, "PASSENGERS & EXTRAS", "people", 2)}${rows(
       [
         ["Passengers:", state.passengers],
         ["Luggage:", state.luggage],
@@ -1182,7 +1211,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       "en-US",
       { weekday: "short" },
     );
-    return `<header class="thank-hero">${brand(true)}</header><main id="main" tabindex="-1" class="thank-content"><h1>Thank you, ${e(state.billing.first)}.</h1><p>Your reservation request has been received and is currently being reviewed.</p><p>Reservation requests are typically reviewed within 2–4 business hours.</p><p class="request-id">Request ID: ${e(state.requestId)}</p>${runtime ? "" : '<p class="demo-notice">Demo request only — no reservation, payment, or email has been sent.</p>'}<div class="received-card"><div class="received-status"><span class="seal">${icon("check")}</span><div><h2>Reservation Request Received</h2><p>We’ll confirm availability and send you the next steps soon.</p></div></div><div class="received-date">${icon("calendar")}<div><p>Pickup Date & Time</p><strong>${dateLabel(true)}</strong><span>${weekday}, ${timeLabel()}</span></div></div></div><section class="thank-section">${thankHeading("TRIP DETAILS", "calendar")}${rows(
+    return `<header class="thank-hero">${brand(true)}</header><main id="main" tabindex="-1" class="thank-content"><h1>Thank you, ${e(state.billing.first)}.</h1><p>Your reservation request has been received and is currently being reviewed.</p><p>Reservation requests are typically reviewed within 2–4 business hours.</p><p class="request-id">Request ID: ${e(state.requestId)}</p>${runtime ? "" : '<p class="demo-notice">Demo request only — no reservation, payment, or email has been sent.</p>'}<div class="received-card"><div class="received-status"><span class="seal">${icon("check")}</span><div><h2>Reservation Request Received</h2><p>We’ll confirm availability and send you the next steps soon.</p></div></div><div class="received-date">${icon("calendar")}<div><p>Pickup Date & Time</p><strong>${dateLabel(true)}</strong><span>${weekday}, ${e(timeLabel())}</span>${time24Markup()}</div></div></div><section class="thank-section">${thankHeading("TRIP DETAILS", "calendar")}${rows(
       [
         [
           "Service Type:",
@@ -1347,7 +1376,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       dialog.setAttribute("aria-labelledby", "availability-heading");
       dialog.setAttribute("aria-describedby", "availability-description");
       const title = kind === "unavailable" ? "Vehicle already booked" : kind === "requested" ? "Another request is awaiting review" : "Availability could not be checked";
-      dialog.innerHTML = `<div class="availability-symbol">${icon(kind === "unavailable" ? "calendar" : "info")}</div><h2 id="availability-heading">${e(title)}</h2><p id="availability-description">${e(message)}</p><div class="availability-slot"><strong>${e(selected().display)}</strong><span>${e(dateLabel())} · ${e(timeLabel())}</span></div>${kind === "requested" ? '<p class="availability-note">This is a reservation request, not a confirmed booking. Your team will confirm availability.</p>' : ""}<div class="availability-actions">${kind === "requested" ? '<button class="btn primary" type="button" data-availability-choice="continue">Continue with request</button>' : kind === "error" ? '<button class="btn primary" type="button" data-availability-choice="retry">Try again</button>' : ""}<button class="btn ${kind === "unavailable" ? "primary" : "secondary"}" type="button" data-availability-choice="cancel">Choose another vehicle</button></div>`;
+      dialog.innerHTML = `<div class="availability-symbol">${icon(kind === "unavailable" ? "calendar" : "info")}</div><h2 id="availability-heading">${e(title)}</h2><p id="availability-description">${e(message)}</p><div class="availability-slot"><strong>${e(selected().display)}</strong><span>${e(dateLabel())} · ${e(timeLabel())}</span>${time24Markup()}</div>${kind === "requested" ? '<p class="availability-note">This is a reservation request, not a confirmed booking. Your team will confirm availability.</p>' : ""}<div class="availability-actions">${kind === "requested" ? '<button class="btn primary" type="button" data-availability-choice="continue">Continue with request</button>' : kind === "error" ? '<button class="btn primary" type="button" data-availability-choice="retry">Try again</button>' : ""}<button class="btn ${kind === "unavailable" ? "primary" : "secondary"}" type="button" data-availability-choice="cancel">Choose another vehicle</button></div>`;
       let settled = false, parentWindow = null;
       // An autosized shortcode iframe can be taller than the screen. Position
       // the dialog inside the part of that frame the visitor can actually see.
@@ -1786,6 +1815,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     const display = app.querySelector(`[data-display="${path}"]`);
     if (display)
       display.textContent = path === "trip.date" ? dateLabel() : clockLabel();
+    if (path === "trip.time") refreshTime24();
     const count = app.querySelector(`[data-counter="${path}"]`);
     if (count) count.textContent = input.value.length + "/" + input.maxLength;
     if (path === "custom") refreshPrices();

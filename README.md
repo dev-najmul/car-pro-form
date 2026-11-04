@@ -1,12 +1,13 @@
-# WordPress plugin — Tuxano Booking 2.4.3
+# WordPress plugin — Tuxano Booking 2.4.4
 
 The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
 
-- [2.4.3 plugin ZIP](releases/tuxano-booking-2.4.3.zip) · [checksum](releases/tuxano-booking-2.4.3.zip.sha256) · [previous live 2.3.1 ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.1.zip)
+- [2.4.4 plugin ZIP](releases/tuxano-booking-2.4.4.zip) · [checksum](releases/tuxano-booking-2.4.4.zip.sha256) · [previous live 2.3.1 ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.1.zip)
 - [Home quick planner](https://bdreadyweb.com/carbook/) · [Main booking form](https://bdreadyweb.com/carbook/booking/) · [WordPress booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking)
 - [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
 - Shortcodes: `[tuxano_quick_booking]` for a home hero and `[tuxano_booking]` for the main booking page. Choose the destination under Settings → Quick booking. For the full reference design choose **Tuxano Booking — full page** as the page template.
 - Build: `npm run build:wordpress`. Existing static setup and historical prototype notes follow below.
+- [Dual pickup clocks, letter spacing and Safari location requests in 2.4.4](wordpress/UPGRADE-2.4.4.md).
 - [Smaller package and configurable backgrounds in 2.4.3](wordpress/UPGRADE-2.4.3.md).
 - [Nearby suggested pickup for quick and main GPS in 2.4.2](wordpress/UPGRADE-2.4.2.md).
 - [GPS refinement and automatic map correction in 2.4.1](wordpress/UPGRADE-2.4.1.md).

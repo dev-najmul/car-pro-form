@@ -717,6 +717,14 @@ final class Admin {
         ] as $name => $label) {
             self::field($settings, $name, $label, 'color', sprintf(__('Saved color: %1$s. Default: %2$s.', 'tuxano-booking'), $settings[$name], Settings::FORM_COLORS[$name]), ['required' => 'required']);
         }
+        echo '</table><h3>' . esc_html__('Letter spacing', 'tuxano-booking') . '</h3><p>' . esc_html__('Control letter spacing in the main form, its thank-you page and the quick-booking card. Leave a field empty to keep the original design; enter 0 for no extra spacing. Email typography stays separate.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
+        foreach ([
+            'form_title_letter_spacing' => [__('Title letter spacing (px)', 'tuxano-booking'), __('Main headings and section titles. For example, 1.0 adds one pixel between letters.', 'tuxano-booking')],
+            'form_text_letter_spacing' => [__('Text letter spacing (px)', 'tuxano-booking'), __('Form text, labels and input values. Suggested starting value: 1.0.', 'tuxano-booking')],
+            'form_button_letter_spacing' => [__('Button letter spacing (px)', 'tuxano-booking'), __('Button text. Suggested starting value: 2.0.', 'tuxano-booking')],
+        ] as $name => $definition) {
+            self::field($settings, $name, $definition[0], 'number', $definition[1] . ' ' . __('Allowed range: -1.0 to 5.0 px, in 0.1-pixel steps. Empty means original.', 'tuxano-booking'), ['min' => -1, 'max' => 5, 'step' => '0.1', 'placeholder' => __('Original', 'tuxano-booking')]);
+        }
         echo '</table></section>';
         self::background_settings($settings);
         echo '<section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
@@ -796,7 +804,7 @@ final class Admin {
         $keys = $section === 'pricing'
             ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
             : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'email_logo_url', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit', 'booking_page_id'];
-        if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS), array_keys(Settings::BACKGROUNDS)); }
+        if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS), array_keys(Settings::TYPOGRAPHY), array_keys(Settings::BACKGROUNDS)); }
         $values = [];
         foreach ($keys as $key) {
             if (!isset($_POST[$key])) {

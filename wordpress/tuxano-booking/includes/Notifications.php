@@ -161,7 +161,11 @@ final class Notifications
         $title = $titles[$data['status_event']] ?? ($data['admin'] ? 'New reservation request' : ($data['update'] ? 'Reservation updated' : 'Reservation request received'));
         $html = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #d8dce4;border-radius:6px;background:#f5f6f8"><tr><td style="padding:18px 20px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td class="email-banner-column" valign="top" style="padding:0 18px 0 0"><strong style="display:block;color:#0a121f;font-size:15px">' . esc_html($title) . '</strong><span style="display:block;margin-top:4px;font-size:12px;color:#667085">' . esc_html('Status: ' . $data['status']) . '</span></td>';
         if (!in_array($data['status_event'], ['cancelled', 'completed'], true)) {
-            $html .= '<td class="email-banner-column" valign="top" width="44%" style="width:44%;padding:0"><span style="display:block;font-size:11px;color:#667085">Pickup date &amp; time</span><strong style="display:block;color:#0a121f;font-size:13px">' . esc_html($data['pickup_display']) . '</strong></td>';
+            $html .= '<td class="email-banner-column" valign="top" width="44%" style="width:44%;padding:0"><span style="display:block;font-size:11px;color:#667085">Pickup date &amp; time</span><strong style="display:block;color:#0a121f;font-size:13px">' . esc_html($data['pickup_display']) . '</strong>';
+            if ($data['pickup_display24'] !== '') {
+                $html .= '<span class="email-time-24" style="display:block;margin-top:6px;font-size:12px;color:#667085"><span aria-hidden="true" style="display:inline-block;border:1px solid #667085;border-radius:50%;width:19px;height:19px;text-align:center;font-size:9px;line-height:19px;margin-right:5px">24</span>' . esc_html($data['pickup_display24']) . '</span>';
+            }
+            $html .= '</td>';
         }
         return $html . '</tr></table></td></tr></table>';
     }
@@ -244,6 +248,15 @@ final class Notifications
         }
     }
 
+    private static function pickup_display24(array $trip): string
+    {
+        try {
+            return Timezones::time24(self::value($trip['date'] ?? ''), self::value($trip['time'] ?? ''), self::value($trip['timezone'] ?? wp_timezone_string()));
+        } catch (\InvalidArgumentException $error) {
+            return '';
+        }
+    }
+
     /** Prepare the same authoritative values for rich HTML and plain-text mail. */
     private static function message_data(array $row, array $settings, string $kind): array
     {
@@ -261,7 +274,9 @@ final class Notifications
         $title = $kind === 'admin' ? 'New reservation request' : ($kind === 'update' ? 'Your request has been updated' : 'Thank you, ' . $first_name . '.');
         $intro = $kind === 'admin' ? 'A new transportation request is ready for your team to review. Check availability and the details below before confirming with the customer.' : ($kind === 'update' ? 'Your booking team has updated your request. Please review the latest itinerary and estimate below, and contact us if anything needs changing.' : "We've received your reservation request. Our team will review the details and contact you to confirm availability and arrange payment.");
         $pickup_display = self::pickup_display($trip);
-        $journey = ['Service' => ($trip['service'] ?? '') === 'hourly' ? 'Hourly (' . self::value($trip['hours'] ?? '') . ' booked hours)' : 'Transfer', 'Pickup date & time' => $pickup_display, 'Pickup location' => $trip['pickup'] ?? ''];
+        $pickup_display24 = self::pickup_display24($trip);
+        $pickup_both = $pickup_display . ($pickup_display24 !== '' ? "\n24-hour: " . $pickup_display24 : '');
+        $journey = ['Service' => ($trip['service'] ?? '') === 'hourly' ? 'Hourly (' . self::value($trip['hours'] ?? '') . ' booked hours)' : 'Transfer', 'Pickup date & time' => $pickup_both, 'Pickup location' => $trip['pickup'] ?? ''];
         $waiting = 0;
         foreach (is_array($trip['stops'] ?? null) ? $trip['stops'] : [] as $index => $stop) {
             if (!is_array($stop)) { continue; }
@@ -302,8 +317,8 @@ final class Notifications
             $title = 'Thank you for travelling with us';
             $intro = 'Thank you, ' . $first_name . ', for choosing us for your journey. We hope you enjoyed your trip and look forward to welcoming you again.';
         }
-        $summary = ['Pickup date & time' => $pickup_display, 'Pickup location' => $trip['pickup'] ?? '', 'Drop-off location' => $trip['dropoff'] ?? '', 'Vehicle' => $row['vehicle_name'] ?? ''];
-        return ['status_event' => $event, 'admin' => $kind === 'admin', 'update' => $kind === 'update', 'pickup_display' => $pickup_display, 'summary' => $summary, 'title' => $title, 'intro' => $intro, 'eyebrow' => $kind === 'admin' ? 'New request · action required' : ($kind === 'update' ? 'Reservation update' : 'Reservation request received'), 'preheader' => $title . ' · ' . self::value($row['reference'] ?? '') . (in_array($event, ['cancelled', 'completed'], true) ? '' : ' · ' . self::money($pricing['total'] ?? 0, $currency)), 'status' => $status, 'trip' => $journey, 'contact' => $contact, 'additional' => $additional, 'charges' => $charges, 'total' => self::money($pricing['total'] ?? 0, $currency), 'waiting_note' => $waiting > 0 ? 'Transportation includes ' . $waiting . ' min of selected stop waiting (' . self::money($pricing['fare']['waitingCharge'] ?? 0, $currency) . '); it is not charged again below.' : 'No stop waiting has been added to this estimate.', 'changes' => $changes, 'previous_total' => $previous_total];
+        $summary = ['Pickup date & time' => $pickup_both, 'Pickup location' => $trip['pickup'] ?? '', 'Drop-off location' => $trip['dropoff'] ?? '', 'Vehicle' => $row['vehicle_name'] ?? ''];
+        return ['status_event' => $event, 'admin' => $kind === 'admin', 'update' => $kind === 'update', 'pickup_display' => $pickup_display, 'pickup_display24' => $pickup_display24, 'summary' => $summary, 'title' => $title, 'intro' => $intro, 'eyebrow' => $kind === 'admin' ? 'New request · action required' : ($kind === 'update' ? 'Reservation update' : 'Reservation request received'), 'preheader' => $title . ' · ' . self::value($row['reference'] ?? '') . (in_array($event, ['cancelled', 'completed'], true) ? '' : ' · ' . self::money($pricing['total'] ?? 0, $currency)), 'status' => $status, 'trip' => $journey, 'contact' => $contact, 'additional' => $additional, 'charges' => $charges, 'total' => self::money($pricing['total'] ?? 0, $currency), 'waiting_note' => $waiting > 0 ? 'Transportation includes ' . $waiting . ' min of selected stop waiting (' . self::money($pricing['fare']['waitingCharge'] ?? 0, $currency) . '); it is not charged again below.' : 'No stop waiting has been added to this estimate.', 'changes' => $changes, 'previous_total' => $previous_total];
     }
 
     /** Never email internal notes, audit actors, tokens or original contact data. */

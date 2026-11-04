@@ -4079,3 +4079,29 @@ body.form-page .form-error { border-radius: 6px; font-size: 13px; }
   body.form-page .vehicle-card > h3 { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .route-loading::before { animation: none; } }
+
+/* Secondary pickup time uses the same saved clock and geographic time zone. */
+.time-24h { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--muted); font-size: .9em; line-height: 1.55; overflow-wrap: anywhere; }
+.time-24h[hidden] { display: none; }
+.time-24h .icon { width: 20px; height: 20px; flex: 0 0 20px; }
+.trip-strip p.trip-strip-time { flex-direction: column; align-items: flex-start; gap: 4px; }
+.trip-strip-time > .time-12h { display: flex; align-items: center; gap: 12px; }
+.trip-strip-time .time-24h { margin-top: 0; }
+.route-summary .summary-time-24h { margin-bottom: 20px; }
+.received-date .time-24h { display: flex; font-size: 14px; }
+.received-date .time-24h > [data-time24-value] { font-size: inherit; line-height: inherit; }
+.picker-time-24h { font-size: 12px; }
+
+/* Only configured typography overrides the existing reference design. */
+html[data-text-spacing] body:is(.form-page, .thank-page),
+html[data-text-spacing] body:is(.form-page, .thank-page) :where(p, label, input, select, textarea, dt, dd, th, td, li, span, strong, small, a) { letter-spacing: var(--form-text-letter-spacing); }
+html[data-text-spacing] body.form-page .trip-panel .label { letter-spacing: var(--form-text-letter-spacing); }
+html[data-title-spacing] body:is(.form-page, .thank-page) :is(h1, h2, h3, h4),
+html[data-title-spacing] body:is(.form-page, .thank-page) :is(h1, h2, h3, h4) * { letter-spacing: var(--form-title-letter-spacing); }
+html[data-button-spacing] body:is(.form-page, .thank-page) :is(button, .btn, [role="button"]),
+html[data-button-spacing] body:is(.form-page, .thank-page) :is(button, .btn, [role="button"]) * { letter-spacing: var(--form-button-letter-spacing); }
+html[data-button-spacing] body.form-page .btn { white-space: normal; height: auto; overflow-wrap: anywhere; }
+html[data-button-spacing] body.form-page .progress button,
+html[data-button-spacing] body.form-page .progress button * { letter-spacing: var(--form-text-letter-spacing, normal); }
+html:is([data-text-spacing], [data-button-spacing]) body.form-page .progress .step-label { max-width: 100%; overflow-wrap: anywhere; }
+html:is([data-text-spacing], [data-title-spacing], [data-button-spacing]) :is(.icon, svg) { letter-spacing: normal; }

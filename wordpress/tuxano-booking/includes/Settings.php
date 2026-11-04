@@ -27,6 +27,13 @@ final class Settings
         'form_active_circle_text_color' => '#ffffff',
     ];
 
+    /** Blank spacing keeps the existing design; zero is an explicit preference. */
+    public const TYPOGRAPHY = [
+        'form_title_letter_spacing' => '',
+        'form_text_letter_spacing' => '',
+        'form_button_letter_spacing' => '',
+    ];
+
     /** Background preferences remain independent of prices and booking records. */
     public const BACKGROUNDS = [
         'form_background_mode' => 'inherit',
@@ -78,7 +85,7 @@ final class Settings
             'booking_hourly_limit' => 20,
             'dashboard_recent_limit' => 3,
             'booking_page_id' => 0,
-        ], self::FORM_COLORS, self::BACKGROUNDS);
+        ], self::FORM_COLORS, self::TYPOGRAPHY, self::BACKGROUNDS);
     }
 
     /** @return array<string,mixed> */
@@ -154,6 +161,13 @@ final class Settings
                     $errors->add('tuxano_invalid_settings', __('Enter a public HTTP or HTTPS background image URL without credentials or a fragment.', 'tuxano-booking'));
                 } else {
                     $next[$key] = $url;
+                }
+            } elseif (array_key_exists($key, self::TYPOGRAPHY)) {
+                $spacing = self::letter_spacing($value);
+                if ($value !== '' && $spacing === null) {
+                    $errors->add('tuxano_invalid_settings', __('Enter letter spacing from -1.0 to 5.0 pixels in 0.1-pixel steps, or leave it empty for the original design.', 'tuxano-booking'));
+                } else {
+                    $next[$key] = $value === '' ? '' : $spacing;
                 }
             } elseif (array_key_exists($key, self::FORM_COLORS)) {
                 if (!preg_match('/^#[A-Fa-f0-9]{6}$/D', $value)) {
@@ -262,12 +276,26 @@ final class Settings
             $color = $settings[$private_key];
             $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
+        $public['typography'] = [];
+        foreach (['form_title_letter_spacing' => 'titleLetterSpacing', 'form_text_letter_spacing' => 'textLetterSpacing', 'form_button_letter_spacing' => 'buttonLetterSpacing'] as $private_key => $public_key) {
+            $public['typography'][$public_key] = self::letter_spacing($settings[$private_key]);
+        }
         $public['backgrounds'] = self::backgrounds($settings);
         $public['timezone'] = Timezones::DEFAULT_ZONE;
         $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
         $public['availabilityChecks'] = true;
         $public['pickupTimezones'] = true;
         return $public;
+    }
+
+    /** Appearance numbers only: never accept CSS units, expressions or nonfinite values. */
+    private static function letter_spacing($value): ?float
+    {
+        if (!is_string($value) && !is_int($value) && !is_float($value)) { return null; }
+        $value = trim((string) $value);
+        if (!preg_match('/^-?\d(?:\.\d)?$/D', $value)) { return null; }
+        $number = (float) $value;
+        return is_finite($number) && $number >= -1 && $number <= 5 ? round($number, 1) : null;
     }
 
     /** Display-only URLs; no remote image is fetched by the server. */

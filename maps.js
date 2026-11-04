@@ -49,17 +49,32 @@ export function normalizeDevicePosition(position, now = Date.now()) {
 
 export function requestDeviceLocation(geolocation = globalThis.navigator?.geolocation, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    const watching = typeof geolocation?.watchPosition === 'function' && typeof geolocation?.clearWatch === 'function';
-    if (!watching && typeof geolocation?.getCurrentPosition !== 'function') {
+    const canWatch = typeof geolocation?.watchPosition === 'function' && typeof geolocation?.clearWatch === 'function';
+    const canRequest = typeof geolocation?.getCurrentPosition === 'function';
+    if (!canWatch && !canRequest) {
       reject(new Error('Current location is unavailable on this device. Please enter your pickup address.'));
       return;
+    }
+    // Distinguish a host/security policy block from a visitor permission denial.
+    // Do not query navigator.permissions: Safari can return stale permission
+    // state, and awaiting it would move the request outside the button gesture.
+    if (geolocation === globalThis.navigator?.geolocation) {
+      if (globalThis.isSecureContext === false) {
+        reject(new Error('Current location needs a secure HTTPS page. Open the secure website or enter your pickup address.')); return;
+      }
+      try {
+        const policy = globalThis.document?.permissionsPolicy || globalThis.document?.featurePolicy;
+        if (policy?.allowsFeature?.('geolocation') === false) {
+          reject(new Error('Location is blocked by this page’s browser policy. Open the booking page directly or enter your pickup address.')); return;
+        }
+      } catch { /* Older browsers may not expose a policy diagnostic. */ }
     }
     const abortError = () => new DOMException('Location detection was cancelled.', 'AbortError');
     if (signal?.aborted) { reject(abortError()); return; }
     let settled = false, best = null, lastFailure = null, refinementTimer;
-    let watchId, watchAssigned = false, watchCleared = false;
+    let watchId, watchStarted = false, watchAssigned = false, watchCleared = false;
     const stopWatching = () => {
-      if (!watching || !watchAssigned || watchCleared) return;
+      if (!watchAssigned || watchCleared) return;
       watchCleared = true;
       try { geolocation.clearWatch(watchId); } catch { /* The request is already settled. */ }
     };
@@ -72,6 +87,15 @@ export function requestDeviceLocation(geolocation = globalThis.navigator?.geoloc
     };
     const unavailable = () => new Error('Your device could not determine your location. Please try again or enter your pickup address.');
     const timedOut = () => new Error('Finding your location took too long. Please try again or enter your pickup address.');
+    const permissionDenied = () => {
+      const safari = /Safari/i.test(globalThis.navigator?.userAgent || '') && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS|Android/i.test(globalThis.navigator?.userAgent || '');
+      const guidance = safari
+        ? ' In Safari, allow Location for this website. On iPhone or iPad, also enable Location Services for Safari Websites in device Settings, then try again.'
+        : ' Check this website’s location permission and your device’s Location Services, then try again.';
+      const failure = new Error('Location permission was denied.' + guidance + ' You can also enter your pickup address.');
+      failure.code = 'LOCATION_PERMISSION_DENIED';
+      return failure;
+    };
     const finishBest = fallback => {
       if (!best) { finish(lastFailure || fallback); return; }
       try {
@@ -85,38 +109,51 @@ export function requestDeviceLocation(geolocation = globalThis.navigator?.geoloc
     // Some browser/platform providers do not honor their own timeout reliably.
     const watchdog = setTimeout(() => finishBest(timedOut()), DEVICE_LOCATION_POLICY.timeoutMs + 5000);
     signal?.addEventListener('abort', onAbort, { once: true });
+    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: DEVICE_LOCATION_POLICY.timeoutMs };
+    const startWatching = () => {
+      if (settled || watchStarted || !canWatch) return;
+      watchStarted = true;
+      try {
+        watchId = geolocation.watchPosition(onPosition, onWatchFailure, options);
+        watchAssigned = true;
+        if (settled) stopWatching();
+      } catch { finishBest(unavailable()); }
+    };
     const onPosition = position => {
       if (settled) return;
       let point;
       try { point = normalizeDevicePosition(position); }
       catch (failure) {
-        if (!watching) finish(failure);
-        else lastFailure = failure;
+        if (!canWatch) finish(failure);
+        else { lastFailure = failure; startWatching(); }
         return;
       }
       if (!best || point.accuracyMeters < best.accuracyMeters || point.accuracyMeters === best.accuracyMeters && point.capturedAt > best.capturedAt) best = point;
-      if (point.precise || !watching) { finish(null, best); return; }
+      if (point.precise || !canWatch) { finish(null, best); return; }
       // Browsers commonly send a coarse network estimate before a GPS/Wi-Fi
       // fix. Give that first estimate one bounded improvement window instead
       // of either accepting it immediately or extending the wait indefinitely.
       if (refinementTimer === undefined) refinementTimer = setTimeout(() => finishBest(timedOut()), DEVICE_LOCATION_POLICY.coarseRefinementMs);
+      startWatching();
     };
-    const onFailure = failure => {
+    const onWatchFailure = failure => {
       if (settled) return;
-      if (failure?.code === 1) { finish(new Error('Location permission was denied. Please allow location access or enter your pickup address.')); return; }
+      if (failure?.code === 1) { finish(permissionDenied()); return; }
       if (failure?.code === 3) { finishBest(timedOut()); return; }
-      if (!watching) finish(unavailable());
-      else lastFailure = unavailable(); // Temporary unavailability may recover.
+      lastFailure = unavailable(); // Temporary unavailability may recover.
+    };
+    const onCurrentFailure = failure => {
+      if (settled || watchStarted) return;
+      if (failure?.code === 1) { finish(permissionDenied()); return; }
+      if (canWatch) { lastFailure = failure?.code === 3 ? timedOut() : unavailable(); startWatching(); }
+      else finish(failure?.code === 3 ? timedOut() : unavailable());
     };
     try {
-      const options = { enableHighAccuracy: true, maximumAge: 0, timeout: DEVICE_LOCATION_POLICY.timeoutMs };
-      if (watching) {
-        watchId = geolocation.watchPosition(onPosition, onFailure, options);
-        watchAssigned = true;
-        // Test providers and some native wrappers can call back synchronously,
-        // before returning the watch handle needed for cleanup.
-        if (settled) stopWatching();
-      } else geolocation.getCurrentPosition(onPosition, onFailure, options);
+      // Call the native one-shot API synchronously inside the user's tap. This
+      // follows Safari's permission-prompt path and avoids starting persistent
+      // tracking for an already accurate result. Watch-only wrappers still work.
+      if (canRequest) geolocation.getCurrentPosition(position => { if (!watchStarted) onPosition(position); }, onCurrentFailure, options);
+      else startWatching();
     } catch { finish(unavailable()); }
   });
 }

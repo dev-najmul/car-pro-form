@@ -52,6 +52,8 @@ try {
     foreach ([[91, 0], [0, 181], [INF, 0], [0, NAN]] as $bad) { $throws(static fn() => Timezones::resolve($bad[0], $bad[1]), 'Out-of-range/non-finite coordinates reject.'); }
     $check(Timezones::display('2026-10-30', '17:50', 'America/New_York') === 'October 30, 2026 at 5:50 PM (Eastern Time)', 'Email schedule exactly matches the requested full date/time/zone format.');
     $check(Timezones::display('2026-10-30', '17:50', 'America/Chicago') === 'October 30, 2026 at 5:50 PM (Central Time)', 'Chicago wall time uses Central Time without conversion into the visitor zone.');
+    foreach (['00:00', '12:00', '14:44', '23:59'] as $clock) { $check(Timezones::time24('2026-10-30', $clock, 'America/Chicago') === $clock . ' (Central Time)', 'The secondary clock preserves midnight, noon and late pickup wall times: ' . $clock); }
+    $check(Timezones::time24('2027-11-07', '01:30', 'America/New_York') === '01:30 (Eastern Time)', 'An already saved repeated-hour pickup remains readable in the secondary clock.');
     $check(Timezones::local('2027-01-15', '17:50', 'America/New_York')->format('P') === '-05:00' && Timezones::local('2027-07-15', '17:50', 'America/New_York')->format('P') === '-04:00', 'Reservation date controls Eastern daylight saving offset.');
     $check(Timezones::local('2027-01-15', '17:50', 'America/Chicago')->format('P') === '-06:00' && Timezones::local('2027-07-15', '17:50', 'America/Chicago')->format('P') === '-05:00', 'Reservation date controls Central daylight saving offset.');
     $check(Timezones::local('2027-07-15', '17:50', 'America/Phoenix')->format('P') === '-07:00', 'Arizona remains distinct from DST-observing Mountain locations.');

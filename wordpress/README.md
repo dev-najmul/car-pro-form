@@ -1,8 +1,8 @@
-# Tuxano Booking 2.4.3
+# Tuxano Booking 2.4.4
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.4.3.zip) · [SHA-256](../releases/tuxano-booking-2.4.3.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.4.4.zip) · [SHA-256](../releases/tuxano-booking-2.4.4.zip.sha256)
 
 ## Install and configure
 
@@ -101,3 +101,5 @@ Version **2.4.1** waits briefly for improved GPS/Wi-Fi readings instead of stopp
 Version **2.4.2** replaces the successful coarse-location map prompt with an automatically filled nearby canonical Google place/address and a compact adjustment notice in both forms. Nearby searches are bounded, cancellable and use genuine provider results. Suggested provenance survives quick-to-main restoration until the user edits or confirms a map point; route, price and pickup timezone are calculated freshly for the selected canonical point. See [UPGRADE-2.4.2.md](UPGRADE-2.4.2.md).
 
 Version **2.4.3** removes seven unused lobby images. Under **Settings → Background images**, choose a desktop and optional mobile image for the main booking form or thank-you hero from the Media Library, or paste a public image URL. Main booking defaults to the host page background; thank-you defaults to its original photographs and can also use no image. An empty custom mobile field uses the desktop image. Images selected from the Media Library stay in WordPress uploads and do not enlarge the plugin ZIP. The home quick card uses its host hero section’s background.
+
+Version **2.4.4** shows a secondary 24-hour clock below the existing 12-hour pickup time in summaries, review, receipts and email schedules, always using the same pickup timezone. **Settings → Form appearance → Letter spacing** provides separate title/text/button values from −1 to 5 px in 0.1 px steps; leave blank for the current design or enter 0 explicitly. These display preferences apply to main and quick forms. Native location requests now start synchronously with `getCurrentPosition` inside the visitor’s button tap, followed by a bounded watch only if needed. A real denied Safari/iOS permission cannot be overridden by JavaScript; the form explains website and Safari Websites Location Services settings and permits a fresh manual retry/address entry. See [UPGRADE-2.4.4.md](UPGRADE-2.4.4.md).

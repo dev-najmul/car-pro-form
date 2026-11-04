@@ -83,6 +83,38 @@ try {
     }
     $check(Settings::save(['form_title_color' => '#123456']) === true && Settings::get()['form_subtitle_color'] === '#aabbcc', 'Changing one appearance control preserves every omitted color.');
     $check(Settings::save(Settings::FORM_COLORS) === true && Settings::revision() === $appearance_revision, 'Original appearance may be restored without changing fares.');
+    $legacy_typography = Settings::get();
+    foreach (array_keys(Settings::TYPOGRAPHY) as $key) { unset($legacy_typography[$key]); }
+    update_option(Settings::OPTION, $legacy_typography, false);
+    $original_typography = ['titleLetterSpacing' => null, 'textLetterSpacing' => null, 'buttonLetterSpacing' => null];
+    $check(array_intersect_key(Settings::get(), Settings::TYPOGRAPHY) === Settings::TYPOGRAPHY && Settings::public_data()['typography'] === $original_typography, 'Existing sites keep their original spacing until an administrator chooses a value.');
+    $typography_revision = Settings::revision();
+    $check(Settings::save(['form_title_letter_spacing' => '1.0', 'form_text_letter_spacing' => '1.0', 'form_button_letter_spacing' => '2.0']) === true, 'Title, text and button spacing can be controlled independently.');
+    $check(Settings::public_data()['typography'] === ['titleLetterSpacing' => 1.0, 'textLetterSpacing' => 1.0, 'buttonLetterSpacing' => 2.0], 'Public typography contains normalized numbers rather than CSS text.');
+    $check(Settings::revision() === $typography_revision, 'Active letter spacing preferences cannot invalidate a current route quote.');
+    $before = Settings::get();
+    $check(Settings::save(['company_name' => $before['company_name']]) === true && Settings::get() === $before, 'Unrelated partial saves preserve all three spacing preferences.');
+    $check(Settings::save(['form_text_letter_spacing' => '0']) === true && Settings::public_data()['typography']['textLetterSpacing'] === 0.0 && Settings::get()['form_button_letter_spacing'] === 2.0, 'Zero is an explicit spacing value and does not reset omitted fields.');
+    foreach (['-1.0' => -1.0, '5.0' => 5.0] as $spacing => $expected) {
+        $check(Settings::save(['form_title_letter_spacing' => $spacing]) === true && Settings::public_data()['typography']['titleLetterSpacing'] === $expected, 'The advertised spacing boundary saves exactly: ' . $spacing);
+    }
+    foreach (['-1.1', '5.1', '10', '1.25', '1e0', '1px', 'NaN', NAN, INF, -INF, 'calc(1px)', '0;display:none', ['1.0'], true, null] as $invalid_spacing) {
+        $before = Settings::get();
+        $result = Settings::save(['company_name' => 'Must not partially save', 'form_button_letter_spacing' => $invalid_spacing]);
+        $check(is_wp_error($result) && Settings::get() === $before, 'Invalid spacing rejects the entire settings save without overwriting existing values.');
+    }
+    $check(Settings::save(['form_text_letter_spacing' => '']) === true && Settings::public_data()['typography']['textLetterSpacing'] === null && Settings::get()['form_button_letter_spacing'] === 2.0, 'Clearing one spacing field restores its original design while retaining the other choices.');
+    $corrupt_typography = Settings::get();
+    $corrupt_typography['form_title_letter_spacing'] = ['1.0'];
+    $corrupt_typography['form_text_letter_spacing'] = '2px';
+    $corrupt_typography['form_button_letter_spacing'] = INF;
+    update_option(Settings::OPTION, $corrupt_typography, false);
+    $check(Settings::public_data()['typography'] === $original_typography, 'Malformed stored spacing cannot expose arbitrary CSS or nonfinite values to the form.');
+    $check(Settings::save(Settings::TYPOGRAPHY) === true && Settings::revision() === $typography_revision, 'All three original spacing preferences can be restored without changing pricing.');
+    wp_set_current_user(0);
+    $before = Settings::get();
+    $check(is_wp_error(Settings::save(['form_text_letter_spacing' => '1.0'])) && Settings::get() === $before, 'Anonymous visitors cannot change form typography.');
+    wp_set_current_user((int) $admin[0]);
     $legacy_backgrounds = Settings::get();
     foreach (array_keys(Settings::BACKGROUNDS) as $key) { unset($legacy_backgrounds[$key]); }
     update_option(Settings::OPTION, $legacy_backgrounds, false);

@@ -168,4 +168,11 @@ final class Timezones
         $zone = $timezone ?: self::DEFAULT_ZONE;
         return self::local($date, $time, $zone, true)->format('F j, Y \a\t g:i A') . ' (' . self::label($zone, $date) . ')';
     }
+
+    /** Secondary clock presentation of the same saved pickup-local schedule. */
+    public static function time24(string $date, string $time, ?string $timezone = null): string
+    {
+        $zone = $timezone ?: self::DEFAULT_ZONE;
+        return self::local($date, $time, $zone, true)->format('H:i') . ' (' . self::label($zone, $date) . ')';
+    }
 }

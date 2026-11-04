@@ -34,6 +34,7 @@ foreach (['customer', 'admin'] as $kind) {
     foreach (['#0a121f', 'tuxano-wordmark.png', 'TUX-2026-NOTIFICATIONTEST', 'Ada &amp; Co', 'Pickup &amp; Plaza', 'USD 335.00', 'Pricing summary', 'Vehicle selected', 'November 8, 2027 at 2:30 PM (Eastern Time)'] as $needle) {
         $check(strpos($html, $needle) !== false, 'Initial ' . $kind . ' email must include ' . $needle);
     }
+    $check(substr_count($html, '14:30 (Eastern Time)') === 2 && substr_count($plain, '24-hour: 14:30 (Eastern Time)') === 1, 'Both initial email alternatives show the same saved pickup in 12-hour and 24-hour formats.');
     $check(($kind === 'admin') === (strpos($html, 'Review in WordPress') !== false), 'Private administrator link must be scoped to admin mail.');
     $check(($kind === 'customer') === (strpos($html, 'WHAT HAPPENS NEXT?') !== false), 'Next steps belong only to the initial customer request.');
     $check(strpos($plain, 'ESTIMATED TOTAL: USD 335.00') !== false && strpos($plain, 'Vehicle: Luxury SUV') !== false && strpos($plain, 'not a payment receipt') !== false, 'The plain alternative must include the estimate and payment qualification.');
@@ -67,6 +68,7 @@ foreach (['confirmed', 'cancelled', 'completed'] as $status) {
             $check(strpos($html, $needle) !== false, 'Confirmed notification must include ' . $needle);
         }
         $check(strpos($plain, 'USD 335.00') !== false && strpos($plain, 'Pickup & Plaza') !== false, 'Confirmed plain text retains authoritative trip and price.');
+        $check(substr_count($html, '14:30 (Eastern Time)') === 1 && strpos($plain, '24-hour: 14:30 (Eastern Time)') !== false, 'Concise confirmed notifications retain both pickup clock formats.');
     } elseif ($status === 'cancelled') {
         $check(strpos($html, 'Sorry, Ada &amp; co') !== false && strpos($html, 'has been cancelled') !== false && strpos($html, 'Questions about this cancellation') !== false, 'Cancelled mail needs a short apology and help invitation.');
         $check(strpos($html . $plain, 'USD 335.00') === false && strpos($html . $plain, 'Pickup & Plaza') === false && strpos($html, 'Pickup &amp; Plaza') === false, 'Cancellation message must not resend a long itinerary/estimate.');
@@ -100,7 +102,8 @@ $check(strpos($html, 'Thank you, Pavel.') !== false && strpos($plain, 'Thank you
 $check(strpos($html, esc_html($expected_intro)) !== false && strpos($plain, $expected_intro) !== false, 'The customer receipt must use the approved review and payment explanation.');
 $check(strpos($html, 'Status: Pending Confirmation') !== false && strpos($plain, 'Status: Pending Confirmation') !== false, 'A new request is explicitly pending confirmation.');
 $check(substr_count($html, $expected_pickup) === 2 && substr_count($plain, $expected_pickup) === 1, 'The banner and trip details must show the identical formatted pickup-local schedule.');
-$check(strpos($html . $plain, '17:50') === false && strpos($html . $plain, 'America/Indiana') === false && strpos($html . $plain, '2026-10-30') === false, 'Human-readable email dates must not expose raw storage dates or timezone identifiers.');
+$check(substr_count($html, '17:50 (Eastern Time)') === 2 && strpos($plain, "\n24-hour: 17:50 (Eastern Time)") !== false, 'The requested secondary clock appears beneath the 12-hour saved pickup in both receipt alternatives.');
+$check(strpos($html . $plain, 'America/Indiana') === false && strpos($html . $plain, '2026-10-30') === false, 'Dual-clock email dates must not expose raw storage dates or timezone identifiers.');
 $check(strpos($html, 'Booking contact</th>') !== false && strpos($html, 'PAVEL Customer') !== false, 'Greeting presentation must preserve the original stored contact name.');
 $check(strpos($html, $receipt['reference']) !== false && strpos($plain, $receipt['reference']) !== false, 'The complete request reference must be retained in both alternatives.');
 foreach (['ÉMILIE' => 'Émilie', '李明' => '李明', '' => 'there'] as $input_name => $greeting_name) {
@@ -111,6 +114,14 @@ foreach (['America/Chicago' => 'Central Time', 'America/Los_Angeles' => 'Pacific
     $receipt['payload']['trip']['timezone'] = $zone;
     $expected = 'October 30, 2026 at 5:50 PM (' . $label . ')';
     $check(substr_count(Notifications::template($receipt, $settings, 'customer'), $expected) === 2, 'The receipt must consistently honor its saved pickup timezone: ' . $zone);
+    $check(substr_count(Notifications::template($receipt, $settings, 'customer'), '17:50 (' . $label . ')') === 2, 'Both secondary email clocks retain the historical saved pickup zone: ' . $zone);
+}
+foreach (['00:00' => '12:00 AM', '12:00' => '12:00 PM', '23:59' => '11:59 PM'] as $clock => $primary) {
+    $receipt['payload']['trip']['time'] = $clock;
+    $receipt['payload']['trip']['timezone'] = 'America/Chicago';
+    $dual_html = Notifications::template($receipt, $settings, 'update');
+    $dual_plain = Notifications::plain_text($receipt, $settings, 'update');
+    $check(substr_count($dual_html, $primary . ' (Central Time)') === 2 && substr_count($dual_html, $clock . ' (Central Time)') >= 2 && strpos($dual_plain, '24-hour: ' . $clock . ' (Central Time)') !== false, 'Detailed update emails preserve both clocks without shifting the pickup date: ' . $clock);
 }
 $receipt['payload']['trip']['timezone'] = 'Invalid/Timezone';
 $check(substr_count(Notifications::template($receipt, $settings, 'customer'), 'Pickup schedule unavailable') === 2, 'A corrupt legacy timezone must not crash rendering or invent an unrelated pickup time.');
