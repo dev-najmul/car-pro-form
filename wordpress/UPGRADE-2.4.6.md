@@ -4,7 +4,7 @@
 
 - Resume the same booking session after a mobile IP change or an expired/evicted cache lease, preserving entered fields and duplicate-submit protection. Public booking requests do not rely on stale WordPress login nonces. Expired quotes refresh without a failed manual retry when rates are unchanged; changed rates require reviewing the new estimate with contact details retained.
 - Settings provide separate **Main title**, **Field label** and **Main button** spacing. Existing saved values remain. Suggestions, input values, body text, map links, Edit and other secondary actions use normal spacing.
-- All Choose on map controls use matching 13 px text without underlines. Waiting selects fill available space, hourly quantity uses the full form width, and stop validation remains below the input row.
+- All Choose on map controls use matching 13 px text without underlines. Waiting selects fill available space, hourly quantity uses the full form width, and stop validation remains below the input row. Tapping a map action does not insert a moving validation message before the native click.
 - Show 24-hour time only in summaries, thank-you and emails. Step 1, quick booking, the compact trip bar and availability popups keep the primary 12-hour clock.
 - Restore the original compact desktop trip bar. Long addresses use bounded previews with full title/accessible text; phone addresses remain fully visible. Date/time and the 14 px Edit action keep their own space.
 
@@ -22,4 +22,4 @@ Syntax checks and all **185 Node checks** passed. Seven sequential WordPress fix
 
 Native WordPress Settings save/reload verified the three separate controls, range/step validation, zero/blank and phone fit; original settings were restored. Actual HTTP tests passed for both a logged-in administrator and an anonymous browser: new session creation, stale nonce omission, timezone lookup, deliberate cache eviction and same-token recovery. The temporary local administrator and authentication state were removed.
 
-ZIP integrity and complete plugin/ten-shared-module/asset byte parity passed: **54 files / 25,017,682 bytes**, SHA-256 **`ccbc0f6dce921aa561c6c6fb907d00e397ca5cab553d9dc7fb61c0e1be359ae1`**. The eight timezone data/resolver files are unchanged from 2.4.5. Private credentials, local helpers and reports are excluded. The managed network policy excludes the live site; this release is supplied for the owner's manual replacement and acceptance check.
+ZIP integrity and complete plugin/ten-shared-module/asset byte parity passed: **54 files / 25,017,894 bytes**, SHA-256 **`0189faa2b10a276d438c8791313d5a502936c51d52e2ab5710e1329d5880d324`**. The eight timezone data/resolver files are unchanged from 2.4.5. Private credentials, local helpers and reports are excluded. The managed network policy excludes the live site; this release is supplied for the owner's manual replacement and acceptance check.

@@ -127,7 +127,7 @@ test('fresh configuration controls destination and retry refreshes an invalid de
   // plausible stale data-booking-url, as a cached public page can.
   await page.route(restUrl + 'session', route => {
     sessions++;
-    return route.fulfill({ json: { settings: { ...settings, bookingPageUrl: available ? bookingUrl : '' }, maps: { browserConfigured: true, browserKey: 'test-browser-key' } } });
+    return route.fulfill({ json: { token: 'a'.repeat(64), settings: { ...settings, bookingPageUrl: available ? bookingUrl : '' }, maps: { browserConfigured: true, browserKey: 'test-browser-key' } } });
   });
   await page.goto('/quick-test/');
   await expect(page.getByRole('alert')).toContainText('temporarily unavailable');

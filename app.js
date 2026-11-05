@@ -1827,9 +1827,19 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     if (result)
       result.innerHTML = `${costs().percent}% = <span>${money(costs().tip)}</span>`;
   }
+  // Keep a location's map action steady through touch/blur activation. Painting
+  // an empty-field error here would move the tapped button before its click.
+  let mapActionInput = null;
+  app.addEventListener("pointerdown", event => {
+    mapActionInput = event.target.closest?.('[data-action="choose-map"]') ? document.activeElement : null;
+  }, true);
+  app.addEventListener("pointercancel", () => { mapActionInput = null; }, true);
+  app.addEventListener("click", () => { mapActionInput = null; }, true);
   app.addEventListener("focusout", event => {
     const control = event.target;
     if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) || !control.willValidate) return;
+    const choosingMap = event.relatedTarget?.closest?.('[data-action="choose-map"]');
+    if (control.hasAttribute("data-place-field") && (choosingMap || mapActionInput === control)) return;
     const key = control.dataset.field || control.dataset.stop || control.name || control.id;
     if (control.dataset.field === "trip.hours") { updateHoursControl(true); save(); }
     touchedFields.add(key); updateValidity(); paintFieldValidation(control);
