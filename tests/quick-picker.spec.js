@@ -19,6 +19,7 @@ test.beforeEach(async ({ page, context }) => {
     };
   });
   await context.route(restUrl + 'session', route => route.fulfill({ json: {
+    token: 'a'.repeat(64),
     settings: { minHours: 2, maxHours: 12, timezone: 'UTC', bookingPageUrl: origin + '/booking/' },
     maps: { browserConfigured: true, browserKey: 'test-browser-key' },
   } }));
