@@ -1706,6 +1706,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   async function submitBooking() {
     if (!currentRoute?.quoteToken) throw new Error("Please refresh your route before submitting this request.");
     const acceptedRevision = currentRoute.pricingRevision;
+    const acceptedPricing = costs(), acceptedTimezone = currentRoute.pickupTimezone;
     requestKey ||= globalThis.crypto.randomUUID();
     const payload = { booking: structuredClone(state), quoteToken: currentRoute.quoteToken, requestKey, website: app.querySelector("[data-booking-honeypot]")?.value || "" };
     const controls = [...app.querySelectorAll("input, select, textarea, button")].map(control => [control, control.disabled]);
@@ -1731,6 +1732,10 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
           invalidateRoute();
           if (!await calculateRoute({ quiet: true }) || !currentRoute?.quoteToken) throw new Error(routeMessage || "Your route could not be refreshed. Your details are still here. Please try again.");
           if (acceptedRevision && currentRoute.pricingRevision && acceptedRevision !== currentRoute.pricingRevision) await reviewChangedPricing();
+          const refreshedPricing = costs();
+          if (["transportation", "tip", "total"].some(key => Math.round(refreshedPricing[key] * 100) !== Math.round(acceptedPricing[key] * 100)) || currentRoute.pickupTimezone !== acceptedTimezone) {
+            throw Object.assign(new Error("The route estimate has changed. Please review the updated price before continuing. Your entered details have been kept."), { code: "tuxano_pricing_review" });
+          }
           payload.quoteToken = currentRoute.quoteToken;
           continue;
         }

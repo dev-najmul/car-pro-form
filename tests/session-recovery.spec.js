@@ -13,7 +13,7 @@ const bootstrap = readFileSync(new URL('../wordpress/tuxano-booking/assets/boots
 const metrics = { distanceMeters: 32186.88, durationSeconds: 1800, provider: 'google', pickupTimezone: 'America/Chicago', pickupTimezoneLabel: 'Central Time', quoteToken: 'b'.repeat(64) };
 
 test.beforeEach(async ({ page }) => {
-  const control = { errors: [], fresh: 0, renewals: 0, expired: false, recovery: proof('b'), calls: [], bookingBodies: [], saved: null, accepted: 0, loseReply: false, originBlocked: false, initialExpiry: Date.now() / 1000 + 7200, routeRevision: 'd'.repeat(64), serverRevision: 'd'.repeat(64), vehicleBase: 50, expireWithNewPrice: false, expireAvailability: false, failRenewals: false, failRouteAfterRenewal: false };
+  const control = { errors: [], fresh: 0, renewals: 0, expired: false, recovery: proof('b'), calls: [], bookingBodies: [], saved: null, accepted: 0, loseReply: false, originBlocked: false, initialExpiry: Date.now() / 1000 + 7200, routeRevision: 'd'.repeat(64), serverRevision: 'd'.repeat(64), vehicleBase: 50, expireWithNewPrice: false, expireAvailability: false, failRenewals: false, failRouteAfterRenewal: false, routeDistance: metrics.distanceMeters, routeTimezone: metrics.pickupTimezone, routeTimezoneLabel: metrics.pickupTimezoneLabel, expireWithNewMetrics: false, expireWithNewTimezone: false, expireWithTinyMetrics: false };
   controls.set(page, control); page.on('pageerror', error => control.errors.push(error.message));
   await page.addInitScript(({ gpsAddress }) => {
     window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: {}, locations: {} };
@@ -52,7 +52,7 @@ test.beforeEach(async ({ page }) => {
     if (path === 'timezone') return route.fulfill({ json: { timezone: 'America/Chicago', label: 'Central Time' } });
     if (path === 'route') {
       if (control.failRouteAfterRenewal && control.renewals) return route.fulfill({ status: 503, json: { code: 'tuxano_route_failed', message: 'The driving route could not be verified. Please try again.' } });
-      return route.fulfill({ json: { ...metrics, pricingRevision: control.routeRevision } });
+      return route.fulfill({ json: { ...metrics, distanceMeters: control.routeDistance, pickupTimezone: control.routeTimezone, pickupTimezoneLabel: control.routeTimezoneLabel, pricingRevision: control.routeRevision } });
     }
     if (path === 'availability') {
       if (control.expireAvailability) {
@@ -65,6 +65,13 @@ test.beforeEach(async ({ page }) => {
       control.bookingBodies.push(body);
       if (control.expireWithNewPrice) {
         control.expireWithNewPrice = false; control.routeRevision = 'e'.repeat(64); control.serverRevision = 'e'.repeat(64); control.vehicleBase = 100;
+        return route.fulfill({ status: 409, json: { code: 'tuxano_quote_expired', message: 'The route quote expired.' } });
+      }
+      if (control.expireWithNewMetrics || control.expireWithNewTimezone || control.expireWithTinyMetrics) {
+        if (control.expireWithNewMetrics) control.routeDistance = 48280.32;
+        if (control.expireWithTinyMetrics) control.routeDistance = metrics.distanceMeters + 1;
+        if (control.expireWithNewTimezone) { control.routeTimezone = 'America/New_York'; control.routeTimezoneLabel = 'Eastern Time'; }
+        control.expireWithNewMetrics = false; control.expireWithNewTimezone = false; control.expireWithTinyMetrics = false;
         return route.fulfill({ status: 409, json: { code: 'tuxano_quote_expired', message: 'The route quote expired.' } });
       }
       if (!control.saved) {
@@ -296,4 +303,40 @@ test('a failed route verification during a pricing refresh cannot mark the new t
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await page.getByRole('button', { name: /continue to contact/i }).click();
   await expect(page.getByLabel('Billing email', { exact: true })).toHaveValue('retained@example.test');
+});
+
+for (const change of [
+  { name: 'changed route fare', flag: 'expireWithNewMetrics', price: '$140', zone: 'Central Time' },
+  { name: 'changed pickup time zone', flag: 'expireWithNewTimezone', price: '$120', zone: 'Eastern Time' },
+]) {
+  test(`an expired quote with a ${change.name} requires fresh consent even when tariff settings are unchanged`, async ({ page }) => {
+    await review(page); const control = controls.get(page); control[change.flag] = true;
+    await page.getByRole('button', { name: 'SUBMIT RESERVATION REQUEST', exact: true }).click();
+    await expect(page).toHaveURL(/#vehicles$/);
+    await expect(page.locator('.vehicle-price')).toContainText(change.price);
+    await expect(page.locator('.trip-strip-time')).toContainText(change.zone);
+    expect(control.routeRevision).toBe('d'.repeat(64));
+    expect(control.calls.filter(call => call.path === 'bookings')).toHaveLength(1);
+    expect(control.accepted).toBe(0);
+    expect(control.bookingBodies[0].booking.trip.time).toBe('14:44');
+    await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
+    await page.getByRole('button', { name: /continue to contact/i }).click();
+    await expect(page.getByLabel('Billing email', { exact: true })).toHaveValue('retained@example.test');
+    await expect(page.getByLabel('Billing last name', { exact: true })).toHaveValue('Retained');
+    await page.getByRole('button', { name: /continue to review/i }).click();
+    await expect(page.getByRole('checkbox', { name: /I agree to the Terms/i })).not.toBeChecked();
+    expect(control.calls.filter(call => call.path === 'bookings')).toHaveLength(1);
+    expect(control.accepted).toBe(0);
+  });
+}
+
+test('an expired quote with a harmless one-metre route fluctuation retries when rounded fares and time zone stay unchanged', async ({ page }) => {
+  await review(page); const control = controls.get(page); control.expireWithTinyMetrics = true;
+  await page.getByRole('button', { name: 'SUBMIT RESERVATION REQUEST', exact: true }).click();
+  await expect(page).toHaveURL(/#thank-you$/);
+  expect(control.calls.filter(call => call.path === 'bookings')).toHaveLength(2);
+  expect(control.bookingBodies[1].booking).toEqual(control.bookingBodies[0].booking);
+  expect(control.bookingBodies[1].requestKey).toBe(control.bookingBodies[0].requestKey);
+  expect(control.accepted).toBe(1);
+  await expect(page.locator('body')).toContainText('TUX-SESSION-RECOVERED');
 });
