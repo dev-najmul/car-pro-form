@@ -1,3 +1,5 @@
+import { bookingFetch } from './session-client.js';
+
 const SDK_CALLBACK = '__tuxanoGoogleMapsReady';
 const text = value => typeof value === 'string' ? value : value?.text || value?.toString?.() || '';
 
@@ -445,7 +447,7 @@ export class MapsClient {
     const cancel = () => controller.abort();
     if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, globalThis.TuxanoBooking?.restUrl ? 35000 : 15000);
     let response;
     try {
       const runtime = globalThis.TuxanoBooking;
@@ -454,9 +456,12 @@ export class MapsClient {
         headers['X-Tuxano-Session'] = runtime.token;
         if (runtime.nonce) headers['X-WP-Nonce'] = runtime.nonce;
       }
-      response = await fetch(config.providerMode === 'remote' ? config.routeEndpoint : new URL('./api/maps/route', import.meta.url), { method: 'POST', headers, credentials: runtime ? 'same-origin' : 'omit', body: JSON.stringify(request), signal: controller.signal, cache: 'no-store' });
+      const endpoint = config.providerMode === 'remote' ? config.routeEndpoint : new URL('./api/maps/route', import.meta.url);
+      const options = { method: 'POST', headers, credentials: runtime ? 'same-origin' : 'omit', body: JSON.stringify(request), signal: controller.signal, cache: 'no-store' };
+      response = runtime?.restUrl ? await bookingFetch(runtime, endpoint, options) : await fetch(endpoint, options);
     } catch (failure) {
       if (signal?.aborted) throw new DOMException('Route cancelled.', 'AbortError');
+      if (failure.code === 'tuxano_session_changed' || failure.code === 'tuxano_session_retry') throw failure;
       throw new Error(timedOut ? 'Route calculation took too long. Please try again.' : globalThis.TuxanoBooking ? 'The route service is unavailable. Please try again.' : 'The test route service is unavailable. Please check that the test session is still running.');
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     let data;

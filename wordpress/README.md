@@ -1,8 +1,8 @@
-# Tuxano Booking 2.4.5
+# Tuxano Booking 2.4.6
 
 Installable WordPress conversion of the existing five-step form. The static prototype remains available in the repository. WordPress uses its own PHP Routes backend and database; it does not depend on the temporary GitHub preview server.
 
-[Download the plugin ZIP](../releases/tuxano-booking-2.4.5.zip) · [SHA-256](../releases/tuxano-booking-2.4.5.zip.sha256)
+[Download the plugin ZIP](../releases/tuxano-booking-2.4.6.zip) · [SHA-256](../releases/tuxano-booking-2.4.6.zip.sha256)
 
 ## Install and configure
 
@@ -105,3 +105,5 @@ Version **2.4.3** removes seven unused lobby images. Under **Settings → Backgr
 Version **2.4.4** shows a secondary 24-hour clock below the existing 12-hour pickup time in summaries, review, receipts and email schedules, always using the same pickup timezone. **Settings → Form appearance → Letter spacing** provides separate title/text/button values from −1 to 5 px in 0.1 px steps; leave blank for the current design or enter 0 explicitly. These display preferences apply to main and quick forms. Native location requests now start synchronously with `getCurrentPosition` inside the visitor’s button tap, followed by a bounded watch only if needed. A real denied Safari/iOS permission cannot be overridden by JavaScript; the form explains website and Safari Websites Location Services settings and permits a fresh manual retry/address entry. See [UPGRADE-2.4.4.md](UPGRADE-2.4.4.md).
 
 Version **2.4.5** gives pickup/drop-off addresses their own responsive row in vehicle selection and places the date, both pickup clocks and Edit Trip beneath it. Long multilingual addresses remain fully visible and wrap naturally without squeezing schedule fields. Phone cards stack vertically. No address selection, quote, schedule, GPS or saved-setting behavior is changed.
+
+Version **2.4.6** restores the original compact vehicle-selection trip bar and limits 24-hour clocks to summaries, thank-you and emails. Letter spacing is limited to main titles, main action buttons and field labels; existing saved label values are preserved. Map-choice controls match at 13 px without underlines, and hourly/waiting controls use the available width. Booking sessions resume with the same identity after mobile IP changes or cache eviction, preserving entered details and idempotent retries. A signed bounded recovery capability stays in memory and headers; it adds no mandatory cookie or browser-storage dependency. Expired quotes are refreshed automatically when rates are unchanged; changed rates return to vehicle review with entered data retained.

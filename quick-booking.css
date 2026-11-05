@@ -379,12 +379,16 @@
 @media (prefers-reduced-motion: reduce) {
   [data-tuxano-quick-booking] .tuxano-quick-booking-submit { transition: none; }
 }
-[data-tuxano-quick-booking] .tuxano-quick-booking-time24 { display: flex; align-items: center; gap: 8px; margin: -6px 0 12px; color: var(--tq-muted); font-size: 12px; line-height: 1.6; }
-[data-tuxano-quick-booking] .tuxano-quick-booking-time24 .tuxano-quick-booking-icon { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; }
-[data-tuxano-quick-booking][data-text-spacing],
-[data-tuxano-quick-booking][data-text-spacing] :where(p, label, input, select, textarea, span, strong, small, a) { letter-spacing: var(--form-text-letter-spacing); }
+/* Typography is limited to main titles, action buttons and field captions. */
 [data-tuxano-quick-booking][data-title-spacing] .tuxano-quick-booking-title { letter-spacing: var(--form-title-letter-spacing); }
-[data-tuxano-quick-booking][data-button-spacing] button,
-[data-tuxano-quick-booking][data-button-spacing] button * { letter-spacing: var(--form-button-letter-spacing); }
+[data-tuxano-quick-booking][data-label-spacing] .tuxano-quick-booking-label,
+[data-tuxano-quick-booking][data-label-spacing] .tuxano-quick-booking-hours-title,
+[data-tuxano-quick-booking][data-label-spacing] .tuxano-quick-booking-map-label { letter-spacing: var(--form-label-letter-spacing); }
+[data-tuxano-quick-booking][data-button-spacing] .tuxano-quick-booking-submit,
+[data-tuxano-quick-booking][data-button-spacing] .tuxano-quick-booking-segments > button,
+[data-tuxano-quick-booking][data-button-spacing] [data-quick-use-map],
+[data-tuxano-quick-booking][data-button-spacing] [data-quick-use-device] { letter-spacing: var(--form-button-letter-spacing); }
 [data-tuxano-quick-booking][data-button-spacing] .tuxano-quick-booking-submit { white-space: normal; overflow-wrap: anywhere; }
-[data-tuxano-quick-booking] .tuxano-quick-booking-icon svg text { letter-spacing: normal; }
+[data-tuxano-quick-booking] .place-option,
+[data-tuxano-quick-booking] .place-option *,
+[data-tuxano-quick-booking] .tuxano-quick-booking-suggestion-actions > button { letter-spacing: normal; }

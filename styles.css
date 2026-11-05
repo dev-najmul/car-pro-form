@@ -418,12 +418,17 @@ a {
   margin-bottom: 16px;
 }
 .stop-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
   gap: 8px;
 }
 .stop-row .location-input {
-  flex: 1;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
 }
+.stop-row > .remove-stop { grid-column: 2; grid-row: 1; }
+.stop-row > .field-error { grid-column: 1 / -1; grid-row: 2; margin: 0; }
 .remove-stop {
   width: 48px;
   border: 1px solid var(--border);
@@ -435,7 +440,7 @@ a {
   min-width: 0;
 }
 .hour-control { max-width: 100%; }
-.hour-quantity { display: flex; align-items: stretch; width: 232px; max-width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.hour-quantity { display: flex; align-items: stretch; width: 100%; max-width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
 .hour-quantity > button { display: grid; place-items: center; flex: 0 0 48px; border: 0; background: var(--pale); color: var(--ink); }
 .hour-quantity > button:disabled { opacity: .4; cursor: default; }
 .hour-quantity > label { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); gap: 5px; }
@@ -3886,13 +3891,14 @@ a {
 .policy-page a { text-decoration: underline; text-underline-offset: 3px; }
 .places-message { margin: 0; padding: 14px 16px; font-size: 13px; line-height: 1.6; }
 .stop-wait-label {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   margin-top: 12px;
   font-size: 14px;
 }
-.stop-wait-label select { width: 180px; height: 48px; padding: 8px 12px; }
+.stop-wait-label select { width: 100%; min-width: 0; height: 48px; padding: 8px 12px; }
 .stop-wait-note { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .route-live { margin-top: 24px; }
 .test-session-note { padding: 10px 12px; margin-bottom: 16px; border: 1px solid #dce3ef; border-radius: 4px; background: #f4f6fa; color: var(--muted); font-size: 12px; line-height: 1.7; }
@@ -3923,8 +3929,8 @@ a {
 @media (max-width: 639px) {
   .place-option { padding: 10px 12px; }
   .places-dropdown [role="listbox"] { max-height: 260px; }
-  .stop-wait-label { justify-content: space-between; gap: 8px; font-size: 12px; }
-  .stop-wait-label select { width: 144px; font-size: 14px; }
+  .stop-wait-label { grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 12px; }
+  .stop-wait-label select { width: 100%; font-size: 14px; }
   .route-live { margin-top: 20px; }
   .route-metrics { padding: 12px; gap: 12px; }
   .route-metrics strong { font-size: 12px; }
@@ -4092,36 +4098,67 @@ body.form-page .form-error { border-radius: 6px; font-size: 13px; }
 .received-date .time-24h > [data-time24-value] { font-size: inherit; line-height: inherit; }
 .picker-time-24h { font-size: 12px; }
 
-/* Only configured typography overrides the existing reference design. */
-html[data-text-spacing] body:is(.form-page, .thank-page),
-html[data-text-spacing] body:is(.form-page, .thank-page) :where(p, label, input, select, textarea, dt, dd, th, td, li, span, strong, small, a) { letter-spacing: var(--form-text-letter-spacing); }
-html[data-text-spacing] body.form-page .trip-panel .label { letter-spacing: var(--form-text-letter-spacing); }
-html[data-title-spacing] body:is(.form-page, .thank-page) :is(h1, h2, h3, h4),
-html[data-title-spacing] body:is(.form-page, .thank-page) :is(h1, h2, h3, h4) * { letter-spacing: var(--form-title-letter-spacing); }
-html[data-button-spacing] body:is(.form-page, .thank-page) :is(button, .btn, [role="button"]),
-html[data-button-spacing] body:is(.form-page, .thank-page) :is(button, .btn, [role="button"]) * { letter-spacing: var(--form-button-letter-spacing); }
+/* Display preferences apply only to the requested titles, actions and labels. */
+html[data-title-spacing] body.form-page .page-header h1,
+html[data-title-spacing] body.form-page .panel-header h2,
+html[data-title-spacing] body.form-page .panel-header h2 > span,
+html[data-title-spacing] body.thank-page .thank-content > h1 { letter-spacing: var(--form-title-letter-spacing); }
+html[data-button-spacing] body.form-page .btn,
+html[data-button-spacing] body.form-page .service-choice > button,
+html[data-button-spacing] body.form-page .aviation > button,
+html[data-button-spacing] body.form-page .gratuity > button { letter-spacing: var(--form-button-letter-spacing); }
 html[data-button-spacing] body.form-page .btn { white-space: normal; height: auto; overflow-wrap: anywhere; }
-html[data-button-spacing] body.form-page .progress button,
-html[data-button-spacing] body.form-page .progress button * { letter-spacing: var(--form-text-letter-spacing, normal); }
-html:is([data-text-spacing], [data-button-spacing]) body.form-page .progress .step-label { max-width: 100%; overflow-wrap: anywhere; }
-html:is([data-text-spacing], [data-title-spacing], [data-button-spacing]) :is(.icon, svg) { letter-spacing: normal; }
+html[data-label-spacing] body.form-page .label,
+html[data-label-spacing] body.form-page .trip-panel .label,
+html[data-label-spacing] body.form-page .field-caption,
+html[data-label-spacing] body.form-page .map-search-label,
+html[data-label-spacing] body.form-page .stop-wait-label,
+html[data-label-spacing] body.form-page .passenger-counts > label,
+html[data-label-spacing] body.form-page .custom-tip { letter-spacing: var(--form-label-letter-spacing); }
+/* Inputs, choices, address suggestions and secondary actions keep their own type. */
+.stop-wait-label select,
+.custom-tip input,
+.place-option,
+.place-option *,
+.google-attribution,
+.google-attribution *,
+.trip-strip button { letter-spacing: normal; }
+.location-map-open,
+.pickup-map-open { display: inline-block; margin-top: 9px; padding: 0; border: 0; background: none; font: 400 13px/1.7 var(--sans); color: var(--ink); letter-spacing: normal; text-decoration: none; text-align: left; }
+.location-map-open[hidden], .pickup-map-open[hidden] { display: none; }
+.location-map-open:hover, .location-map-open:focus-visible { color: #173e79; text-decoration: none; }
+.location-map-open:focus-visible { outline: 2px solid #315b9b; outline-offset: 3px; border-radius: 2px; }
 
-/* Give long route addresses their own space; schedule and actions stay readable. */
-body.form-page .trip-strip { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
-.trip-strip .trip-route { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); align-items: start; gap: 24px; min-width: 0; }
-.trip-strip .trip-location { align-items: flex-start; min-width: 0; line-height: 1.65; }
-.trip-strip .trip-address { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+/* Restore the original compact trip bar without letting addresses squeeze dates. */
+body.form-page .trip-strip {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) 22px minmax(0, 1.3fr) max-content max-content max-content;
+  align-items: center;
+  gap: 18px;
+}
+.trip-strip .trip-route,
+.trip-strip .trip-schedule { display: contents; }
+.trip-strip .trip-location { align-items: center; min-width: 0; line-height: 1.5; }
+.trip-strip .trip-address { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; flex: 1 1 0; min-width: 0; overflow: hidden; overflow-wrap: anywhere; word-break: normal; }
 .trip-strip .trip-route > .route-arrow { align-self: center; transform: none; }
-.trip-strip .trip-schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; min-width: 0; padding-top: 16px; border-top: 1px solid #e0e5ed; }
-.trip-strip .trip-strip-date { flex: 0 0 auto; white-space: nowrap; overflow-wrap: normal; }
-.trip-strip .trip-strip-time { flex: 1 1 240px; min-width: 0; }
-.trip-strip .trip-strip-time > .time-12h,
-.trip-strip .trip-strip-time .time-24h { max-width: 100%; white-space: normal; overflow-wrap: normal; }
-.trip-strip .trip-schedule > button { flex: 0 0 auto; margin-left: auto; padding: 8px 0 8px 12px; border: 0; align-self: center; }
+.trip-strip .trip-strip-date { flex: none; border-left: 1px solid #dedfe4; padding-left: 22px; white-space: nowrap; overflow-wrap: normal; }
+.trip-strip p.trip-strip-time { flex: none; flex-direction: row; align-items: center; min-width: 0; white-space: nowrap; overflow-wrap: normal; }
+.trip-strip-time > .time-12h { gap: 10px; white-space: nowrap; }
+.trip-strip .trip-schedule > button { flex: none; align-self: center; margin: 0; padding: 0 0 0 22px; border: 0; border-left: 1px solid #dedfe4; font-size: 14px; font-weight: 600; line-height: 1.5; letter-spacing: normal; white-space: nowrap; }
+@media (min-width: 640px) and (max-width: 1099px) {
+  body.form-page .trip-strip { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .trip-strip .trip-route { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); align-items: center; gap: 18px; }
+  .trip-strip .trip-schedule { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 22px; }
+  .trip-strip .trip-strip-date { border: 0; padding: 0; }
+  .trip-strip .trip-schedule > button { margin-left: auto; }
+}
 @media (max-width: 639px) {
-  .trip-strip .trip-route { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  body.form-page .trip-strip { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .trip-strip .trip-route { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .trip-strip .trip-address { display: block; overflow: visible; -webkit-line-clamp: unset; line-clamp: unset; }
+  .trip-strip .trip-location { align-items: flex-start; }
   .trip-strip .trip-route > .route-arrow { justify-self: start; transform: rotate(90deg); }
-  .trip-strip .trip-schedule { flex-direction: column; align-items: flex-start; gap: 14px; }
-  .trip-strip .trip-strip-time { flex: none; width: 100%; }
-  .trip-strip .trip-schedule > button { align-self: flex-start; margin: 0; padding: 4px 0; }
+  .trip-strip .trip-schedule { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .trip-strip .trip-strip-date { border: 0; padding: 0; }
+  .trip-strip .trip-schedule > button { align-self: flex-start; padding: 0; border: 0; }
 }

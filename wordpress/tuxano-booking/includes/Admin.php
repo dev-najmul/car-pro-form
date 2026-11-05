@@ -717,11 +717,11 @@ final class Admin {
         ] as $name => $label) {
             self::field($settings, $name, $label, 'color', sprintf(__('Saved color: %1$s. Default: %2$s.', 'tuxano-booking'), $settings[$name], Settings::FORM_COLORS[$name]), ['required' => 'required']);
         }
-        echo '</table><h3>' . esc_html__('Letter spacing', 'tuxano-booking') . '</h3><p>' . esc_html__('Control letter spacing in the main form, its thank-you page and the quick-booking card. Leave a field empty to keep the original design; enter 0 for no extra spacing. Email typography stays separate.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
+        echo '</table><h3>' . esc_html__('Letter spacing', 'tuxano-booking') . '</h3><p>' . esc_html__('Control main titles, main action buttons and field labels separately. Address suggestions, input values, body text, Edit and map links keep their normal spacing. Leave a field empty to keep the original design; enter 0 for no extra spacing. Email typography stays separate.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
         foreach ([
-            'form_title_letter_spacing' => [__('Title letter spacing (px)', 'tuxano-booking'), __('Main headings and section titles. For example, 1.0 adds one pixel between letters.', 'tuxano-booking')],
-            'form_text_letter_spacing' => [__('Text letter spacing (px)', 'tuxano-booking'), __('Form text, labels and input values. Suggested starting value: 1.0.', 'tuxano-booking')],
-            'form_button_letter_spacing' => [__('Button letter spacing (px)', 'tuxano-booking'), __('Button text. Suggested starting value: 2.0.', 'tuxano-booking')],
+            'form_title_letter_spacing' => [__('Main title letter spacing (px)', 'tuxano-booking'), __('The main page and form-step titles. For example, 1.0 adds one pixel between letters.', 'tuxano-booking')],
+            'form_text_letter_spacing' => [__('Field label letter spacing (px)', 'tuxano-booking'), __('Field labels only; address suggestions, entered values and body text are excluded. Suggested starting value: 1.0.', 'tuxano-booking')],
+            'form_button_letter_spacing' => [__('Main button letter spacing (px)', 'tuxano-booking'), __('Main form action buttons, such as Check Price and Continue; Edit, map links and other secondary controls are excluded. Suggested starting value: 2.0.', 'tuxano-booking')],
         ] as $name => $definition) {
             self::field($settings, $name, $definition[0], 'number', $definition[1] . ' ' . __('Allowed range: -1.0 to 5.0 px, in 0.1-pixel steps. Empty means original.', 'tuxano-booking'), ['min' => -1, 'max' => 5, 'step' => '0.1', 'placeholder' => __('Original', 'tuxano-booking')]);
         }

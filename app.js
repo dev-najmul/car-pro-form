@@ -3,10 +3,12 @@ import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
 import { COUNTRY_NAMES } from "./countries.js";
 import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "./quick-handoff.js";
+import { bookingFetch, renewBookingSession } from "./session-client.js";
 /* The shared frontend supports both the static prototype and WordPress runtime. */
 (() => {
   "use strict";
   const runtime = globalThis.TuxanoBooking || null;
+  let financialRevision = runtime?.pricingRevision || "";
   const settings = {
     currency: "USD", currencySymbol: "$", meetPrice: 50, firstSeatPrice: 75,
     additionalSeatPrice: 50, defaultGratuity: 20, companyName: "TUXANO",
@@ -63,7 +65,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   if (typography && typeof typography === "object" && !Array.isArray(typography)) {
     for (const [key, property, attribute] of [
       ["titleLetterSpacing", "--form-title-letter-spacing", "titleSpacing"],
-      ["textLetterSpacing", "--form-text-letter-spacing", "textSpacing"],
+      ["labelLetterSpacing", "--form-label-letter-spacing", "labelSpacing"],
       ["buttonLetterSpacing", "--form-button-letter-spacing", "buttonSpacing"],
     ]) {
       const value = typography[key];
@@ -205,7 +207,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       ],
     },
   ];
-  const vehicles = runtime ? runtime.vehicles : staticVehicles;
+  let vehicles = runtime ? runtime.vehicles : staticVehicles;
   const unavailableVehicle = { id: "", name: "", display: "No vehicle selected", capacity: 1, luggageCapacity: 0, image: "", models: [], features: [] };
   const paths = {
     calendar:
@@ -949,12 +951,10 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     const point = state.trip.pickupPlace;
     if (![point.latitude, point.longitude].every(Number.isFinite)) return;
     const controller = new AbortController(); pickupZoneController = controller;
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 35000);
     pickupZone = { signature, status: "loading" }; refreshTimezoneDisplay();
     try {
-      const headers = { "Content-Type": "application/json", "X-Tuxano-Session": runtime.token };
-      if (runtime.nonce) headers["X-WP-Nonce"] = runtime.nonce;
-      const response = await fetch(runtime.restUrl + "timezone", { method: "POST", credentials: "same-origin", cache: "no-store", headers, signal: controller.signal, body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude }) });
+      const response = await bookingFetch(runtime, runtime.restUrl + "timezone", { method: "POST", signal: controller.signal, body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude }) });
       const result = await response.json();
       if (controller.signal.aborted || signature !== pickupZoneSignature()) return;
       if (!response.ok || typeof result.timezone !== "string" || result.timezone.length > 100 || typeof result.label !== "string" || !result.label || result.label.length > 100 || /[<>\u0000-\u001f]/u.test(result.label)) throw new Error("Pickup time zone unavailable.");
@@ -972,7 +972,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     ++routeGeneration; routeController?.abort(); routeController = null; routePromise = null; currentRoute = null; routeStatus = "idle"; routeMessage = "";
     refreshRoutePanel();
   }
-  async function calculateRoute() {
+  async function calculateRoute({ quiet = false } = {}) {
     const conflict = countryConflict();
     if (conflict) {
       ++routeGeneration; routeController?.abort(); routePromise = null; currentRoute = null;
@@ -993,12 +993,12 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
         if (generation !== routeGeneration || signature !== routeSignature()) return false;
         currentRoute = { ...result, signature }; routeStatus = "ready"; routeMessage = "";
         if (settings.pickupTimezones === true) state.trip.timezone = result.pickupTimezone;
-        if (step === 0) refreshRoutePanel(); else render();
+        if (step === 0) refreshRoutePanel(); else if (!quiet) render();
         return true;
       } catch (failure) {
         if (generation !== routeGeneration || failure.name === "AbortError") return false;
         currentRoute = null; routeStatus = "error"; routeMessage = failure.message || "The driving route could not be calculated. Please try again.";
-        if (step === 0) refreshRoutePanel(); else render();
+        if (step === 0) refreshRoutePanel(); else if (!quiet) render();
         return false;
       } finally { if (generation === routeGeneration) routePromise = null; }
     })();
@@ -1112,7 +1112,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   function tripPage() {
     const mapControls = fieldId => DEMO_MODE ? "" : `<button type="button" class="text-link location-map-open${fieldId === "pickup" ? " pickup-map-open" : ""}" data-action="choose-map" data-map-field="${e(fieldId)}" ${deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? mapTarget() === fieldId : fieldId === "pickup") ? "hidden" : ""}>Choose ${mapFieldLabel(fieldId)} on map</button><div class="location-map-wrap${fieldId === "pickup" ? " device-location-wrap" : ""}" data-map-wrap="${e(fieldId)}">${deviceLocationMarkup(fieldId)}</div>`;
     const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${mapControls(path)}`;
-    const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span>${type === "time" ? time24Markup("picker-time-24h") : ""}</label>`;
+    const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
     return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}${mapControls("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label>${hourControl()}</div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", clockLabel(), "time")}</div>${runtime ? `<p class="route-status" data-pickup-timezone>Pickup dates and times use ${e(zoneLabel() || "Eastern Time")}, local to your pickup location.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
@@ -1132,7 +1132,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     return groups.size ? [...groups].map(([name, group]) => `<section class="collection"><h2>${e(name)}</h2>${group.description ? `<p>${e(group.description)}</p>` : ""}<div class="vehicle-grid">${group.items.map(vehicleCard).join("")}</div></section>`).join("") : `<p role="status">No vehicles are currently available. Please contact ${e(settings.companyName)} for assistance.</p>`;
   }
   function vehiclesPage() {
-    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><div class="trip-route"><p class="trip-location">${icon("pin")}<span class="trip-address">${e(state.trip.pickup)}</span></p>${icon("arrow", "route-arrow")}<p class="trip-location">${icon("pin")}<span class="trip-address">${e(state.trip.dropoff || "Hourly service")}</span></p></div><div class="trip-schedule"><p class="trip-strip-date">${icon("calendar")}<span>${e(dateLabel())}</span></p><p class="trip-strip-time"><span class="time-12h">${icon("clock")}${e(timeLabel())}</span>${time24Markup()}</p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div></div>${collections()}<div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div><div class="form-nav"><button class="btn secondary" type="button" data-action="back">${icon("back")} BACK</button></div></div>`;
+    return `<div class="panel vehicles-panel" data-step="2">${panelHeader(2, "SELECT YOUR VEHICLE", "car", "Choose the vehicle that best fits your trip.")}<div class="trip-strip"><div class="trip-route"><p class="trip-location">${icon("pin")}<span class="trip-address" title="${e(state.trip.pickup)}" aria-label="${e(state.trip.pickup)}">${e(state.trip.pickup)}</span></p>${icon("arrow", "route-arrow")}<p class="trip-location">${icon("pin")}<span class="trip-address" title="${e(state.trip.dropoff || "Hourly service")}" aria-label="${e(state.trip.dropoff || "Hourly service")}">${e(state.trip.dropoff || "Hourly service")}</span></p></div><div class="trip-schedule"><p class="trip-strip-date">${icon("calendar")}<span>${e(dateLabel())}</span></p><p class="trip-strip-time"><span class="time-12h">${icon("clock")}${e(timeLabel())}</span></p><button type="button" data-go="0">Edit Trip ${icon("edit")}</button></div></div>${collections()}<div class="pricing-note">${icon("info")}<div><p>Prices shown are the total all-inclusive cost for transportation.</p><strong>Gratuity is not included and will be added in the final step.</strong></div></div><div class="form-error" role="alert" hidden></div><div class="form-nav"><button class="btn secondary" type="button" data-action="back">${icon("back")} BACK</button></div></div>`;
   }
 
   // Step 3: passenger counts, flight details, optional extras, and gratuity.
@@ -1376,7 +1376,7 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       dialog.setAttribute("aria-labelledby", "availability-heading");
       dialog.setAttribute("aria-describedby", "availability-description");
       const title = kind === "unavailable" ? "Vehicle already booked" : kind === "requested" ? "Another request is awaiting review" : "Availability could not be checked";
-      dialog.innerHTML = `<div class="availability-symbol">${icon(kind === "unavailable" ? "calendar" : "info")}</div><h2 id="availability-heading">${e(title)}</h2><p id="availability-description">${e(message)}</p><div class="availability-slot"><strong>${e(selected().display)}</strong><span>${e(dateLabel())} · ${e(timeLabel())}</span>${time24Markup()}</div>${kind === "requested" ? '<p class="availability-note">This is a reservation request, not a confirmed booking. Your team will confirm availability.</p>' : ""}<div class="availability-actions">${kind === "requested" ? '<button class="btn primary" type="button" data-availability-choice="continue">Continue with request</button>' : kind === "error" ? '<button class="btn primary" type="button" data-availability-choice="retry">Try again</button>' : ""}<button class="btn ${kind === "unavailable" ? "primary" : "secondary"}" type="button" data-availability-choice="cancel">Choose another vehicle</button></div>`;
+      dialog.innerHTML = `<div class="availability-symbol">${icon(kind === "unavailable" ? "calendar" : "info")}</div><h2 id="availability-heading">${e(title)}</h2><p id="availability-description">${e(message)}</p><div class="availability-slot"><strong>${e(selected().display)}</strong><span>${e(dateLabel())} · ${e(timeLabel())}</span></div>${kind === "requested" ? '<p class="availability-note">This is a reservation request, not a confirmed booking. Your team will confirm availability.</p>' : ""}<div class="availability-actions">${kind === "requested" ? '<button class="btn primary" type="button" data-availability-choice="continue">Continue with request</button>' : kind === "error" ? '<button class="btn primary" type="button" data-availability-choice="retry">Try again</button>' : ""}<button class="btn ${kind === "unavailable" ? "primary" : "secondary"}" type="button" data-availability-choice="cancel">Choose another vehicle</button></div>`;
       let settled = false, parentWindow = null;
       // An autosized shortcode iframe can be taller than the screen. Position
       // the dialog inside the part of that frame the visitor can actually see.
@@ -1428,15 +1428,13 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     const originalSelection = JSON.stringify([state.vehicle, state.trip.date, state.trip.time]);
     const sameSelection = () => generation === availabilityGeneration && navigation === navigationGeneration && step === checkingStep && originalSelection === JSON.stringify([state.vehicle, state.trip.date, state.trip.time]);
     const controller = new AbortController(); availabilityController = controller;
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 35000);
     const next = app.querySelector(`[data-select="${CSS.escape(state.vehicle)}"]`);
     const original = next?.innerHTML, disabled = next?.disabled;
     if (next) { next.disabled = true; next.textContent = "Checking availability…"; next.setAttribute("aria-busy", "true"); }
     try {
-      const headers = { "Content-Type": "application/json", "X-Tuxano-Session": runtime.token };
-      if (runtime.nonce) headers["X-WP-Nonce"] = runtime.nonce;
-      const response = await fetch(runtime.restUrl + "availability", {
-        method: "POST", credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+      const response = await bookingFetch(runtime, runtime.restUrl + "availability", {
+        method: "POST", signal: controller.signal,
         body: JSON.stringify({ vehicleId: state.vehicle, date: state.trip.date, time: state.trip.time, ...(settings.pickupTimezones === true ? { quoteToken: usableRoute()?.quoteToken } : {}) }),
       });
       let result;
@@ -1471,11 +1469,18 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
   async function selectAndContinue() {
     const navigation = navigationGeneration, vehicle = state.vehicle, edits = editGeneration;
     const current = () => step === 1 && navigationGeneration === navigation && state.vehicle === vehicle && editGeneration === edits;
-    if (!await calculateRoute() || !current()) return;
-    if (!await checkVehicleAvailability() || !current() || !validate()) return;
-    state.completed = Math.max(state.completed, 2);
-    state.submitted = false;
-    save(); go(2);
+    try {
+      if (!await calculateRoute() || !current()) return;
+      if (pricingNeedsReview()) await reviewChangedPricing();
+      if (!await checkVehicleAvailability() || !current() || !validate()) return;
+      if (pricingNeedsReview()) await reviewChangedPricing();
+      state.completed = Math.max(state.completed, 2);
+      state.submitted = false;
+      save(); go(2);
+    } catch (failure) {
+      if (failure.code === "tuxano_pricing_review") presentPricingReview(failure.message);
+      else if (current()) error(failure.message || "The estimate could not be refreshed. Please try again.");
+    }
   }
   function fieldMessage(control) {
     const label = (control.getAttribute("aria-label") || control.name || "this field").replace(/^(Billing|Passenger) /, "");
@@ -1662,11 +1667,46 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       };
     return null;
   }
+  function pricingNeedsReview() {
+    return Boolean(financialRevision && currentRoute?.pricingRevision && financialRevision !== currentRoute.pricingRevision);
+  }
+  function presentPricingReview(message) {
+    state.consent = false;
+    state.completed = 1;
+    pendingAvailabilityAck = "";
+    dirty(); save();
+    if (step === 1) { cancelAvailability(); render(); scrollToStepStart(); }
+    else go(1);
+    error(message); announce(message);
+  }
+  async function reviewChangedPricing() {
+    const renewed = await renewBookingSession(runtime);
+    const fresh = renewed.configuration;
+    if (!fresh || !/^[a-f0-9]{64}$/.test(fresh.pricingRevision) || !fresh.settings || !Array.isArray(fresh.vehicles) || fresh.vehicles.some(vehicle => !vehicle || typeof vehicle.id !== "string" || !vehicle.tariff)) {
+      throw new Error("The updated estimate could not be loaded. Your details are still here. Please try again.");
+    }
+    // Commit displayed tariffs only after their matching route is verified.
+    // A failed refresh must keep the old revision, so retry still requires review.
+    invalidateRoute();
+    if (!await calculateRoute({ quiet: true }) || currentRoute?.pricingRevision !== fresh.pricingRevision) {
+      throw new Error("The updated estimate could not be verified. Your details are still here. Please try again.");
+    }
+    vehicles = fresh.vehicles;
+    financialRevision = fresh.pricingRevision;
+    for (const key of ["currency", "currencySymbol", "meetPrice", "firstSeatPrice", "additionalSeatPrice", "defaultGratuity", "maxStops", "minHours", "maxHours"]) {
+      const value = fresh.settings[key];
+      if (typeof value === typeof settings[key] && (typeof value !== "number" || Number.isFinite(value))) settings[key] = value;
+    }
+    settings.minHours = Math.max(3, Math.min(24, Number(settings.minHours) || 3));
+    settings.maxHours = Math.max(settings.minHours, Math.min(24, Number(settings.maxHours) || 24));
+    gratuities.splice(0, gratuities.length, ...[...new Set([10, 15, 20, 25, settings.defaultGratuity])].sort((a, b) => a - b).map(String));
+    const message = "The estimate has changed. Please review the updated vehicle price before continuing. Your entered details have been kept.";
+    throw Object.assign(new Error(message), { code: "tuxano_pricing_review" });
+  }
   async function submitBooking() {
     if (!currentRoute?.quoteToken) throw new Error("Please refresh your route before submitting this request.");
+    const acceptedRevision = currentRoute.pricingRevision;
     requestKey ||= globalThis.crypto.randomUUID();
-    const headers = { "Content-Type": "application/json", "X-Tuxano-Session": runtime.token };
-    if (runtime.nonce) headers["X-WP-Nonce"] = runtime.nonce;
     const payload = { booking: structuredClone(state), quoteToken: currentRoute.quoteToken, requestKey, website: app.querySelector("[data-booking-honeypot]")?.value || "" };
     const controls = [...app.querySelectorAll("input, select, textarea, button")].map(control => [control, control.disabled]);
     const submitButton = app.querySelector('button[type="submit"]');
@@ -1676,18 +1716,28 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
     if (submitButton) submitButton.textContent = "Submitting…";
     announce("Submitting your reservation request. Please wait.");
     try {
-      let response;
-      try {
-        response = await fetch(runtime.restUrl + "bookings", {
-          method: "POST", headers, credentials: "same-origin", cache: "no-store",
-          body: JSON.stringify(payload), signal: AbortSignal.timeout(30000),
-        });
-      } catch {
-        throw new Error("We could not confirm that your request was received. Please try again; retrying this request will not create a duplicate.");
+      let response, result;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await bookingFetch(runtime, runtime.restUrl + "bookings", {
+            method: "POST", body: JSON.stringify(payload), signal: AbortSignal.timeout(50000),
+          });
+        } catch (failure) {
+          if (failure.code) throw failure;
+          throw new Error("We could not confirm that your request was received. Please try again; retrying this request will not create a duplicate.");
+        }
+        try { result = await response.json(); } catch { throw new Error("We could not confirm your submission. Please try again."); }
+        if (!response.ok && result?.code === "tuxano_quote_expired" && attempt === 0) {
+          invalidateRoute();
+          if (!await calculateRoute({ quiet: true }) || !currentRoute?.quoteToken) throw new Error(routeMessage || "Your route could not be refreshed. Your details are still here. Please try again.");
+          if (acceptedRevision && currentRoute.pricingRevision && acceptedRevision !== currentRoute.pricingRevision) await reviewChangedPricing();
+          payload.quoteToken = currentRoute.quoteToken;
+          continue;
+        }
+        break;
       }
-      let result;
-      try { result = await response.json(); } catch { throw new Error("We could not confirm your submission. Please try again."); }
       if (!response.ok) {
+        if (result?.code === "tuxano_pricing_changed") await reviewChangedPricing();
         if (/quote|revision/i.test(result.code || "")) invalidateRoute();
         const failure = new Error(result.message || "Your reservation request could not be saved. Please try again.");
         failure.code = result.code;
@@ -1719,9 +1769,11 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
         return;
       }
       if (step !== startingStep || navigationGeneration !== startingNavigation || !validate()) return;
+      if (pricingNeedsReview()) await reviewChangedPricing();
       if (startingStep === 0 && settings.pickupTimezones === true) validateQuickPickupTime(state.trip, pickupZoneName());
       if (step === 1 && !await checkVehicleAvailability()) return;
       if (step !== startingStep || navigationGeneration !== startingNavigation || !validate()) return;
+      if (pricingNeedsReview()) await reviewChangedPricing();
       if (step === 4) {
         const issue = validateRetainedState();
         if (issue) {
@@ -1744,6 +1796,10 @@ import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "
       save();
       go(step + 1);
     } catch (failure) {
+      if (failure.code === "tuxano_pricing_review") {
+        presentPricingReview(failure.message);
+        return;
+      }
       if (failure.code === "tuxano_vehicle_unavailable") {
         state.consent = false; pendingAvailabilityAck = ""; save(); go(1);
         await availabilityDialog("unavailable", failure.message);

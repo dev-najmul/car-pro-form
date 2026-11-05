@@ -137,7 +137,8 @@ test('admin fleet, categories, tariffs, currency, extras and separate luggage ca
   await total(page, 217.25); // Transportation 150 + tip18.75 + meet17.50 + seats31.
   const requests = controls.get(page).routes;
   expect(requests.at(-1).body.stops).toEqual([{ placeId: 'test-' + encodeURIComponent('Selected Stop, London') }]);
-  expect(requests.at(-1).headers).toMatchObject({ 'x-tuxano-session': runtime.token, 'x-wp-nonce': runtime.nonce, 'content-type': 'application/json' });
+  expect(requests.at(-1).headers).toMatchObject({ 'x-tuxano-session': runtime.token, 'content-type': 'application/json' });
+  expect(requests.at(-1).headers['x-wp-nonce']).toBeUndefined();
   expect(requests.at(-1).headers.cookie).toContain('wordpress_test_session=present');
 });
 
@@ -186,7 +187,8 @@ test('pending booking waits for durable save; a rejected request retries with th
   expect(first.body.requestKey).toMatch(/^[a-zA-Z0-9-]{16,80}$/);
   expect(second.body).toEqual(first.body);
   expect(second.body).toMatchObject({ quoteToken: metrics.quoteToken, website: '', booking: { vehicle: '104', consent: true, billing: { email: 'alex@example.com' } } });
-  expect(second.headers).toMatchObject({ 'x-tuxano-session': runtime.token, 'x-wp-nonce': runtime.nonce, 'content-type': 'application/json' });
+  expect(second.headers).toMatchObject({ 'x-tuxano-session': runtime.token, 'content-type': 'application/json' });
+  expect(second.headers['x-wp-nonce']).toBeUndefined();
   await expect(page.locator('body')).toContainText('TUX-REQUEST-WP-1001');
   await total(page, 273.5);
   await expect(page.getByRole('link', { name: 'bookings@example.com', exact: true })).toHaveAttribute('href', 'mailto:bookings@example.com');
@@ -209,18 +211,17 @@ test('a lost response retains the booking for idempotent retry instead of showin
   expect(control.submissions[1].body.quoteToken).toBe(metrics.quoteToken);
 });
 
-test('an expired route quote is replaced before retrying the retained booking', async ({ page }) => {
+test('an expired route quote is replaced automatically before retrying the retained booking', async ({ page }) => {
   const control = controls.get(page);
   control.bookingHandler = async (route, count) => {
-    if (count === 1) await route.fulfill({ status: 409, json: { code: 'tuxano_quote_expired', message: 'Your route quote has expired. Recalculate the route and try again.', data: { status: 409 } } });
+    if (count === 1) {
+      control.routeResult = { ...metrics, quoteToken: 'c'.repeat(64) };
+      await route.fulfill({ status: 409, json: { code: 'tuxano_quote_expired', message: 'Your route quote has expired. Recalculate the route and try again.', data: { status: 409 } } });
+    }
     else await route.fulfill({ json: { ...receipt(), route: savedRoute(control.routeResult) } });
   };
   await page.goto('/');
   await review(page);
-  await submitButton(page).click();
-  await expect(page.getByRole('alert')).toContainText('quote has expired');
-  await expect(page).toHaveURL(/#review$/);
-  control.routeResult = { ...metrics, quoteToken: 'c'.repeat(64) };
   await submitButton(page).click();
   await expect(page).toHaveURL(/#thank-you$/);
   expect(control.routes).toHaveLength(2);
@@ -228,6 +229,7 @@ test('an expired route quote is replaced before retrying the retained booking', 
   expect(control.submissions[0].body.quoteToken).toBe(metrics.quoteToken);
   expect(control.submissions[1].body.quoteToken).toBe('c'.repeat(64));
   expect(control.submissions[1].body.requestKey).toBe(control.submissions[0].body.requestKey);
+  expect(control.submissions[1].body.booking).toEqual(control.submissions[0].body.booking);
 });
 
 test('reopening an unchanged receipt avoids a duplicate while editing starts a freshly quoted request', async ({ page }) => {

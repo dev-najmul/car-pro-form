@@ -61,12 +61,8 @@ try {
     new MutationObserver(reportSize).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     document.fonts?.ready.then(reportSize);
   }
-  const headers = { 'Content-Type': 'application/json' };
-  if (boot.nonce) headers['X-WP-Nonce'] = boot.nonce;
-  const response = await fetch(endpoint, { method: 'POST', headers, credentials: 'same-origin', cache: 'no-store', body: '{}', signal: AbortSignal.timeout(20000) });
-  let session;
-  try { session = await response.json(); } catch { throw new Error('The booking service is temporarily unavailable. Please try again.'); }
-  if (!response.ok) throw new Error(session.message || 'The booking service is temporarily unavailable. Please try again.');
+  const { fetchBookingSession } = await import(new URL('session-client.js', assets));
+  const session = await fetchBookingSession(boot.restUrl);
   if (!session || typeof session.token !== 'string' || !session.token || !Array.isArray(session.vehicles) || !session.settings || !session.maps) throw new Error('The booking service returned an incomplete configuration. Please try again.');
   let quickTrip = null, quickTripError = '';
   // The fragment carries only an opaque reference. Same-origin sessionStorage

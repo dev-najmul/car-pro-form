@@ -8,6 +8,9 @@ final class Rest
     private const NAMESPACE = 'tuxano-booking/v1';
     private const MAX_BODY = 65536;
     private const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+    private const SESSION_IDLE = 2 * HOUR_IN_SECONDS;
+    private const RECOVERY_LIFETIME = 7 * DAY_IN_SECONDS;
+    private const CLOCK_SKEW = 60;
 
     public static function register(): void
     {
@@ -89,6 +92,40 @@ final class Rest
         return preg_match('/^[a-f0-9]{64}$/D', $token) ? $token : '';
     }
 
+    /** Signed recovery is tied to this site and protocol, not a changing IP. */
+    private static function recovery_mac(string $token, int $created, int $expires): string
+    {
+        $payload = 'tuxano-session-v1|' . home_url('/') . '|' . $token . '|' . $created . '|' . $expires;
+        return hash_hmac('sha256', $payload, wp_salt('secure_auth'));
+    }
+
+    private static function recovery_proof(string $token, int $created): string
+    {
+        $expires = time() + self::RECOVERY_LIFETIME;
+        return 'v1.' . $created . '.' . $expires . '.' . self::recovery_mac($token, $created, $expires);
+    }
+
+    /** A bounded capability can restore an evicted cache lease without rotating. */
+    private static function recovered_session(string $token, string $proof): ?array
+    {
+        if (!preg_match('/^v1\.([0-9]{9,11})\.([0-9]{9,11})\.([a-f0-9]{64})$/D', $proof, $parts)) { return null; }
+        $created = (int) $parts[1]; $expires = (int) $parts[2]; $now = time();
+        if ($created > $now + self::CLOCK_SKEW || $expires <= $now || $expires > $now + self::RECOVERY_LIFETIME + self::CLOCK_SKEW || $expires < $created) { return null; }
+        return hash_equals(self::recovery_mac($token, $created, $expires), $parts[3]) ? ['protocol' => 'v1', 'created' => $created] : null;
+    }
+
+    private static function valid_session(string $token, string $proof, $session): ?array
+    {
+        if (!is_array($session) || !is_int($session['created'] ?? null)) { return null; }
+        if (($session['protocol'] ?? null) === 'v1') {
+            $recovered = self::recovered_session($token, $proof);
+            return $recovered && $recovered['created'] === $session['created'] ? $recovered : null;
+        }
+        // Legacy pages keep the original IP guard until a valid resume upgrades
+        // them. New anonymous sessions use two unpredictable bearer capabilities.
+        return !isset($session['protocol']) && is_string($session['client'] ?? null) && hash_equals($session['client'], self::client()) ? $session : null;
+    }
+
     /** @return bool|\WP_Error */
     public static function permission(\WP_REST_Request $request)
     {
@@ -96,21 +133,39 @@ final class Rest
         if (is_wp_error($origin)) { return $origin; }
         $token = self::token($request);
         $session = $token ? get_transient('tuxano_session_' . hash('sha256', $token)) : false;
-        if (!$session || !hash_equals($session['client'], self::client())) {
-            return self::fail('tuxano_session', 'Your booking session has expired. Refresh this page to start a new session.', 403);
+        $session = self::valid_session($token, (string) $request->get_header('x-tuxano-recovery'), $session);
+        if (!$session) {
+            return self::fail('tuxano_session', 'Your booking session could not be verified. Please try again.', 403);
         }
+        // Active requests refresh only the idle lease. The recovery proof is
+        // separately bounded and must be renewed through the session endpoint.
+        set_transient('tuxano_session_' . hash('sha256', $token), $session, self::SESSION_IDLE);
         return true;
     }
 
     /** @return array|\WP_Error */
     public static function session(\WP_REST_Request $request)
     {
-        if (!self::rate('session', self::client(), (int) Settings::get()['session_hourly_limit'], HOUR_IN_SECONDS)) { return self::fail('tuxano_rate', 'Too many booking sessions. Please try again later.', 429); }
+        $token = self::token($request);
+        if ((string) $request->get_header('x-tuxano-session') !== '') {
+            if ($token === '') { return self::fail('tuxano_session', 'Your booking session could not be resumed. Please try again.', 403); }
+            if (!self::rate('session-resume-client', self::client(), 120, HOUR_IN_SECONDS) || !self::rate('session-resume-token', hash('sha256', $token), 60, HOUR_IN_SECONDS)) {
+                return self::fail('tuxano_rate', 'Please wait before trying to restore your booking again.', 429);
+            }
+            $stored = get_transient('tuxano_session_' . hash('sha256', $token));
+            $proof = (string) $request->get_header('x-tuxano-recovery');
+            $session = self::valid_session($token, $proof, $stored);
+            if (!$session && !$stored) { $session = self::recovered_session($token, $proof); }
+            if (!$session) { return self::fail('tuxano_session', 'Your booking session could not be resumed. Please try again.', 403); }
+        } else {
+            if (!self::rate('session', self::client(), (int) Settings::get()['session_hourly_limit'], HOUR_IN_SECONDS)) { return self::fail('tuxano_rate', 'Too many booking sessions. Please try again later.', 429); }
+            $token = bin2hex(random_bytes(32)); $session = ['created' => time()];
+        }
+        $session = ['protocol' => 'v1', 'created' => $session['created']];
+        set_transient('tuxano_session_' . hash('sha256', $token), $session, self::SESSION_IDLE);
         $vehicles = Vehicles::all();
         $settings = Settings::get();
-        $token = bin2hex(random_bytes(32));
-        set_transient('tuxano_session_' . hash('sha256', $token), ['client' => self::client(), 'created' => time()], 2 * HOUR_IN_SECONDS);
-        return ['token' => $token, 'vehicles' => $vehicles, 'settings' => Settings::public_data(), 'restUrl' => rest_url(self::NAMESPACE . '/'), 'maps' => [
+        return ['token' => $token, 'sessionRecovery' => self::recovery_proof($token, $session['created']), 'sessionExpiresAt' => time() + self::SESSION_IDLE, 'pricingRevision' => Settings::revision(), 'vehicles' => $vehicles, 'settings' => Settings::public_data(), 'restUrl' => rest_url(self::NAMESPACE . '/'), 'maps' => [
             'browserKey' => $settings['browser_key'], 'browserConfigured' => !empty($settings['browser_key']),
             'routesConfigured' => !empty($settings['routes_key']), 'providerMode' => 'remote', 'routeEndpoint' => rest_url(self::NAMESPACE . '/route'),
         ]];
@@ -217,8 +272,9 @@ final class Rest
         $metrics = self::measure_route($points);
         if (is_wp_error($metrics)) { return $metrics; }
         $quote = bin2hex(random_bytes(32));
-        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'pickupTimezone' => $metrics['pickupTimezone'], 'revision' => Settings::revision()], 15 * MINUTE_IN_SECONDS);
-        return array_merge($metrics, ['quoteToken' => $quote]);
+        $revision = Settings::revision();
+        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'pickupTimezone' => $metrics['pickupTimezone'], 'revision' => $revision], 15 * MINUTE_IN_SECONDS);
+        return array_merge($metrics, ['quoteToken' => $quote, 'pricingRevision' => $revision]);
     }
 
     /** A fixed, bounded Google request shared by public quotes and admin edits.

@@ -18,6 +18,8 @@ if (wp_get_environment_type() !== 'local') {
     WP_CLI::error('These fixture tests run only in an isolated local WordPress installation.');
 }
 
+require_once __DIR__ . '/helpers/wordpress-session.php';
+
 global $wpdb;
 $checks = 0;
 $check = static function (bool $condition, string $message) use (&$checks): void {
@@ -48,6 +50,7 @@ $provider_stops = $points['stops'];
 
 $request = static function (string $path, $body = [], string $token = '', array $headers = [], string $method = 'POST', ?string $raw = null) use ($origin): WP_REST_Response {
     $request = new WP_REST_Request($method, '/tuxano-booking/v1/' . $path);
+    $headers = tuxano_test_session_headers($token, $headers);
     foreach (array_replace(['Origin' => $origin, 'Sec-Fetch-Site' => 'same-origin', 'Content-Type' => 'application/json'], $headers) as $name => $value) {
         $request->set_header($name, $value);
     }
@@ -129,13 +132,65 @@ try {
     $token = $new_session();
     $fixture_remote = $_SERVER['REMOTE_ADDR'];
     $_SERVER['REMOTE_ADDR'] = '203.0.113.1';
-    $error($request('route', $points, $token), 403, 'tuxano_session', 'A session token must be bound to the server-observed client.');
+    $check($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $token)->get_status() === 200, 'A complete signed anonymous capability survives a mobile IP or relay change.');
+    $error($request('route', $points, $token, ['X-Tuxano-Recovery' => '']), 403, 'tuxano_session', 'A bare new-protocol token cannot replace its signed capability.');
     $_SERVER['REMOTE_ADDR'] = $fixture_remote;
     $session_response = $request('session');
     $session_data = $session_response->get_data();
     $sessions[] = 'tuxano_session_' . hash('sha256', $session_data['token']);
     $check($session_response->get_headers()['Cache-Control'] === 'private, no-store, max-age=0' && $session_response->get_headers()['X-Content-Type-Options'] === 'nosniff', 'Session responses must prohibit caching and MIME sniffing.');
     $check(strpos(wp_json_encode($session_data), $fixture_key) === false && !isset($session_data['settings']['admin_email']) && $session_data['maps']['browserConfigured'] && $session_data['maps']['routesConfigured'], 'Bootstrap must expose readiness without private route key or admin address.');
+    $check(preg_match('/^v1\.[0-9]{9,11}\.[0-9]{9,11}\.[a-f0-9]{64}$/D', $session_data['sessionRecovery'] ?? '') === 1 && abs($session_data['sessionExpiresAt'] - time() - 2 * HOUR_IN_SECONDS) <= 2, 'Bootstrap returns a signed recovery capability and bounded idle-expiry preview.');
+    $check(preg_match('/^[a-f0-9]{64}$/D', $session_data['pricingRevision'] ?? '') === 1 && $session_data['pricingRevision'] === Settings::revision() && strpos(wp_json_encode($session_data), $fixture_key) === false, 'Session metadata exposes only an opaque current pricing revision, never the private provider key.');
+    $lease_name = 'tuxano_session_' . hash('sha256', $token);
+    $lease = get_transient($lease_name);
+    $check(($lease['protocol'] ?? '') === 'v1' && !isset($lease['client']) && !isset($lease['owner']), 'New ownership uses signed bearer capabilities instead of IP fingerprints or cookies.');
+    $renewed = $request('session', [], $token)->get_data();
+    $check($renewed['token'] === $token && get_transient($lease_name)['created'] === $lease['created'], 'Renewing keeps the original token and anti-bot age.');
+    $proof = $renewed['sessionRecovery'];
+    $invalid_proofs = [
+        '', 'not-a-proof', substr($proof, 0, -1) . (substr($proof, -1) === 'a' ? 'b' : 'a'),
+        tuxano_test_session_proof($token, $lease['created'], time() - 1),
+        tuxano_test_session_proof($token, $lease['created'], null, 'https://elsewhere.example.test/'),
+        tuxano_test_session_proof($token, time() + 61, time() + 7 * DAY_IN_SECONDS + 61),
+        tuxano_test_session_proof(str_repeat('0', 64), $lease['created']),
+    ];
+    foreach ($invalid_proofs as $invalid_proof) {
+        $error($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $token, ['X-Tuxano-Recovery' => $invalid_proof]), 403, 'tuxano_session', 'Missing, altered, expired, foreign-site or foreign-token capabilities cannot authorize active API calls.');
+        $error($request('session', [], $token, ['X-Tuxano-Recovery' => $invalid_proof]), 403, 'tuxano_session', 'An invalid capability cannot silently rotate or resume an existing token.');
+    }
+    $error($request('session', [], 'not-a-token', ['X-Tuxano-Recovery' => $proof]), 403, 'tuxano_session', 'Malformed requested tokens never create a replacement session implicitly.');
+    $error($request('session', [], $token, ['Origin' => 'https://elsewhere.example.test', 'X-Tuxano-Recovery' => $proof]), 403, 'tuxano_origin', 'Even a valid proof cannot resume through a foreign origin.');
+    $error($request('session', [], $token, ['Sec-Fetch-Site' => 'same-site', 'X-Tuxano-Recovery' => $proof]), 403, 'tuxano_origin', 'Sibling-site requests remain rejected during recovery.');
+    set_transient($lease_name, $lease, 5);
+    $check($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $token, ['X-Tuxano-Recovery' => $proof])->get_status() === 200 && (int) get_option('_transient_timeout_' . $lease_name) >= time() + 2 * HOUR_IN_SECONDS - 2, 'Valid activity extends the idle lease without changing the original creation age.');
+    delete_transient($lease_name);
+    $error($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $token, ['X-Tuxano-Recovery' => $proof]), 403, 'tuxano_session', 'An evicted cache lease requests a controlled renewal rather than trusting a bare token.');
+    $error($request('session', [], $token, ['X-Tuxano-Recovery' => '']), 403, 'tuxano_session', 'An evicted lease cannot be recreated without its signed proof.');
+    $restored = $request('session', [], $token, ['X-Tuxano-Recovery' => $proof]);
+    $check($restored->get_status() === 200 && $restored->get_data()['token'] === $token && get_transient($lease_name)['created'] === $lease['created'], 'A valid bounded proof recreates an evicted lease with the same token and original age.');
+    $skew_token = bin2hex(random_bytes(32)); $skew_name = 'tuxano_session_' . hash('sha256', $skew_token); $sessions[] = $skew_name;
+    $skew_created = time() + 30;
+    $skew_proof = tuxano_test_session_proof($skew_token, $skew_created, time() + 7 * DAY_IN_SECONDS + 30);
+    $skew_resume = $request('session', [], $skew_token, ['X-Tuxano-Recovery' => $skew_proof]);
+    $check($skew_resume->get_status() === 200 && get_transient($skew_name)['created'] === $skew_created, 'A small signed server-clock skew is tolerated without rewriting the original creation age.');
+    $check($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $skew_token)->get_status() === 200, 'Small trusted clock skew does not block immediate GPS/timezone requests.');
+    $legacy_token = bin2hex(random_bytes(32)); $legacy_name = 'tuxano_session_' . hash('sha256', $legacy_token); $sessions[] = $legacy_name;
+    set_transient($legacy_name, ['client' => hash_hmac('sha256', $fixture_remote, wp_salt('auth')), 'created' => time() - 3], 2 * HOUR_IN_SECONDS);
+    $check($request('timezone', ['latitude' => 40.758, 'longitude' => -73.9855], $legacy_token)->get_status() === 200, 'An already open legacy page retains its original IP-guarded session.');
+    $_SERVER['REMOTE_ADDR'] = '203.0.113.2';
+    $error($request('session', [], $legacy_token), 403, 'tuxano_session', 'A legacy token cannot bypass its old ownership guard during upgrade.');
+    $_SERVER['REMOTE_ADDR'] = $fixture_remote;
+    $legacy_resume = $request('session', [], $legacy_token);
+    $check($legacy_resume->get_status() === 200 && $legacy_resume->get_data()['token'] === $legacy_token && get_transient($legacy_name)['protocol'] === 'v1', 'A correctly owned legacy token upgrades in place and receives a signed proof.');
+    wp_set_current_user((int) $admins[0]); Settings::save(['session_hourly_limit' => 1]); wp_set_current_user(0);
+    $_SERVER['REMOTE_ADDR'] = '192.0.2.' . random_int(1, 254);
+    $limited = $request('session'); $limited_data = $limited->get_data(); $sessions[] = 'tuxano_session_' . hash('sha256', $limited_data['token']);
+    $check($limited->get_status() === 200, 'A new visitor can use its configured session-creation allowance.');
+    $error($request('session'), 429, 'tuxano_rate', 'The configured new-session allowance remains enforced.');
+    $check($request('session', [], $limited_data['token'])->get_status() === 200, 'Legitimate renewal has a separate bounded budget and is not blocked by a consumed new-session allowance.');
+    $_SERVER['REMOTE_ADDR'] = $fixture_remote;
+    wp_set_current_user((int) $admins[0]); Settings::save(['session_hourly_limit' => 1000]); wp_set_current_user(0);
     $error($request('route', [], $token, [], 'POST', '{broken-json'), 400, 'rest_invalid_json', 'Malformed JSON must fail in the WordPress parser.');
     $error($request('route', array_replace($points, ['origin' => ['latitude' => 91, 'longitude' => 0]]), $token), 400, 'tuxano_route_input', 'Out-of-range map coordinates must fail.');
     $error($request('route', array_replace($points, ['origin' => ['placeId' => 'bad?query']]), $token), 400, 'tuxano_route_input', 'Malformed place IDs must fail.');
@@ -159,6 +214,7 @@ try {
     $check($quote['distanceMeters'] === 16093.44 && $quote['durationSeconds'] === 1200.0 && $quote['provider'] === 'google', 'Only provider metrics may form the server quote.');
     $quote_name = 'tuxano_quote_' . hash('sha256', $quote['quoteToken']);
     $check(get_transient($quote_name)['session'] === hash('sha256', $token), 'Quote must be bound to the creating session.');
+    $check(preg_match('/^[a-f0-9]{64}$/D', $quote['pricingRevision'] ?? '') === 1 && $quote['pricingRevision'] === get_transient($quote_name)['revision'], 'Route response and stored quote share the same opaque pricing revision.');
     $check($quote['pickupTimezone'] === 'America/New_York' && $quote['pickupTimezoneLabel'] === 'Eastern Time' && get_transient($quote_name)['pickupTimezone'] === 'America/New_York', 'The route quote binds the pickup geographic zone without using a browser-supplied timezone.');
     $other_token = $new_session();
     $premium = null;
@@ -225,6 +281,13 @@ try {
     delete_transient('tuxano_quote_' . hash('sha256', $quote['quoteToken']));
     $retry = $submit($booking, $quote['quoteToken'], $token, $request_key);
     $check($retry->get_status() === 200 && $retry->get_data() === $receipt && count($mail) === 2, 'Identical retry after quote expiry must return the original receipt without duplicate mail.');
+    $resume = $request('session', [], $token)->get_data();
+    $created_before_eviction = get_transient($lease_name)['created'];
+    delete_transient($lease_name);
+    $recovered = $request('session', [], $token, ['X-Tuxano-Recovery' => $resume['sessionRecovery']]);
+    $check($recovered->get_status() === 200 && $recovered->get_data()['token'] === $token && get_transient($lease_name)['created'] === $created_before_eviction, 'A lost-response retry can restore its original session without changing request ownership or anti-bot age.');
+    $recovered_retry = $submit($booking, $quote['quoteToken'], $token, $request_key);
+    $check($recovered_retry->get_status() === 200 && $recovered_retry->get_data() === $receipt && count($mail) === 2, 'Retry after both quote expiry and session eviction returns one original receipt with no duplicate notifications.');
     $error($submit(array_replace($booking, ['special' => 'Changed retry']), $quote['quoteToken'], $token, $request_key), 409, 'tuxano_idempotency', 'Reusing a key with changed details must fail.');
     $error($submit($booking, $quote['quoteToken'], $other_token, $request_key), 409, 'tuxano_idempotency', 'A guessed request key must not reveal another session receipt.');
     $check((int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM ' . Database::table() . ' WHERE request_key=%s', hash_hmac('sha256', $request_key, wp_salt('secure_auth')))) === 1, 'All retries must retain exactly one durable booking.');

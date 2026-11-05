@@ -9,6 +9,8 @@ use Tuxano\Booking\Settings;
 use Tuxano\Booking\Vehicles;
 
 if (!defined('WP_CLI') || !WP_CLI || wp_get_environment_type() !== 'local') { exit('Run only with WP-CLI in disposable local WordPress.'); }
+require_once __DIR__ . '/helpers/wordpress-session.php';
+
 global $wpdb;
 $checks = 0;
 $check = static function (bool $ok, string $message) use (&$checks): void { if (!$ok) { throw new RuntimeException($message); } ++$checks; };
@@ -27,6 +29,7 @@ add_filter('pre_wp_mail', $capture, 10, 2);
 $site = wp_parse_url(home_url('/')); $origin = $site['scheme'] . '://' . $site['host'] . (isset($site['port']) ? ':' . $site['port'] : '');
 $request = static function (string $path, array $body, string $token = '', array $headers = []) use ($origin): WP_REST_Response {
     $r = new WP_REST_Request('POST', '/tuxano-booking/v1/' . $path);
+    $headers = tuxano_test_session_headers($token, $headers);
     foreach (array_replace(['Origin' => $origin, 'Sec-Fetch-Site' => 'same-origin', 'Content-Type' => 'application/json'], $headers) as $key => $value) { $r->set_header($key, $value); }
     if ($token !== '') { $r->set_header('X-Tuxano-Session', $token); }
     $r->set_body(wp_json_encode($body));

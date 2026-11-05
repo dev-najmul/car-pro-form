@@ -86,15 +86,20 @@ try {
     $legacy_typography = Settings::get();
     foreach (array_keys(Settings::TYPOGRAPHY) as $key) { unset($legacy_typography[$key]); }
     update_option(Settings::OPTION, $legacy_typography, false);
-    $original_typography = ['titleLetterSpacing' => null, 'textLetterSpacing' => null, 'buttonLetterSpacing' => null];
+    $original_typography = ['titleLetterSpacing' => null, 'labelLetterSpacing' => null, 'buttonLetterSpacing' => null];
     $check(array_intersect_key(Settings::get(), Settings::TYPOGRAPHY) === Settings::TYPOGRAPHY && Settings::public_data()['typography'] === $original_typography, 'Existing sites keep their original spacing until an administrator chooses a value.');
     $typography_revision = Settings::revision();
-    $check(Settings::save(['form_title_letter_spacing' => '1.0', 'form_text_letter_spacing' => '1.0', 'form_button_letter_spacing' => '2.0']) === true, 'Title, text and button spacing can be controlled independently.');
-    $check(Settings::public_data()['typography'] === ['titleLetterSpacing' => 1.0, 'textLetterSpacing' => 1.0, 'buttonLetterSpacing' => 2.0], 'Public typography contains normalized numbers rather than CSS text.');
+    $check(Settings::save(['form_title_letter_spacing' => '1.0', 'form_text_letter_spacing' => '1.0', 'form_button_letter_spacing' => '2.0']) === true, 'Main title, field label and main button spacing can be controlled independently.');
+    $check(Settings::public_data()['typography'] === ['titleLetterSpacing' => 1.0, 'labelLetterSpacing' => 1.0, 'buttonLetterSpacing' => 2.0], 'Public typography contains scoped normalized numbers rather than broad body-text CSS.');
     $check(Settings::revision() === $typography_revision, 'Active letter spacing preferences cannot invalidate a current route quote.');
+    $check(!array_key_exists('textLetterSpacing', Settings::public_data()['typography']), 'The old broad text-spacing contract is not exposed to suggestions, inputs or body text.');
+    $saved_scoped_typography = Settings::get();
+    update_option(Settings::OPTION, array_replace($saved_scoped_typography, ['form_text_letter_spacing' => '1.5']), false);
+    $check(Settings::public_data()['typography']['labelLetterSpacing'] === 1.5 && Settings::get()['form_text_letter_spacing'] === '1.5', 'An existing saved text-spacing choice becomes the field-label value without rewriting or losing the legacy setting.');
+    update_option(Settings::OPTION, $saved_scoped_typography, false);
     $before = Settings::get();
     $check(Settings::save(['company_name' => $before['company_name']]) === true && Settings::get() === $before, 'Unrelated partial saves preserve all three spacing preferences.');
-    $check(Settings::save(['form_text_letter_spacing' => '0']) === true && Settings::public_data()['typography']['textLetterSpacing'] === 0.0 && Settings::get()['form_button_letter_spacing'] === 2.0, 'Zero is an explicit spacing value and does not reset omitted fields.');
+    $check(Settings::save(['form_text_letter_spacing' => '0']) === true && Settings::public_data()['typography']['labelLetterSpacing'] === 0.0 && Settings::get()['form_button_letter_spacing'] === 2.0, 'Zero is an explicit spacing value and does not reset omitted fields.');
     foreach (['-1.0' => -1.0, '5.0' => 5.0] as $spacing => $expected) {
         $check(Settings::save(['form_title_letter_spacing' => $spacing]) === true && Settings::public_data()['typography']['titleLetterSpacing'] === $expected, 'The advertised spacing boundary saves exactly: ' . $spacing);
     }
@@ -103,7 +108,7 @@ try {
         $result = Settings::save(['company_name' => 'Must not partially save', 'form_button_letter_spacing' => $invalid_spacing]);
         $check(is_wp_error($result) && Settings::get() === $before, 'Invalid spacing rejects the entire settings save without overwriting existing values.');
     }
-    $check(Settings::save(['form_text_letter_spacing' => '']) === true && Settings::public_data()['typography']['textLetterSpacing'] === null && Settings::get()['form_button_letter_spacing'] === 2.0, 'Clearing one spacing field restores its original design while retaining the other choices.');
+    $check(Settings::save(['form_text_letter_spacing' => '']) === true && Settings::public_data()['typography']['labelLetterSpacing'] === null && Settings::get()['form_button_letter_spacing'] === 2.0, 'Clearing one spacing field restores its original design while retaining the other choices.');
     $corrupt_typography = Settings::get();
     $corrupt_typography['form_title_letter_spacing'] = ['1.0'];
     $corrupt_typography['form_text_letter_spacing'] = '2px';

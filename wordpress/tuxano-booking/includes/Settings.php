@@ -30,6 +30,7 @@ final class Settings
     /** Blank spacing keeps the existing design; zero is an explicit preference. */
     public const TYPOGRAPHY = [
         'form_title_letter_spacing' => '',
+        // Retain the saved key for compatibility; its scope is field labels only.
         'form_text_letter_spacing' => '',
         'form_button_letter_spacing' => '',
     ];
@@ -277,7 +278,7 @@ final class Settings
             $public['formColors'][$public_key] = is_string($color) && preg_match('/^#[A-Fa-f0-9]{6}$/D', $color) ? strtolower($color) : self::FORM_COLORS[$private_key];
         }
         $public['typography'] = [];
-        foreach (['form_title_letter_spacing' => 'titleLetterSpacing', 'form_text_letter_spacing' => 'textLetterSpacing', 'form_button_letter_spacing' => 'buttonLetterSpacing'] as $private_key => $public_key) {
+        foreach (['form_title_letter_spacing' => 'titleLetterSpacing', 'form_text_letter_spacing' => 'labelLetterSpacing', 'form_button_letter_spacing' => 'buttonLetterSpacing'] as $private_key => $public_key) {
             $public['typography'][$public_key] = self::letter_spacing($settings[$private_key]);
         }
         $public['backgrounds'] = self::backgrounds($settings);

@@ -23,6 +23,8 @@ if (wp_get_environment_type() !== 'local') {
     WP_CLI::error('These fixture tests run only in an isolated local WordPress installation.');
 }
 
+require_once __DIR__ . '/helpers/wordpress-session.php';
+
 global $wpdb;
 $checks = 0;
 $check = static function (bool $condition, string $message) use (&$checks): void {
@@ -59,6 +61,7 @@ $site = wp_parse_url(home_url('/'));
 $origin = $site['scheme'] . '://' . $site['host'] . (isset($site['port']) ? ':' . $site['port'] : '');
 $admin_request = static function (string $path, array $body = [], string $nonce = '', array $headers = [], ?string $raw = null) use ($origin): WP_REST_Response {
     $request = new WP_REST_Request('POST', '/tuxano-booking/v1/' . $path);
+    $headers = tuxano_test_session_headers((string) ($headers['X-Tuxano-Session'] ?? ''), $headers);
     foreach (array_replace(['Origin' => $origin, 'Sec-Fetch-Site' => 'same-origin', 'Content-Type' => 'application/json'], $headers) as $name => $value) { $request->set_header($name, $value); }
     if ($nonce !== '') { $request->set_header('X-WP-Nonce', $nonce); }
     $request->set_body($raw ?? wp_json_encode($body));

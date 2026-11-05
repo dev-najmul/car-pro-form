@@ -18,7 +18,7 @@ async function install(page, addresses) {
     window.TuxanoBooking = {
       token: 'a'.repeat(64), nonce: 'long-address-layout-fixture', assetUrl: `${origin}/`, restUrl,
       maps: { browserKey: 'test-browser-key', browserConfigured: true, routesConfigured: true, providerMode: 'remote', routeEndpoint: `${restUrl}route` },
-      settings: { companyName: 'TUXANO', timezone: 'UTC', pickupTimezones: true, typography: { titleLetterSpacing: 1, textLetterSpacing: 1, buttonLetterSpacing: 2 } },
+      settings: { companyName: 'TUXANO', timezone: 'UTC', pickupTimezones: true, typography: { titleLetterSpacing: 1, labelLetterSpacing: 1, buttonLetterSpacing: 2 } },
       vehicles: [{ id: '41', name: 'CITY SEDAN', display: 'City Sedan', capacity: 4, luggageCapacity: 4, image: `${origin}/assets/premium-suv.png`, models: ['Configured sedan'], features: ['Private transfers'], category: 'TEST COLLECTION', tariff: { base: 50, perMile: 2, perDrivingMinute: 1, minimum: 75, perWaitingMinute: 3, hourly: 80 } }],
     };
     window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { [pickupId]: 'BD', [dropoffId]: 'BD' }, locations: { [pickupId]: { lat: 22.714, lng: 90.35 }, [dropoffId]: { lat: 23.8, lng: 90.4 } } };
@@ -56,7 +56,12 @@ async function textRects(locator) {
       const text = walker.currentNode;
       if (!text.textContent.trim() || text.parentElement.closest('svg, .sr-only')) continue;
       const range = document.createRange(); range.selectNodeContents(text);
-      for (const rect of range.getClientRects()) if (rect.width && rect.height) boxes.push({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom });
+      const clip = element.getBoundingClientRect();
+      for (const rect of range.getClientRects()) {
+        // Clamp hides excess lines; only actually painted fragments may collide.
+        const box = { left: Math.max(rect.left, clip.left), top: Math.max(rect.top, clip.top), right: Math.min(rect.right, clip.right), bottom: Math.min(rect.bottom, clip.bottom) };
+        if (box.right > box.left && box.bottom > box.top) boxes.push(box);
+      }
     }
     return boxes;
   });
@@ -70,15 +75,31 @@ async function readableSummary(page, addresses) {
   const dateRects = await textRects(dateText);
   expect(new Set(dateRects.map(box => Math.round(box.top))).size, 'Pickup date must remain a readable single line rather than a column of characters').toBe(1);
   const primary = strip.locator('.time-12h');
-  const secondary = strip.locator('[data-time24-value]');
+  await expect(strip.locator('[data-time24], [data-time24-value]')).toHaveCount(0);
   await expect(primary).toHaveText('1:58 PM (Bangladesh Time)');
-  await expect(secondary).toHaveText('13:58 (Bangladesh Time)');
   const edit = strip.getByRole('button', { name: 'Edit Trip', exact: true });
-  const fragments = [dateRects, await textRects(primary), await textRects(secondary), await textRects(edit), ...await Promise.all(addresses.map(address => textRects(strip.getByText(address, { exact: true }))))];
+  await expect(edit).toHaveCSS('font-size', '14px');
+  await expect(edit).toHaveCSS('letter-spacing', 'normal');
+  const fragments = [dateRects, await textRects(primary), await textRects(edit), ...await Promise.all(addresses.map(address => textRects(strip.getByText(address, { exact: true }))))];
   for (let i = 0; i < fragments.length; ++i) for (let j = i + 1; j < fragments.length; ++j) {
-    for (const a of fragments[i]) for (const b of fragments[j]) expect(noOverlap(a, b), 'Addresses, date, the two pickup clocks and Edit Trip must not paint over one another').toBe(true);
+    for (const a of fragments[i]) for (const b of fragments[j]) expect(noOverlap(a, b), 'Addresses, date, the primary pickup clock and Edit Trip must not paint over one another').toBe(true);
   }
   const stripBox = await strip.boundingBox();
+  for (const address of addresses) {
+    const node = strip.locator('.trip-address').filter({ hasText: address });
+    await expect(node).toHaveAttribute('title', address);
+    await expect(node).toHaveAttribute('aria-label', address);
+    expect(await node.textContent()).toBe(address);
+    expect((await node.boundingBox()).width, 'Each location keeps useful readable width').toBeGreaterThanOrEqual(100);
+    if (page.viewportSize().width < 640) expect(await node.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    else expect(await node.evaluate(el => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) * 2 + 1)).toBe(true);
+  }
+  if (page.viewportSize().width >= 1100) {
+    const controls = strip.locator('.trip-location, .trip-strip-date, .trip-strip-time, button');
+    const centers = await controls.evaluateAll(nodes => nodes.map(el => { const r = el.getBoundingClientRect(); return r.y + r.height / 2; }));
+    expect(Math.max(...centers) - Math.min(...centers), 'Wide desktop retains the original single horizontal bar').toBeLessThanOrEqual(1);
+    expect(stripBox.height, 'The desktop summary retains its compact reference height').toBeLessThanOrEqual(90);
+  }
   for (const address of addresses) {
     const text = strip.getByText(address, { exact: true });
     for (const box of await textRects(text)) {
@@ -102,11 +123,11 @@ test.afterEach(async ({ page }) => {
 });
 
 for (const width of [1440, 1024, 768, 390, 320]) {
-  test(`full Bengali and English addresses leave dates, dual clocks and editing readable at ${width}px`, async ({ page }) => {
+  test(`compact Bengali and English addresses preserve the single-clock schedule and editing at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await install(page, [pickup, dropoff]);
     await readableSummary(page, [pickup, dropoff]);
-    if (width === 1440 || width === 390) await page.screenshot({ path: width === 1440 ? '/tmp/tuxano-245-long-desktop.png' : '/tmp/tuxano-245-long-phone.png', fullPage: true });
+    if (width === 1440 || width === 390) await page.screenshot({ path: width === 1440 ? '/tmp/tuxano-246-long-desktop.png' : '/tmp/tuxano-246-long-phone.png', fullPage: true });
     await page.locator('.trip-strip').getByRole('button', { name: 'Edit Trip', exact: true }).click();
     await expect(page).toHaveURL(/#trip$/);
     await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(pickup);
@@ -118,7 +139,7 @@ for (const width of [1440, 1024, 768, 390, 320]) {
   });
 }
 
-test('an address containing a long unbroken token wraps without altering its canonical identity', async ({ page }) => {
+test('an unbroken address stays accessible in its compact column without altering canonical identity', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1000 });
   const unbroken = 'CustomerReceptionAndInternationalTransferTerminal'.repeat(7);
   await install(page, [unbroken, dropoff]);
@@ -130,4 +151,5 @@ test('short addresses retain a compact readable summary with all schedule contro
   const addresses = ['Barishal, Bangladesh', 'Gazipur, Bangladesh'];
   await install(page, addresses);
   await readableSummary(page, addresses);
+  expect((await page.locator('.trip-strip').boundingBox()).height).toBeLessThanOrEqual(90);
 });
