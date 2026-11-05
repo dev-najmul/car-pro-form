@@ -4162,3 +4162,35 @@ body.form-page .trip-strip {
   .trip-strip .trip-strip-date { border: 0; padding: 0; }
   .trip-strip .trip-schedule > button { align-self: flex-start; padding: 0; border: 0; }
 }
+
+/* Keep the existing button geometry while drawing the two-pixel action border. */
+.btn.primary,
+.service-choice > button[aria-pressed="true"],
+.aviation > button[aria-pressed="true"] {
+  background: linear-gradient(135deg, #0A1F5C, #0E2A7A, #0A1F5C);
+  border: 2px solid #1E3A9A;
+  color: #FFFFFF;
+}
+.btn.primary { padding: 11px 27px; }
+.service-choice > button[aria-pressed="true"],
+.aviation > button[aria-pressed="true"] { padding: 10px; }
+.service-choice > button + button[aria-pressed="true"],
+.aviation > button + button[aria-pressed="true"] { padding-left: 11px; }
+.btn.primary:not(:disabled):hover,
+.service-choice > button[aria-pressed="true"]:not(:disabled):hover,
+.aviation > button[aria-pressed="true"]:not(:disabled):hover {
+  background: #CCCCCC;
+  border-color: #CCCCCC;
+  color: #030B1E;
+  filter: none;
+  box-shadow: none;
+}
+.btn.primary:disabled { filter: none; }
+body.form-page .btn.primary { padding: 9px 21px; }
+@media (max-width: 639px) {
+  .btn.primary, body.form-page .btn.primary { padding: 9px 11px; }
+  .service-choice > button[aria-pressed="true"],
+  .aviation > button[aria-pressed="true"] { padding: 8px 6px; }
+  .service-choice > button + button[aria-pressed="true"] { padding-left: 7px; }
+  .aviation > button + button[aria-pressed="true"] { padding-left: 6px; padding-top: 9px; }
+}

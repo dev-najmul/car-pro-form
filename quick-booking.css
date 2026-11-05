@@ -392,3 +392,27 @@
 [data-tuxano-quick-booking] .place-option,
 [data-tuxano-quick-booking] .place-option *,
 [data-tuxano-quick-booking] .tuxano-quick-booking-suggestion-actions > button { letter-spacing: normal; }
+
+/* Only the card's existing blue actions share the main form's button palette. */
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit,
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button[aria-pressed="true"],
+[data-tuxano-quick-booking] .tuxano-quick-booking-map [data-quick-use-map] { border-width: 2px; border-style: solid; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit { padding: 12px 11px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button[aria-pressed="true"] { padding: 10px 6px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-map [data-quick-use-map] { padding: 8px 11px; }
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit:not(:disabled),
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button[aria-pressed="true"],
+[data-tuxano-quick-booking] .tuxano-quick-booking-map [data-quick-use-map] {
+  background: linear-gradient(135deg, #0A1F5C, #0E2A7A, #0A1F5C);
+  border-color: #1E3A9A;
+  color: #FFFFFF;
+}
+[data-tuxano-quick-booking] .tuxano-quick-booking-submit:not(:disabled):hover,
+[data-tuxano-quick-booking] .tuxano-quick-booking-segments > button[aria-pressed="true"]:not(:disabled):hover,
+[data-tuxano-quick-booking] .tuxano-quick-booking-map [data-quick-use-map]:not(:disabled):hover {
+  background: #CCCCCC;
+  border-color: #CCCCCC;
+  color: #030B1E;
+  filter: none;
+  box-shadow: none;
+}

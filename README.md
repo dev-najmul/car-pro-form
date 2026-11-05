@@ -1,8 +1,8 @@
-# WordPress plugin — Tuxano Booking 2.4.6
+# WordPress plugin — Tuxano Booking 2.5.0
 
 The form now also runs as a WordPress plugin with administrator-controlled vehicles/categories, all tariffs and extras, API/business settings, private searchable submissions, server-validated prices, and customer/admin notifications.
 
-- [2.4.6 plugin ZIP](releases/tuxano-booking-2.4.6.zip) · [checksum](releases/tuxano-booking-2.4.6.zip.sha256) · [previous live 2.3.1 ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.1.zip)
+- [2.5.0 plugin ZIP](releases/tuxano-booking-2.5.0.zip) · [checksum](releases/tuxano-booking-2.5.0.zip.sha256) · [previous live 2.3.1 ZIP](https://bdreadyweb.com/carbook/wp-content/uploads/2026/10/tuxano-booking-2.3.1.zip)
 - [Home quick planner](https://bdreadyweb.com/carbook/) · [Main booking form](https://bdreadyweb.com/carbook/booking/) · [WordPress booking dashboard](https://bdreadyweb.com/carbook/wp-admin/admin.php?page=tuxano-booking)
 - [Installation, controls, security/data/mail behavior and development guide](wordpress/README.md)
 - Shortcodes: `[tuxano_quick_booking]` for a home hero and `[tuxano_booking]` for the main booking page. Choose the destination under Settings → Quick booking. For the full reference design choose **Tuxano Booking — full page** as the page template.
