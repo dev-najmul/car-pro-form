@@ -148,7 +148,7 @@
   document.addEventListener('change', event => {
     const target = event.target;
     if (target instanceof HTMLSelectElement && target.matches('[data-tuxano-background-mode]')) { updateBackground(target.closest('[data-tuxano-background-group]')); return; }
-    if (!(target instanceof HTMLInputElement)) return;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
     if (target.matches('[data-tuxano-select-all]')) {
       const form = target.closest('form'); if (!form) return;
       form.querySelectorAll('[data-tuxano-row]').forEach(row => { row.checked = target.checked; }); selection(form);
