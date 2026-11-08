@@ -125,4 +125,22 @@ foreach (['00:00' => '12:00 AM', '12:00' => '12:00 PM', '23:59' => '11:59 PM'] a
 }
 $receipt['payload']['trip']['timezone'] = 'Invalid/Timezone';
 $check(substr_count(Notifications::template($receipt, $settings, 'customer'), 'Pickup schedule unavailable') === 2, 'A corrupt legacy timezone must not crash rendering or invent an unrelated pickup time.');
+// New service profiles itemize selected waiting once; old receipts retain
+// their accepted display rather than being retroactively reformatted as v2.
+foreach (['mileage', 'time', 'hourly'] as $mode) {
+    $modern = $row;
+    $modern['payload']['trip']['service'] = $mode === 'hourly' ? 'hourly' : 'transfer';
+    $modern['payload']['trip']['hours'] = 3;
+    $modern['pricing']['fare'] = ['pricingMode' => $mode, 'drivingCharge' => 160.0, 'waitingCharge' => 15.0];
+    $modern_plain = Notifications::plain_text($modern, $settings, 'customer');
+    $modern_html = Notifications::template($modern, $settings, 'customer');
+    $check(strpos($modern_plain, 'Transportation: USD 160.00') !== false && substr_count($modern_plain, 'Stop waiting (5 min): USD 15.00') === 1 && strpos($modern_plain, 'ESTIMATED TOTAL: USD 335.00') !== false, 'A ' . $mode . ' receipt separates base transportation and waiting without changing or doubling the saved total.');
+    $check(strpos($modern_html, 'Stop waiting (5 min)') !== false && strpos($modern_plain, 'Selected stop waiting is shown separately above and is included once') !== false && strpos($modern_plain, 'Transportation includes 5 min') === false, 'New ' . $mode . ' alternatives explain the separate waiting line consistently.');
+}
+$modern['pricing']['fare']['waitingCharge'] = 0;
+$modern['payload']['trip']['stops'][0]['waitMinutes'] = 0;
+$modern_plain = Notifications::plain_text($modern, $settings, 'customer');
+$check(strpos($modern_plain, 'Stop waiting (0 min):') === false && strpos($modern_plain, 'Transportation: USD 175.00') !== false, 'A modern receipt without selected waiting does not create an empty additional charge.');
+$legacy_plain = Notifications::plain_text($row, $settings, 'customer');
+$check(strpos($legacy_plain, 'Transportation: USD 175.00') !== false && strpos($legacy_plain, 'Stop waiting (5 min):') === false, 'Historical receipts without a pricing-mode snapshot preserve their original all-in transportation presentation.');
 WP_CLI::success('WordPress email template checks passed: ' . $checks);

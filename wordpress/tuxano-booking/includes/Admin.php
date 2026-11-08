@@ -377,9 +377,9 @@ final class Admin {
         }
         $price_rows[__('Gratuity percentage', 'tuxano-booking')] = self::scalar($pricing['percent'] ?? 0) . '%';
         $price_rows[__('Distance', 'tuxano-booking')] = isset($route['distanceMeters']) && is_numeric($route['distanceMeters']) ? number_format_i18n((float) $route['distanceMeters'] / 1000, 1) . ' km / ' . number_format_i18n((float) $route['distanceMeters'] / 1609.344, 1) . ' mi' : '—';
-        $price_rows[__('Baseline driving time', 'tuxano-booking')] = isset($route['durationSeconds']) && is_numeric($route['durationSeconds']) ? sprintf(__('%s min', 'tuxano-booking'), number_format_i18n((int) ceil((float) $route['durationSeconds'] / 60))) : '—';
+        $price_rows[!empty($route['trafficAware']) ? __('Traffic-aware driving time', 'tuxano-booking') : __('Baseline driving time', 'tuxano-booking')] = isset($route['durationSeconds']) && is_numeric($route['durationSeconds']) ? sprintf(__('%s min', 'tuxano-booking'), number_format_i18n((int) ceil((float) $route['durationSeconds'] / 60))) : '—';
         self::information($price_rows);
-        echo '<p class="description">' . esc_html__('Amounts are stored with the request and do not change when tariffs are edited. Route estimates exclude live traffic.', 'tuxano-booking') . '</p></section></div><aside class="tuxano-detail-sidebar"><section class="tuxano-card"><h2>' . esc_html__('Request management', 'tuxano-booking') . '</h2><p>' . self::badge(self::scalar($row['status'] ?? '', 'new')) . '</p><p class="description">' . esc_html__('Submitted:', 'tuxano-booking') . ' ' . esc_html(self::date_label($row['created_at'] ?? '')) . '</p><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<p class="description">' . esc_html(($route['trafficBasis'] ?? '') === 'current-for-historical-pickup' ? __('Amounts are stored with the request. This past pickup was explicitly recalculated using current traffic because past traffic cannot be forecast.', 'tuxano-booking') : (!empty($route['trafficAware']) ? __('Amounts are stored with the request and do not change when tariffs are edited. This saved transfer estimate uses traffic-aware routing for its recorded pickup time.', 'tuxano-booking') : __('Amounts are stored with the request and do not change when tariffs are edited. This saved baseline route estimate excludes live traffic.', 'tuxano-booking'))) . '</p></section></div><aside class="tuxano-detail-sidebar"><section class="tuxano-card"><h2>' . esc_html__('Request management', 'tuxano-booking') . '</h2><p>' . self::badge(self::scalar($row['status'] ?? '', 'new')) . '</p><p class="description">' . esc_html__('Submitted:', 'tuxano-booking') . ' ' . esc_html(self::date_label($row['created_at'] ?? '')) . '</p><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         wp_nonce_field('tuxano_update_booking_' . $id);
         echo '<input type="hidden" name="action" value="tuxano_update_booking"><input type="hidden" name="booking_id" value="' . esc_attr((string) $id) . '"><p><label for="tuxano-booking-status">' . esc_html__('Status', 'tuxano-booking') . '</label><select class="widefat" id="tuxano-booking-status" name="status">';
         foreach (Database::STATUSES as $status) {
@@ -481,7 +481,7 @@ final class Admin {
         foreach (is_array($trip['stops'] ?? null) ? $trip['stops'] : [] as $index => $stop) { if (is_array($stop)) { self::editor_stop($index, $stop); } }
         echo '</div><button type="button" class="button" data-tuxano-add-stop>+ ' . esc_html__('Add stop', 'tuxano-booking') . '</button><template data-tuxano-stop-template>';
         self::editor_stop('__index__', []);
-        echo '</template><p class="description">' . esc_html__('Changing the selected route fetches a fresh driving estimate. Live traffic is not included.', 'tuxano-booking') . '</p></section><section class="tuxano-card"><div class="tuxano-section-heading"><span class="dashicons dashicons-car" aria-hidden="true"></span><div><h2>' . esc_html__('Vehicle, passengers & extras', 'tuxano-booking') . '</h2><p>' . esc_html__('Changes to these items recalculate the estimate with the current approved rates.', 'tuxano-booking') . '</p></div></div><div class="tuxano-editor-grid">';
+        echo '</template><p class="description">' . esc_html__('Transfers use traffic-aware pickup-time estimates; changing their date, time, route or stop waiting obtains a fresh estimate. Hourly Bookings keep baseline passenger driving estimates. Contact or status-only edits preserve saved prices.', 'tuxano-booking') . '</p></section><section class="tuxano-card"><div class="tuxano-section-heading"><span class="dashicons dashicons-car" aria-hidden="true"></span><div><h2>' . esc_html__('Vehicle, passengers & extras', 'tuxano-booking') . '</h2><p>' . esc_html__('Changes to these items recalculate the estimate with the current approved rates.', 'tuxano-booking') . '</p></div></div><div class="tuxano-editor-grid">';
         $vehicles = [];
         $selected_vehicle = self::scalar($booking['vehicle'] ?? '', '');
         foreach (Vehicles::all() as $vehicle) { $vehicles[$vehicle['id']] = $vehicle['name']; }
@@ -658,33 +658,47 @@ final class Admin {
     }
 
     public static function pricing(): void {
-        self::open(__('Pricing', 'tuxano-booking'), __('Control global extras here and vehicle-specific transportation tariffs in the fleet editor.', 'tuxano-booking'));
+        self::open(__('Pricing', 'tuxano-booking'), __('Control the service base and global extras here. Each vehicle has separate Transfer and Hourly Booking prices.', 'tuxano-booking'));
         $settings = Settings::get();
         self::settings_form_open('pricing');
-        echo '<section class="tuxano-card"><h2>' . esc_html__('Extras and gratuity', 'tuxano-booking') . '</h2><p>' . esc_html(sprintf(__('All amounts use %s. Change currency in Settings.', 'tuxano-booking'), $settings['currency'])) . '</p><table class="form-table" role="presentation">';
+        echo '<section class="tuxano-card"><h2>' . esc_html__('Transfer service base', 'tuxano-booking') . '</h2><p>' . esc_html__('Transfers include the route from this base to pickup and the return from drop-off. Google driving routes and the selected pickup time provide the traffic-aware estimates. Complimentary allowances are configured separately for each vehicle.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
+        self::field($settings, 'transfer_base_address', __('Service base address', 'tuxano-booking'), 'text', __('Use the exact street address for Google routing. Changing this address invalidates unsent quotes; accepted reservations keep their saved estimates.', 'tuxano-booking'), ['maxlength' => 512, 'required' => 'required']);
+        echo '</table></section><section class="tuxano-card"><h2>' . esc_html__('Extras and gratuity', 'tuxano-booking') . '</h2><p>' . esc_html(sprintf(__('All amounts use %s. Change currency in Settings.', 'tuxano-booking'), $settings['currency'])) . '</p><table class="form-table" role="presentation">';
         self::field($settings, 'meet_price', __('Meet & greet', 'tuxano-booking'), 'number', __('One charge per reservation when selected.', 'tuxano-booking'), ['min' => 0, 'max' => 1000000, 'step' => '0.01', 'required' => 'required']);
         self::field($settings, 'first_seat_price', __('First child seat', 'tuxano-booking'), 'number', __('Applied once to the first car seat or booster seat.', 'tuxano-booking'), ['min' => 0, 'max' => 1000000, 'step' => '0.01', 'required' => 'required']);
         self::field($settings, 'additional_seat_price', __('Each additional child seat', 'tuxano-booking'), 'number', __('Applies to every remaining car seat or booster seat.', 'tuxano-booking'), ['min' => 0, 'max' => 1000000, 'step' => '0.01', 'required' => 'required']);
         self::field($settings, 'default_gratuity', __('Default gratuity (%)', 'tuxano-booking'), 'number', __('Optional customer gratuity, calculated on transportation only.', 'tuxano-booking'), ['min' => 0, 'max' => 100, 'step' => '0.5', 'required' => 'required']);
         echo '</table>';
         submit_button(__('Save pricing', 'tuxano-booking'));
-        echo '</section></form><section class="tuxano-card"><h2>' . esc_html__('Vehicle tariffs', 'tuxano-booking') . '</h2><p>' . esc_html__('Transfer = the greater of the minimum fare or base + distance charge + driving-time charge, plus stop waiting. Hourly = the greater of booked hours or driving hours × hourly rate, plus distance and stop waiting.', 'tuxano-booking') . '</p><div class="tuxano-table-scroll"><table class="widefat striped"><thead><tr>';
-        foreach ([__('Vehicle', 'tuxano-booking'), __('Base', 'tuxano-booking'), __('Per mile', 'tuxano-booking'), __('Per driving minute', 'tuxano-booking'), __('Minimum', 'tuxano-booking'), __('Per waiting minute', 'tuxano-booking'), __('Hourly', 'tuxano-booking')] as $heading) {
-            echo '<th scope="col">' . esc_html($heading) . '</th>';
-        }
-        echo '</tr></thead><tbody>';
+        echo '</section></form>';
         $vehicles = Vehicles::all(false);
-        if (!$vehicles) {
-            echo '<tr><td colspan="7">' . esc_html__('No vehicles yet. Add a vehicle to configure its tariffs.', 'tuxano-booking') . '</td></tr>';
-        }
+        echo '<section class="tuxano-card"><h2>' . esc_html__('Transfer pricing by vehicle', 'tuxano-booking') . '</h2><p>' . esc_html__('Each vehicle uses one Transfer method. Mileage-Based combines billable pickup, passenger and return miles before applying its minimum fare. Time-Based combines billable minutes before applying its minimum charged time. Stop waiting, extras and gratuity are added separately.', 'tuxano-booking') . '</p><div class="tuxano-table-scroll"><table class="widefat striped"><thead><tr>';
+        foreach ([__('Vehicle', 'tuxano-booking'), __('Method', 'tuxano-booking'), __('Rate', 'tuxano-booking'), __('Minimum', 'tuxano-booking'), __('Free pickup travel', 'tuxano-booking'), __('Free return travel', 'tuxano-booking'), __('Stop waiting', 'tuxano-booking')] as $heading) { echo '<th scope="col">' . esc_html($heading) . '</th>'; }
+        echo '</tr></thead><tbody>';
+        if (!$vehicles) { echo '<tr><td colspan="7">' . esc_html__('No vehicles yet. Add a vehicle to configure its tariffs.', 'tuxano-booking') . '</td></tr>'; }
         foreach ($vehicles as $vehicle) {
+            $tariff = $vehicle['tariff']; $rules = $tariff['transfer'] ?? null;
+            $time = is_array($rules) && $rules['mode'] === 'time';
+            $method = is_array($rules) ? ($time ? __('Time-Based', 'tuxano-booking') : __('Mileage-Based', 'tuxano-booking')) : __('Prior transfer model', 'tuxano-booking');
+            $rate = self::money($tariff[$time ? 'hourly' : 'perMile'], $settings['currency']) . ($time ? ' / hr' : ' / mi');
+            $minimum = $time ? (string) $rules['minimumMinutes'] . ' min' : self::money($tariff['minimum'], $settings['currency']);
+            $pickup = is_array($rules) ? (string) $rules[$time ? 'pickupFreeMinutes' : 'pickupFreeMiles'] . ($time ? ' min' : ' mi') : '—';
+            $return = is_array($rules) ? (string) $rules[$time ? 'returnFreeMinutes' : 'returnFreeMiles'] . ($time ? ' min' : ' mi') : '—';
             echo '<tr><td><a href="' . esc_url(get_edit_post_link((int) $vehicle['id'], 'raw') ?: admin_url('edit.php?post_type=tuxano_vehicle')) . '">' . esc_html(self::scalar($vehicle['name'] ?? '')) . '</a></td>';
-            foreach (['base', 'perMile', 'perDrivingMinute', 'minimum', 'perWaitingMinute', 'hourly'] as $key) {
-                echo '<td class="tuxano-nowrap">' . esc_html(self::money($vehicle['tariff'][$key] ?? 0, $settings['currency'])) . '</td>';
-            }
+            foreach ([$method, $rate, $minimum, $pickup, $return, self::money($tariff['perWaitingMinute'], $settings['currency']) . ' / min'] as $value) { echo '<td class="tuxano-nowrap">' . esc_html($value) . '</td>'; }
             echo '</tr>';
         }
-        echo '</tbody></table></div><p><a class="button" href="' . esc_url(admin_url('edit.php?post_type=tuxano_vehicle')) . '">' . esc_html__('Manage vehicles and tariffs', 'tuxano-booking') . '</a></p><p class="description">' . esc_html__('Editing pricing invalidates outstanding quotes. Customers must refresh their route before submitting; existing submissions retain their saved prices.', 'tuxano-booking') . '</p></section></div>';
+        echo '</tbody></table></div></section><section class="tuxano-card"><h2>' . esc_html__('Hourly Booking pricing by vehicle', 'tuxano-booking') . '</h2><p>' . esc_html__('Hourly Bookings keep the higher of booked hours or passenger driving hours, plus their own mileage and stop waiting rates. Transfer allowances and Transfer pricing methods do not apply.', 'tuxano-booking') . '</p><div class="tuxano-table-scroll"><table class="widefat striped"><thead><tr>';
+        foreach ([__('Vehicle', 'tuxano-booking'), __('Hourly rate', 'tuxano-booking'), __('Per passenger mile', 'tuxano-booking'), __('Per waiting minute', 'tuxano-booking')] as $heading) { echo '<th scope="col">' . esc_html($heading) . '</th>'; }
+        echo '</tr></thead><tbody>';
+        if (!$vehicles) { echo '<tr><td colspan="4">' . esc_html__('No vehicles yet. Add a vehicle to configure its tariffs.', 'tuxano-booking') . '</td></tr>'; }
+        foreach ($vehicles as $vehicle) {
+            $hourly = $vehicle['tariff']['hourlyBooking'] ?? $vehicle['tariff'];
+            echo '<tr><td><a href="' . esc_url(get_edit_post_link((int) $vehicle['id'], 'raw') ?: admin_url('edit.php?post_type=tuxano_vehicle')) . '">' . esc_html(self::scalar($vehicle['name'] ?? '')) . '</a></td>';
+            foreach (['hourly', 'perMile', 'perWaitingMinute'] as $key) { echo '<td class="tuxano-nowrap">' . esc_html(self::money($hourly[$key], $settings['currency'])) . '</td>'; }
+            echo '</tr>';
+        }
+        echo '</tbody></table></div><p><a class="button" href="' . esc_url(admin_url('edit.php?post_type=tuxano_vehicle')) . '">' . esc_html__('Manage vehicles and tariffs', 'tuxano-booking') . '</a></p><p class="description">' . esc_html__('Editing pricing invalidates outstanding quotes. Existing submissions retain their saved prices. Inactive method fields remain available in the vehicle editor.', 'tuxano-booking') . '</p></section></div>';
     }
 
     public static function settings(): void {
@@ -730,7 +744,7 @@ final class Admin {
         echo '<section class="tuxano-card"><h2>' . esc_html__('Google Maps API', 'tuxano-booking') . '</h2><p>' . esc_html__('A green tick means a key is securely saved. Use Test key to check its configuration, Replace key to change it, or Remove saved key to clear it. The Routes key stays private on your server.', 'tuxano-booking') . '</p><table class="form-table" role="presentation">';
         self::key_field($settings, 'browser_key', __('Maps browser API key', 'tuxano-booking'), __('Enable Maps JavaScript API and Places API (New). Restrict this browser key to the domains where this form is embedded.', 'tuxano-booking'));
         self::key_field($settings, 'routes_key', __('Routes server API key', 'tuxano-booking'), __('Enable Routes API. This key is used only for server-to-server route requests and is never returned to the form.', 'tuxano-booking'));
-        self::field($settings, 'route_daily_limit', __('Daily Google route request budget', 'tuxano-booking'), 'number', __('Site-wide provider attempts per UTC day, including failed provider requests. Increase to match your booking volume and API budget.', 'tuxano-booking'), ['min' => 1, 'max' => 100000, 'step' => 1, 'required' => 'required']);
+        self::field($settings, 'route_daily_limit', __('Daily Google route request budget', 'tuxano-booking'), 'number', __('Site-wide provider attempts per UTC day, including failures. A traffic-aware Transfer estimate uses up to four provider requests; Hourly uses one. Increase to match your booking volume and API budget.', 'tuxano-booking'), ['min' => 1, 'max' => 100000, 'step' => 1, 'required' => 'required']);
         self::field($settings, 'route_minute_limit', __('Route requests per visitor / minute', 'tuxano-booking'), 'number', '', ['min' => 1, 'max' => 120, 'step' => 1, 'required' => 'required']);
         self::field($settings, 'session_hourly_limit', __('New sessions per network / hour', 'tuxano-booking'), 'number', __('Visitors sharing an internet connection share this limit.', 'tuxano-booking'), ['min' => 1, 'max' => 1000, 'step' => 1, 'required' => 'required']);
         self::field($settings, 'booking_hourly_limit', __('Submissions per network / hour', 'tuxano-booking'), 'number', '', ['min' => 1, 'max' => 1000, 'step' => 1, 'required' => 'required']);
@@ -802,7 +816,7 @@ final class Admin {
         }
         check_admin_referer('tuxano_save_settings_' . $section);
         $keys = $section === 'pricing'
-            ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity']
+            ? ['meet_price', 'first_seat_price', 'additional_seat_price', 'default_gratuity', 'transfer_base_address']
             : ['company_name', 'support_email', 'support_phone', 'website', 'currency', 'currency_symbol', 'browser_key', 'routes_key', 'clear_browser_key', 'clear_routes_key', 'max_stops', 'min_hours', 'max_hours', 'terms_url', 'privacy_url', 'email_customer', 'email_admin', 'admin_email', 'sender_name', 'from_email', 'email_logo_url', 'retention_days', 'route_daily_limit', 'route_minute_limit', 'session_hourly_limit', 'booking_hourly_limit', 'dashboard_recent_limit', 'booking_page_id'];
         if ($section === 'settings') { $keys = array_merge($keys, array_keys(Settings::FORM_COLORS), array_keys(Settings::TYPOGRAPHY), array_keys(Settings::BACKGROUNDS)); }
         $values = [];

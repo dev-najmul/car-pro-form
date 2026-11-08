@@ -312,3 +312,30 @@ body.tuxano-native-screen .tuxano-vehicle-pricing .tuxano-rate-amount input { fo
 @media (prefers-reduced-motion: reduce) {
   .tuxano-admin .tuxano-stat, .tuxano-admin .tuxano-tabs a { transition: none; }
 }
+
+/* Vehicle service pricing stays within the existing administration card system. */
+.tuxano-vehicle-pricing .tuxano-service-pricing { margin-top: 24px; padding-top: 22px; border-top: 1px solid #dce2eb; }
+.tuxano-vehicle-pricing .tuxano-service-pricing > h4 { margin: 0 0 8px; font-size: 19px; }
+.tuxano-vehicle-pricing .tuxano-transfer-method { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 20px 0 8px; }
+.tuxano-vehicle-pricing .tuxano-transfer-method select { min-width: 240px; max-width: 100%; }
+.tuxano-vehicle-pricing .tuxano-transfer-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0; }
+.tuxano-vehicle-pricing .tuxano-method-pricing { min-width: 0; padding: 18px; border: 1px solid #bbcfe9; border-radius: 9px; background: #f8fbff; }
+.tuxano-vehicle-pricing .tuxano-method-pricing.is-inactive { border-color: #dce2eb; background: #fafbfc; }
+.tuxano-vehicle-pricing .tuxano-method-pricing > h4 { margin: 0 0 8px; font-size: 16px; }
+.tuxano-vehicle-pricing [data-tuxano-method-status] { display: inline-block; margin: 4px 0 4px 6px; padding: 3px 7px; border-radius: 4px; background: #e3edf9; color: #294c79; font-size: 11px; font-weight: 500; }
+.tuxano-vehicle-pricing .is-inactive [data-tuxano-method-status] { background: #edf0f4; color: #5b6574; }
+.tuxano-vehicle-pricing .tuxano-method-pricing .tuxano-rate-grid { grid-template-columns: minmax(0, 1fr); }
+.tuxano-vehicle-pricing .tuxano-rule-field { display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
+.tuxano-vehicle-pricing .tuxano-legacy-rates { margin: 20px 0; padding: 14px; border: 1px solid #dce2eb; border-radius: 7px; }
+.tuxano-vehicle-pricing .tuxano-legacy-rates > summary { cursor: pointer; font-weight: 600; }
+.tuxano-vehicle-pricing .tuxano-legacy-rates .tuxano-rate-grid { margin-top: 14px; }
+.tuxano-vehicle-pricing .tuxano-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tuxano-vehicle-pricing .tuxano-preview-grid h4 { margin: 8px 0; font-size: 14px; }
+.tuxano-vehicle-pricing .tuxano-preview-grid p { line-height: 1.7; }
+@media (max-width: 1100px) { .tuxano-vehicle-pricing .tuxano-transfer-methods { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) {
+  .tuxano-vehicle-pricing .tuxano-preview-grid { grid-template-columns: minmax(0, 1fr); }
+  .tuxano-vehicle-pricing .tuxano-transfer-method { align-items: flex-start; flex-direction: column; }
+  .tuxano-vehicle-pricing .tuxano-transfer-method select { min-width: 0; width: 100%; }
+  .tuxano-vehicle-pricing .tuxano-method-pricing { padding: 14px; }
+}

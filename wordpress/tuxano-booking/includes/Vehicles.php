@@ -11,6 +11,8 @@ final class Vehicles
     public const TAXONOMY = 'tuxano_collection';
     private const META = '_tuxano_vehicle_data';
     private const SEEDED = 'tuxano_booking_fleet_seeded';
+    private const PRICING_UPGRADE = 'tuxano_booking_transfer_pricing_version';
+    public const TRANSFER_DEFAULTS = ['version' => 2, 'mode' => 'mileage', 'pickupFreeMinutes' => 30.0, 'returnFreeMinutes' => 30.0, 'roundingMinutes' => 15, 'minimumMinutes' => 60, 'pickupFreeMiles' => 20.0, 'returnFreeMiles' => 20.0];
     private const TARIFF_FIELDS = [
         'base' => 'Base fare', 'perMile' => 'Per mile', 'perDrivingMinute' => 'Per driving minute',
         'minimum' => 'Minimum transfer fare', 'perWaitingMinute' => 'Per stop waiting minute', 'hourly' => 'Hourly rate',
@@ -76,48 +78,109 @@ final class Vehicles
         <?php
     }
 
-    /** A zero rate deliberately switches that component off; it is never a missing tariff. */
+    /** Saved transfer and hourly rates are edited independently. */
     private static function pricing_fields(array $data): void
     {
         $settings = Settings::get();
         $currency = $settings['currency'];
-        $help = [
-            'base' => __('A single starting charge for each transfer. It does not apply to hourly hire.', 'tuxano-booking'),
-            'perMile' => __('Charged for each driving mile, on transfers and hourly hire. One mile is about 1.609 km.', 'tuxano-booking'),
-            'perDrivingMinute' => __('Charged for each minute of driving on a transfer. Stop waiting is not included here.', 'tuxano-booking'),
-            'minimum' => __('The smallest transfer driving charge. Waiting and optional extras are added afterwards.', 'tuxano-booking'),
-            'perWaitingMinute' => __('Charged once per selected stop-waiting minute, for transfers and hourly hire.', 'tuxano-booking'),
-            'hourly' => __('Charged per booked hour or actual driving hour, whichever is greater. Mileage and stop waiting are added.', 'tuxano-booking'),
-        ];
-        $units = ['base' => __('per transfer', 'tuxano-booking'), 'perMile' => __('per mile', 'tuxano-booking'), 'perDrivingMinute' => __('per driving minute', 'tuxano-booking'), 'minimum' => __('minimum driving charge', 'tuxano-booking'), 'perWaitingMinute' => __('per waiting minute', 'tuxano-booking'), 'hourly' => __('per hour', 'tuxano-booking')];
         $tariff = $data['tariff'];
-        $example = max((float) $tariff['minimum'], (float) $tariff['base'] + 20 * (float) $tariff['perMile'] + 30 * (float) $tariff['perDrivingMinute']) + 15 * (float) $tariff['perWaitingMinute'];
+        $transfer = $tariff['transfer'];
+        $hourly = $tariff['hourlyBooking'];
         ?>
         <section class="tuxano-vehicle-pricing" aria-labelledby="tuxano-pricing-title" data-tuxano-currency="<?php echo esc_attr($currency); ?>">
             <h3 id="tuxano-pricing-title"><?php esc_html_e('Set this vehicle’s prices', 'tuxano-booking'); ?></h3>
-            <p><?php echo esc_html(sprintf(__('All amounts are in %s. Turn off any component with “None / not charged”, or leave its amount blank to save it as zero.', 'tuxano-booking'), $currency)); ?></p>
-            <div class="tuxano-pricing-guide">
-                <p><strong><?php esc_html_e('Transfer', 'tuxano-booking'); ?></strong> — <?php esc_html_e('Start with the base fare, add distance and driving time, then apply the minimum if higher. Add stop waiting once.', 'tuxano-booking'); ?></p>
-                <p><strong><?php esc_html_e('Hourly', 'tuxano-booking'); ?></strong> — <?php esc_html_e('Multiply the higher of booked hours or driving hours by the hourly rate, then add mileage and stop waiting.', 'tuxano-booking'); ?></p>
-                <p class="description"><?php esc_html_e('Meet & greet, child seats and gratuity are configured under Pricing. If every vehicle component is off, its transportation charge is zero. Keep an unfinished vehicle in Draft.', 'tuxano-booking'); ?></p>
-            </div>
-            <div class="tuxano-rate-grid">
-            <?php foreach (self::TARIFF_FIELDS as $field => $label) : $off = (float) $tariff[$field] === 0.0; ?>
-                <div class="tuxano-rate-field<?php echo $off ? ' is-disabled' : ''; ?>">
-                    <label for="tuxano-rate-<?php echo esc_attr($field); ?>"><strong><?php echo esc_html($label); ?></strong></label>
-                    <p id="tuxano-rate-help-<?php echo esc_attr($field); ?>" class="description"><?php echo esc_html($help[$field]); ?></p>
-                    <div class="tuxano-rate-amount"><input id="tuxano-rate-<?php echo esc_attr($field); ?>" name="tuxano_vehicle[tariff][<?php echo esc_attr($field); ?>]" data-tuxano-rate="<?php echo esc_attr($field); ?>" aria-describedby="tuxano-rate-help-<?php echo esc_attr($field); ?>" type="number" min="0" max="1000000" step="0.0001" placeholder="0.00" value="<?php echo esc_attr((string) $tariff[$field]); ?>"><span><?php echo esc_html($currency . ' ' . $units[$field]); ?></span></div>
-                    <label class="tuxano-rate-none"><input type="checkbox" name="tuxano_vehicle[disabled_tariff][<?php echo esc_attr($field); ?>]" data-tuxano-rate-toggle="<?php echo esc_attr($field); ?>" value="1" <?php checked($off); ?>> <?php esc_html_e('None / not charged', 'tuxano-booking'); ?></label>
+            <p><?php echo esc_html(sprintf(__('All amounts are in %s. Transfer and Hourly have separate rates. Existing reservations retain their saved estimates.', 'tuxano-booking'), $currency)); ?></p>
+            <section class="tuxano-service-pricing" aria-labelledby="tuxano-transfer-title">
+                <h4 id="tuxano-transfer-title"><?php esc_html_e('Transfer pricing', 'tuxano-booking'); ?></h4>
+                <p><?php esc_html_e('A one-way transfer includes travel from the service base to pickup, the passenger journey and return to base. Only the selected calculation method is charged.', 'tuxano-booking'); ?></p>
+                <input type="hidden" name="tuxano_vehicle[tariff][transfer][version]" value="2">
+                <label class="tuxano-transfer-method" for="tuxano-transfer-mode"><strong><?php esc_html_e('Transfer pricing method', 'tuxano-booking'); ?></strong>
+                    <select id="tuxano-transfer-mode" name="tuxano_vehicle[tariff][transfer][mode]" data-tuxano-transfer-mode>
+                        <option value="mileage" <?php selected($transfer['mode'], 'mileage'); ?>><?php esc_html_e('Mileage-Based Pricing', 'tuxano-booking'); ?></option>
+                        <option value="time" <?php selected($transfer['mode'], 'time'); ?>><?php esc_html_e('Time-Based Pricing', 'tuxano-booking'); ?></option>
+                    </select>
+                </label>
+                <p class="description"><?php esc_html_e('Service base and traffic-aware routing are configured under Tuxano Booking → Pricing. Unused method values stay saved when you switch methods.', 'tuxano-booking'); ?></p>
+                <div class="tuxano-transfer-methods">
+                    <section class="tuxano-method-pricing" data-tuxano-method-section="mileage">
+                        <h4><?php esc_html_e('Mileage-Based settings', 'tuxano-booking'); ?> <span data-tuxano-method-status></span></h4>
+                        <p class="description"><?php esc_html_e('Add billable pickup miles, all passenger miles and billable return miles, then apply the minimum fare once. No driving-time charge is added.', 'tuxano-booking'); ?></p>
+                        <div class="tuxano-rate-grid">
+                            <?php self::rate_field('perMile', __('Transfer price per mile', 'tuxano-booking'), $tariff['perMile'], $currency, __('per mile', 'tuxano-booking'), __('The single saved mileage rate for transfers. Time-Based transfers do not use it.', 'tuxano-booking')); ?>
+                            <?php self::rate_field('minimum', __('Minimum transfer fare', 'tuxano-booking'), $tariff['minimum'], $currency, __('minimum fare', 'tuxano-booking'), __('Applied after summing all three billable mileage segments, before waiting and extras.', 'tuxano-booking')); ?>
+                            <?php self::rule_field('pickupFreeMiles', __('Complimentary miles to pickup', 'tuxano-booking'), $transfer['pickupFreeMiles'], __('miles', 'tuxano-booking'), 0, 100000, '0.0001'); ?>
+                            <?php self::rule_field('returnFreeMiles', __('Complimentary return miles', 'tuxano-booking'), $transfer['returnFreeMiles'], __('miles', 'tuxano-booking'), 0, 100000, '0.0001'); ?>
+                        </div>
+                    </section>
+                    <section class="tuxano-method-pricing" data-tuxano-method-section="time">
+                        <h4><?php esc_html_e('Time-Based settings', 'tuxano-booking'); ?> <span data-tuxano-method-status></span></h4>
+                        <p class="description"><?php esc_html_e('Round only passenger driving time up by the selected increment. Add pickup and return time above their separate allowances, then apply the minimum charged time once.', 'tuxano-booking'); ?></p>
+                        <div class="tuxano-rate-grid">
+                            <?php self::rate_field('hourly', __('Time-Based transfer hourly rate', 'tuxano-booking'), $tariff['hourly'], $currency, __('per hour', 'tuxano-booking'), __('Used only for Time-Based transfers; the Hourly Booking rate below is independent.', 'tuxano-booking')); ?>
+                            <?php self::rule_field('pickupFreeMinutes', __('Complimentary travel to pickup', 'tuxano-booking'), $transfer['pickupFreeMinutes'], __('minutes', 'tuxano-booking'), 0, 1440, '0.0001'); ?>
+                            <?php self::rule_field('returnFreeMinutes', __('Complimentary return travel', 'tuxano-booking'), $transfer['returnFreeMinutes'], __('minutes', 'tuxano-booking'), 0, 1440, '0.0001'); ?>
+                            <?php self::rule_field('roundingMinutes', __('Passenger trip rounding increment', 'tuxano-booking'), $transfer['roundingMinutes'], __('minutes · round up', 'tuxano-booking'), 1, 1440, '1'); ?>
+                            <?php self::rule_field('minimumMinutes', __('Minimum charged transfer time', 'tuxano-booking'), $transfer['minimumMinutes'], __('minutes', 'tuxano-booking'), 1, 1440, '1'); ?>
+                        </div>
+                    </section>
                 </div>
-            <?php endforeach; ?>
-            </div>
-            <div class="tuxano-rate-preview" data-tuxano-rate-preview aria-live="polite">
-                <strong><?php esc_html_e('Example transfer', 'tuxano-booking'); ?></strong>
-                <p><?php esc_html_e('20 miles · 30 driving minutes · 15 minutes of stop waiting', 'tuxano-booking'); ?></p>
-                <p><strong data-tuxano-example-total><?php echo esc_html($currency . ' ' . number_format($example, 2, '.', ',')); ?></strong> <span class="description"><?php esc_html_e('transportation only, before extras and gratuity', 'tuxano-booking'); ?></span></p>
-            </div>
+                <div class="tuxano-rate-grid tuxano-transfer-waiting">
+                    <?php self::rate_field('perWaitingMinute', __('Transfer stop waiting rate', 'tuxano-booking'), $tariff['perWaitingMinute'], $currency, __('per waiting minute', 'tuxano-booking'), __('Added once for selected stop waiting, after either transfer method calculates the driving fare.', 'tuxano-booking')); ?>
+                </div>
+                <details class="tuxano-legacy-rates"><summary><?php esc_html_e('Retained legacy transfer fields', 'tuxano-booking'); ?></summary><p class="description"><?php esc_html_e('These saved values are retained for compatibility. Neither Base fare nor Per driving minute is added to Time-Based or Mileage-Based transfers.', 'tuxano-booking'); ?></p><div class="tuxano-rate-grid">
+                    <?php self::rate_field('base', __('Base fare', 'tuxano-booking'), $tariff['base'], $currency, __('per transfer', 'tuxano-booking'), __('Retained setting; not charged by either new transfer method.', 'tuxano-booking')); ?>
+                    <?php self::rate_field('perDrivingMinute', __('Per driving minute', 'tuxano-booking'), $tariff['perDrivingMinute'], $currency, __('per minute', 'tuxano-booking'), __('Retained setting; not added on top of either new transfer method.', 'tuxano-booking')); ?>
+                </div></details>
+                <div class="tuxano-rate-preview" data-tuxano-rate-preview aria-live="polite">
+                    <strong><?php esc_html_e('Transfer calculation preview', 'tuxano-booking'); ?></strong>
+                    <p><?php esc_html_e('Driving fare only, before stop waiting, optional extras and gratuity. Routes below are fixed examples, not live traffic quotes.', 'tuxano-booking'); ?></p>
+                    <div class="tuxano-preview-grid"><div><h4><?php esc_html_e('Short local transfer', 'tuxano-booking'); ?></h4><p data-tuxano-example-detail></p><strong data-tuxano-example-total><?php echo esc_html($currency . ' ' . number_format(self::transfer_preview($tariff, false), 2, '.', ',')); ?></strong></div><div><h4><?php esc_html_e('Long-distance transfer', 'tuxano-booking'); ?></h4><p data-tuxano-example-long-detail></p><strong data-tuxano-example-long><?php echo esc_html($currency . ' ' . number_format(self::transfer_preview($tariff, true), 2, '.', ',')); ?></strong></div></div>
+                </div>
+            </section>
+            <section class="tuxano-service-pricing" aria-labelledby="tuxano-hourly-title">
+                <h4 id="tuxano-hourly-title"><?php esc_html_e('Hourly Booking pricing', 'tuxano-booking'); ?></h4>
+                <p><?php esc_html_e('The higher of booked hours or passenger driving hours × this hourly rate, plus passenger mileage and selected stop waiting. Transfer methods and complimentary transfer allowances do not apply.', 'tuxano-booking'); ?></p>
+                <div class="tuxano-rate-grid">
+                    <?php self::rate_field('hourly', __('Hourly Booking rate', 'tuxano-booking'), $hourly['hourly'], $currency, __('per hour', 'tuxano-booking'), __('Independent from the Time-Based transfer rate.', 'tuxano-booking'), true); ?>
+                    <?php self::rate_field('perMile', __('Hourly Booking mileage rate', 'tuxano-booking'), $hourly['perMile'], $currency, __('per passenger mile', 'tuxano-booking'), __('Hourly mileage only. Choose None / not charged when hourly mileage is included.', 'tuxano-booking'), true); ?>
+                    <?php self::rate_field('perWaitingMinute', __('Hourly Booking stop waiting rate', 'tuxano-booking'), $hourly['perWaitingMinute'], $currency, __('per waiting minute', 'tuxano-booking'), __('Hourly stop waiting only; never charged again by Transfer settings.', 'tuxano-booking'), true); ?>
+                </div>
+                <div class="tuxano-rate-preview" aria-live="polite"><strong><?php esc_html_e('Example Hourly Booking', 'tuxano-booking'); ?></strong><p><?php esc_html_e('3 booked hours · 20 passenger miles · 30 driving minutes · 15 minutes of stop waiting', 'tuxano-booking'); ?></p><strong data-tuxano-hourly-example><?php echo esc_html($currency . ' ' . number_format(3 * $hourly['hourly'] + 20 * $hourly['perMile'] + 15 * $hourly['perWaitingMinute'], 2, '.', ',')); ?></strong><span class="description"> <?php esc_html_e('transportation only, before extras and gratuity', 'tuxano-booking'); ?></span></div>
+            </section>
         </section>
         <?php
+    }
+
+    private static function rate_field(string $field, string $label, float $value, string $currency, string $unit, string $help, bool $hourly = false): void
+    {
+        $prefix = $hourly ? 'hourly-' : '';
+        $id = 'tuxano-rate-' . $prefix . $field;
+        $rate_attr = $hourly ? 'data-tuxano-hourly-rate' : 'data-tuxano-rate';
+        $toggle_attr = $hourly ? 'data-tuxano-hourly-toggle' : 'data-tuxano-rate-toggle';
+        $name = $hourly ? 'tuxano_vehicle[tariff][hourlyBooking][' . $field . ']' : 'tuxano_vehicle[tariff][' . $field . ']';
+        $toggle_name = 'tuxano_vehicle[' . ($hourly ? 'disabled_hourly' : 'disabled_tariff') . '][' . $field . ']';
+        $off = $value === 0.0;
+        ?>
+        <div class="tuxano-rate-field<?php echo $off ? ' is-disabled' : ''; ?>"><label for="<?php echo esc_attr($id); ?>"><strong><?php echo esc_html($label); ?></strong></label><p id="<?php echo esc_attr($id); ?>-help" class="description"><?php echo esc_html($help); ?></p><div class="tuxano-rate-amount"><input id="<?php echo esc_attr($id); ?>" name="<?php echo esc_attr($name); ?>" <?php echo esc_attr($rate_attr); ?>="<?php echo esc_attr($field); ?>" aria-describedby="<?php echo esc_attr($id); ?>-help" type="number" min="0" max="1000000" step="0.0001" placeholder="0.00" value="<?php echo esc_attr((string) $value); ?>"><span><?php echo esc_html($currency . ' ' . $unit); ?></span></div><label class="tuxano-rate-none"><input type="checkbox" name="<?php echo esc_attr($toggle_name); ?>" <?php echo esc_attr($toggle_attr); ?>="<?php echo esc_attr($field); ?>" value="1" <?php checked($off); ?>> <?php esc_html_e('None / not charged', 'tuxano-booking'); ?></label></div>
+        <?php
+    }
+
+    private static function rule_field(string $key, string $label, $value, string $unit, int $min, int $max, string $step): void
+    {
+        ?>
+        <div class="tuxano-rate-field tuxano-rule-field"><label for="tuxano-transfer-<?php echo esc_attr($key); ?>"><strong><?php echo esc_html($label); ?></strong></label><div class="tuxano-rate-amount"><input id="tuxano-transfer-<?php echo esc_attr($key); ?>" name="tuxano_vehicle[tariff][transfer][<?php echo esc_attr($key); ?>]" data-tuxano-transfer-rule="<?php echo esc_attr($key); ?>" type="number" min="<?php echo esc_attr((string) $min); ?>" max="<?php echo esc_attr((string) $max); ?>" step="<?php echo esc_attr($step); ?>" required value="<?php echo esc_attr((string) $value); ?>"><span><?php echo esc_html($unit); ?></span></div></div>
+        <?php
+    }
+
+    private static function transfer_preview(array $tariff, bool $long): float
+    {
+        $rules = $tariff['transfer'];
+        if ($rules['mode'] === 'time') {
+            $minutes = max(0, ($long ? 120 : 35) - $rules['pickupFreeMinutes']) + ceil(($long ? 104 : 30) / $rules['roundingMinutes']) * $rules['roundingMinutes'] + max(0, ($long ? 45 : 15) - $rules['returnFreeMinutes']);
+            return round(max($rules['minimumMinutes'], $minutes) / 60 * $tariff['hourly'], 2);
+        }
+        $miles = max(0, ($long ? 123 : 15) - $rules['pickupFreeMiles']) + ($long ? 96.5 : 30) + max(0, ($long ? 34.9 : 10) - $rules['returnFreeMiles']);
+        return round(max($tariff['minimum'], $miles * $tariff['perMile']), 2);
     }
 
     public static function save_meta(int $post_id, \WP_Post $post, bool $update): void
@@ -130,6 +193,11 @@ final class Vehicles
             return;
         }
         $input = isset($_POST['tuxano_vehicle']) && is_array($_POST['tuxano_vehicle']) ? wp_unslash($_POST['tuxano_vehicle']) : [];
+        $stored = get_post_meta($post_id, self::META, true);
+        if (is_array($stored['tariff'] ?? null) && (array_key_exists('transfer', $stored['tariff']) || array_key_exists('hourlyBooking', $stored['tariff'])) && is_array($input['tariff'] ?? null) && (!array_key_exists('transfer', $input['tariff']) || !array_key_exists('hourlyBooking', $input['tariff']))) {
+            set_transient('tuxano_vehicle_error_' . get_current_user_id(), __('Pricing settings have changed. Reload this vehicle editor before saving; no vehicle details were changed.', 'tuxano-booking'), 60);
+            return;
+        }
         $data = self::validate($input);
         if (is_wp_error($data)) {
             set_transient('tuxano_vehicle_error_' . get_current_user_id(), $data->get_error_message(), 60);
@@ -227,7 +295,23 @@ final class Vehicles
         $stored = get_post_meta($id, self::META, true);
         $defaults = ['display' => '', 'capacity' => 6, 'luggageCapacity' => 6, 'image' => '', 'models' => [], 'features' => [], 'tariff' => array_fill_keys(array_keys(self::TARIFF_FIELDS), 0.0)];
         $data = array_replace($defaults, is_array($stored) ? array_intersect_key($stored, $defaults) : []);
-        $data['tariff'] = array_replace($defaults['tariff'], is_array($data['tariff']) ? array_intersect_key($data['tariff'], $defaults['tariff']) : []);
+        $saved_rates = is_array($data['tariff']) ? $data['tariff'] : [];
+        $data['tariff'] = $defaults['tariff'];
+        foreach (self::TARIFF_FIELDS as $key => $_label) { $data['tariff'][$key] = Settings::decimal($saved_rates[$key] ?? null) ?? 0.0; }
+        $profile = self::profile_tariff($data['tariff']);
+        // Repair controls use safe view defaults; frontend_record validates raw
+        // stored profiles and never silently substitutes these values for a quote.
+        $data['tariff']['transfer'] = self::TRANSFER_DEFAULTS;
+        $saved_transfer = is_array($saved_rates['transfer'] ?? null) ? $saved_rates['transfer'] : [];
+        if (in_array($saved_transfer['mode'] ?? null, ['mileage', 'time'], true)) { $data['tariff']['transfer']['mode'] = $saved_transfer['mode']; }
+        foreach (['pickupFreeMinutes' => 1440, 'returnFreeMinutes' => 1440, 'pickupFreeMiles' => 100000, 'returnFreeMiles' => 100000, 'roundingMinutes' => 1440, 'minimumMinutes' => 1440] as $key => $max) {
+            $number = Settings::decimal($saved_transfer[$key] ?? null, $max);
+            $integer = in_array($key, ['roundingMinutes', 'minimumMinutes'], true);
+            if ($number !== null && (!$integer || ($number >= 1 && floor($number) === $number))) { $data['tariff']['transfer'][$key] = $integer ? (int) $number : $number; }
+        }
+        $data['tariff']['hourlyBooking'] = $profile['hourlyBooking'];
+        $saved_hourly = is_array($saved_rates['hourlyBooking'] ?? null) ? $saved_rates['hourlyBooking'] : [];
+        foreach (['hourly', 'perMile', 'perWaitingMinute'] as $key) { $number = Settings::decimal($saved_hourly[$key] ?? null); if ($number !== null) { $data['tariff']['hourlyBooking'][$key] = $number; } }
         return $data;
     }
 
@@ -296,6 +380,37 @@ final class Vehicles
             }
             $result['tariff'][$field] = $number;
         }
+        if (array_key_exists('transfer', $rates) || array_key_exists('hourlyBooking', $rates)) {
+            $transfer = $rates['transfer'] ?? null;
+            $hourly = $rates['hourlyBooking'] ?? null;
+            if (!is_array($transfer) || !is_array($hourly) || !in_array($transfer['version'] ?? null, [2, '2'], true) || !in_array($transfer['mode'] ?? null, ['mileage', 'time'], true)) {
+                return $error(__('Choose a complete Transfer pricing method and a separate Hourly Booking profile.', 'tuxano-booking'));
+            }
+            $result['tariff']['transfer'] = ['version' => 2, 'mode' => $transfer['mode']];
+            foreach (['pickupFreeMinutes' => 1440, 'returnFreeMinutes' => 1440, 'pickupFreeMiles' => 100000, 'returnFreeMiles' => 100000, 'roundingMinutes' => 1440, 'minimumMinutes' => 1440] as $field => $max) {
+                $number = Settings::decimal($transfer[$field] ?? null, $max);
+                $integer = in_array($field, ['roundingMinutes', 'minimumMinutes'], true);
+                if ($number === null || ($integer && ($number < 1 || floor($number) !== $number))) {
+                    return $error(__('Check transfer allowances, rounding increment and minimum charged time. Enter valid non-negative values; rounding and minimum time must be whole positive minutes.', 'tuxano-booking'));
+                }
+                $result['tariff']['transfer'][$field] = $integer ? (int) $number : $number;
+            }
+            $hourly_disabled = $input['disabled_hourly'] ?? [];
+            if (!is_array($hourly_disabled)) { return $error(__('Check the Hourly Booking amounts and their None / not charged options.', 'tuxano-booking')); }
+            foreach ($hourly_disabled as $field => $value) {
+                if (!in_array($field, ['hourly', 'perMile', 'perWaitingMinute'], true) || !in_array($value, [true, false, 1, 0, '1', '0'], true)) { return $error(__('Choose a valid Hourly Booking None / not charged option.', 'tuxano-booking')); }
+            }
+            $result['tariff']['hourlyBooking'] = [];
+            foreach (['hourly', 'perMile', 'perWaitingMinute'] as $field) {
+                $off = in_array($hourly_disabled[$field] ?? false, [true, 1, '1'], true);
+                if (!$off && !array_key_exists($field, $hourly)) { return $error(__('Complete all three Hourly Booking rates or explicitly choose None / not charged.', 'tuxano-booking')); }
+                $value = $hourly[$field] ?? null;
+                if (array_key_exists($field, $hourly) && !is_string($value) && !is_int($value) && !is_float($value)) { return $error(__('Hourly Booking rates must be numeric amounts.', 'tuxano-booking')); }
+                $number = $off || (is_string($value) && trim($value) === '') ? 0.0 : Settings::decimal($value);
+                if ($number === null) { return $error(__('Hourly Booking rates must be between 0 and 1,000,000, with up to four decimal places.', 'tuxano-booking')); }
+                $result['tariff']['hourlyBooking'][$field] = $number;
+            }
+        }
         return $result;
     }
 
@@ -318,6 +433,48 @@ final class Vehicles
         $url = esc_url_raw($value, ['https']);
         $parts = wp_parse_url($url);
         return $url !== '' && is_array($parts) && ($parts['scheme'] ?? '') === 'https' && !empty($parts['host']) && !isset($parts['user']) && !isset($parts['pass']) ? $url : null;
+    }
+
+    /** Defaults describe transfer rules only; money stays in the six saved fields. */
+    private static function profile_tariff(array $tariff, bool $premium = false, bool $fresh = false): array
+    {
+        $hourly = ['hourly' => $tariff['hourly'], 'perMile' => $tariff['perMile'], 'perWaitingMinute' => $tariff['perWaitingMinute']];
+        if ($premium) {
+            $tariff['perMile'] = 3.0;
+            $tariff['minimum'] = 150.0;
+            $tariff['perWaitingMinute'] = 2.5;
+            $tariff['hourly'] = 150.0;
+            $hourly['hourly'] = 150.0;
+            // Existing inactive values are retained; fresh examples use the mockup.
+            if ($fresh) { $tariff['base'] = 0.0; $tariff['perDrivingMinute'] = 2.5; }
+        }
+        $tariff['transfer'] = self::TRANSFER_DEFAULTS;
+        $tariff['hourlyBooking'] = $hourly;
+        return $tariff;
+    }
+
+    /** One-time fleet upgrade; accepted booking snapshots are never rewritten. */
+    public static function upgrade_pricing(): void
+    {
+        if ((int) get_option(self::PRICING_UPGRADE, 0) >= 2) { return; }
+        $posts = get_posts(['post_type' => self::POST_TYPE, 'post_status' => ['publish', 'draft', 'pending', 'private', 'future', 'trash', 'auto-draft'], 'posts_per_page' => -1, 'no_found_rows' => true, 'suppress_filters' => false]);
+        $complete = true;
+        foreach ($posts as $post) {
+            $stored = get_post_meta($post->ID, self::META, true);
+            if (!is_array($stored) || !is_array($stored['tariff'] ?? null)) { continue; }
+            // A present profile is authoritative even if invalid; never repair or
+            // overwrite an administrator's saved profile by guessing defaults.
+            if (array_key_exists('transfer', $stored['tariff']) || array_key_exists('hourlyBooking', $stored['tariff'])) { continue; }
+            $valid = self::validate($stored);
+            if (is_wp_error($valid)) { continue; }
+            $updated = $stored;
+            $updated['tariff'] = self::profile_tariff($valid['tariff'], $post->post_name === 'tuxano-premium');
+            add_post_meta($post->ID, '_tuxano_pricing_pre_260', $valid['tariff'], true);
+            // Conditional replacement does not clobber a concurrent editor save.
+            $saved = update_post_meta($post->ID, self::META, wp_slash($updated), $stored);
+            if (!$saved && get_post_meta($post->ID, self::META, true) !== $updated) { $complete = false; }
+        }
+        if ($complete) { update_option(self::PRICING_UPGRADE, 2, false); }
     }
 
     /** Initial data only: reactivation never overwrites edits or restores deleted defaults. */
@@ -373,7 +530,7 @@ final class Vehicles
         return array_map(static fn(array $row): array => [
             'slug' => 'tuxano-' . $row[0], 'name' => $row[1], 'display' => $row[2],
             'capacity' => $row[3], 'luggageCapacity' => $row[3], 'image' => 'assets/' . $row[4],
-            'models' => $row[5], 'features' => $row[6], 'tariff' => array_combine(array_keys(self::TARIFF_FIELDS), $row[7]),
+            'models' => $row[5], 'features' => $row[6], 'tariff' => self::profile_tariff(array_combine(array_keys(self::TARIFF_FIELDS), $row[7]), $row[0] === 'premium', true),
         ], $records);
     }
 }

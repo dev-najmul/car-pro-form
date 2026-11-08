@@ -177,7 +177,7 @@ final class Rest
     public static function availability(\WP_REST_Request $request)
     {
         $body = $request->get_json_params();
-        if (!is_array($body) || count($body) !== 4 || array_diff(array_keys($body), ['vehicleId', 'date', 'time', 'quoteToken']) || !is_string($body['date'] ?? null) || !is_string($body['time'] ?? null)) {
+        if (!is_array($body) || !in_array(count($body), [4, 5], true) || array_diff(array_keys($body), ['vehicleId', 'date', 'time', 'quoteToken', 'service']) || !is_string($body['date'] ?? null) || !is_string($body['time'] ?? null) || (array_key_exists('service', $body) && !in_array($body['service'], ['transfer', 'hourly'], true))) {
             return self::fail('tuxano_availability_input', 'Choose a vehicle and valid pickup date and time.');
         }
         if (!self::rate('availability-session', hash('sha256', self::token($request)), 60, MINUTE_IN_SECONDS) || !self::rate('availability-client', self::client(), 120, MINUTE_IN_SECONDS)) { return self::fail('tuxano_rate', 'Please wait before checking vehicle availability again.', 429); }
@@ -186,7 +186,11 @@ final class Rest
         try {
             Timezones::local($body['date'], $body['time'], $quote['pickupTimezone']);
             $slot = Availability::slot($body['vehicleId'] ?? null, $body['date'], $body['time'], $quote['pickupTimezone']);
-            if (!Vehicles::find((string) $slot['vehicle_id'])) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
+            $vehicle = Vehicles::find((string) $slot['vehicle_id']);
+            if (!$vehicle) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
+            if (self::profiled_vehicle($vehicle) && (!is_array($quote['trip'] ?? null) || ($quote['trip']['service'] ?? null) !== ($body['service'] ?? null) || ($quote['trip']['date'] ?? null) !== $body['date'] || ($quote['trip']['time'] ?? null) !== $body['time'] || !is_string($quote['revision'] ?? null) || !hash_equals($quote['revision'], Settings::revision()))) {
+                return self::fail('tuxano_quote_expired', 'Refresh the route for this service and pickup time before checking availability.', 409);
+            }
             $pickup = new \DateTimeImmutable($slot['pickup_utc'], new \DateTimeZone('UTC'));
             if ($pickup->getTimestamp() <= time() || $pickup->getTimestamp() > time() + 5 * YEAR_IN_SECONDS) { throw new \InvalidArgumentException('Choose a future pickup date and time within five years, in the pickup location time zone.'); }
         } catch (\InvalidArgumentException $error) { return self::fail('tuxano_availability_input', $error->getMessage()); }
@@ -261,20 +265,103 @@ final class Rest
     {
         try {
             $body = $request->get_json_params();
-            if (!is_array($body) || array_diff(array_keys($body), ['origin', 'destination', 'stops'])) { throw new \InvalidArgumentException('Invalid route request.'); }
+            if (!is_array($body) || array_diff(array_keys($body), ['origin', 'destination', 'stops', 'trip'])) { throw new \InvalidArgumentException('Invalid route request.'); }
             $points = self::route_request($body);
+            $trip = array_key_exists('trip', $body) ? self::route_trip($body['trip'], count($points['stops'])) : null;
         } catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
         $settings = Settings::get();
         if (empty($settings['routes_key'])) { return self::fail('tuxano_not_configured', 'Route calculation is not configured. Please contact the transportation team.', 503); }
-        if (!self::rate('route-session', hash('sha256', self::token($request)), (int) $settings['route_minute_limit'], MINUTE_IN_SECONDS) || !self::rate('route-client', self::client(), 120, MINUTE_IN_SECONDS) || !self::rate('route-global', 'all', (int) $settings['route_daily_limit'], DAY_IN_SECONDS)) {
+        if (!self::rate('route-session', hash('sha256', self::token($request)), (int) $settings['route_minute_limit'], MINUTE_IN_SECONDS) || !self::rate('route-client', self::client(), 120, MINUTE_IN_SECONDS)) {
             return self::fail('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429);
         }
-        $metrics = self::measure_route($points);
+        $metrics = self::measure_pricing_route($points, $trip);
         if (is_wp_error($metrics)) { return $metrics; }
         $quote = bin2hex(random_bytes(32));
-        $revision = Settings::revision();
-        set_transient('tuxano_quote_' . hash('sha256', $quote), ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'pickupTimezone' => $metrics['pickupTimezone'], 'revision' => $revision], 15 * MINUTE_IN_SECONDS);
+        $revision = $metrics['pricingRevision'];
+        $stored = ['session' => hash('sha256', self::token($request)), 'points' => $points, 'route' => $metrics, 'pickupTimezone' => $metrics['pickupTimezone'], 'revision' => $revision];
+        if ($trip !== null) { $stored['trip'] = $trip; }
+        set_transient('tuxano_quote_' . hash('sha256', $quote), $stored, 15 * MINUTE_IN_SECONDS);
         return array_merge($metrics, ['quoteToken' => $quote, 'pricingRevision' => $revision]);
+    }
+
+    /** Canonical service/schedule metadata has no visitor-selected pricing mode. */
+    private static function route_trip($value, int $stop_count): array
+    {
+        if (!is_array($value) || self::is_list($value) || array_diff(array_keys($value), ['service', 'date', 'time', 'waitMinutes']) || !in_array($value['service'] ?? null, ['transfer', 'hourly'], true)) {
+            throw new \InvalidArgumentException('Choose a valid service and pickup schedule for this route.');
+        }
+        $date = self::text($value['date'] ?? '', 10);
+        $time = self::text($value['time'] ?? '', 5);
+        if ($date !== '' || $value['service'] === 'transfer') {
+            $calendar = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) || !$calendar || $calendar->format('Y-m-d') !== $date) {
+                throw new \InvalidArgumentException('Choose a valid pickup date before calculating this route.');
+            }
+        }
+        if (($time !== '' || $value['service'] === 'transfer') && !preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/D', $time)) {
+            throw new \InvalidArgumentException('Choose a valid pickup time before calculating this route.');
+        }
+        $waits = $value['waitMinutes'] ?? null;
+        if (!is_array($waits) || !self::is_list($waits) || count($waits) !== $stop_count) { throw new \InvalidArgumentException('Check the order and waiting time of your stops.'); }
+        foreach ($waits as $wait) {
+            if (!is_int($wait) || !in_array($wait, self::WAIT_OPTIONS, true)) { throw new \InvalidArgumentException('Select an available stop waiting time.'); }
+        }
+        return ['service' => $value['service'], 'date' => $date, 'time' => $time, 'waitMinutes' => $waits];
+    }
+
+    /** Public so audited admin edits can bind their freshly measured context. */
+    public static function booking_quote_trip(array $trip): array
+    {
+        $stops = $trip['stops'] ?? [];
+        if (!is_array($stops) || !self::is_list($stops) || count($stops) > 5) { throw new \InvalidArgumentException('Check the trip stops.'); }
+        $waits = [];
+        foreach ($stops as $stop) {
+            if (!is_array($stop)) { throw new \InvalidArgumentException('Check the trip stops.'); }
+            $waits[] = $stop['waitMinutes'] ?? null;
+        }
+        return self::route_trip(['service' => $trip['service'] ?? null, 'date' => $trip['date'] ?? '', 'time' => $trip['time'] ?? '', 'waitMinutes' => $waits], count($stops));
+    }
+
+    private static function profiled_vehicle(array $vehicle): bool
+    {
+        return is_array($vehicle['tariff'] ?? null) && (array_key_exists('transfer', $vehicle['tariff']) || array_key_exists('hourlyBooking', $vehicle['tariff']));
+    }
+
+    /** A complete booking context selects traffic-aware Transfer or legacy Hourly.
+     * Every provider request, including admin work, is charged here.
+     * @return array|\WP_Error
+     */
+    public static function measure_booking_route(array $points, array $trip, bool $admin = false, ?string $key = null)
+    {
+        try {
+            $points = self::route_request($points, $admin ? 5 : null);
+            $context = self::booking_quote_trip($trip);
+        } catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
+        return self::measure_pricing_route($points, $context, $key, $admin);
+    }
+
+    /** @return array|\WP_Error */
+    private static function measure_pricing_route(array $points, ?array $trip, ?string $key = null, bool $admin = false)
+    {
+        $settings = Settings::get();
+        $key = $key === null ? (string) $settings['routes_key'] : $key;
+        if ($key === '') { return self::fail('tuxano_not_configured', 'Route calculation is not configured. Please contact the transportation team.', 503); }
+        $budget = static function () use ($admin): bool {
+            return $admin ? self::admin_provider_budget() : self::rate('route-global', 'all', (int) Settings::get()['route_daily_limit'], DAY_IN_SECONDS);
+        };
+        // Bind the configuration that existed before provider work. A changed
+        // base/rate must never stamp a new revision onto old route measurements.
+        $revision = Settings::revision();
+        if ($trip !== null && $trip['service'] === 'transfer') {
+            $metrics = TransferRoutes::measure($points, $trip, $key, $budget, $admin);
+        } else {
+            if (!$budget()) { return self::fail('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
+            $metrics = self::measure_route($points, $key, $admin);
+        }
+        if (is_wp_error($metrics)) { return $metrics; }
+        if (!hash_equals($revision, Settings::revision())) { return self::fail('tuxano_pricing_changed', 'Vehicle prices or the service base changed while calculating this route. Please calculate it again.', 409); }
+        $metrics['pricingRevision'] = $revision;
+        return $metrics;
     }
 
     /** A fixed, bounded Google request shared by public quotes and admin edits.
@@ -323,7 +410,9 @@ final class Rest
     public static function admin_provider_budget(): bool
     {
         $settings = Settings::get();
-        return self::rate('admin-provider', (string) get_current_user_id(), 10, MINUTE_IN_SECONDS)
+        // A complete Transfer forecast uses four calls. Preserve capacity for
+        // ten administrator route actions while retaining the per-call daily cap.
+        return self::rate('admin-provider', (string) get_current_user_id(), 40, MINUTE_IN_SECONDS)
             && self::rate('route-global', 'all', (int) $settings['route_daily_limit'], DAY_IN_SECONDS);
     }
 
@@ -331,11 +420,12 @@ final class Rest
     public static function admin_route(\WP_REST_Request $request)
     {
         $body = $request->get_json_params();
-        if (!is_array($body) || array_diff(array_keys($body), ['origin', 'destination', 'stops'])) { return self::fail('tuxano_route_input', 'Invalid route request.'); }
-        try { $points = self::route_request($body); }
-        catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
-        if (!self::admin_provider_budget()) { return self::fail('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
-        return self::measure_route($points, null, true);
+        if (!is_array($body) || array_diff(array_keys($body), ['origin', 'destination', 'stops', 'trip'])) { return self::fail('tuxano_route_input', 'Invalid route request.'); }
+        try {
+            $points = self::route_request($body, 5);
+            $trip = array_key_exists('trip', $body) ? self::route_trip($body['trip'], count($points['stops'])) : null;
+        } catch (\InvalidArgumentException $error) { return self::fail('tuxano_route_input', $error->getMessage()); }
+        return self::measure_pricing_route($points, $trip, null, true);
     }
 
     /** Administrator-triggered connection check. No key is returned or logged.
@@ -451,6 +541,15 @@ final class Rest
         $vehicle_id = self::text($body['vehicle'] ?? '', 20, true);
         $vehicle = $admin && $historical_vehicle && (string) ($historical_vehicle['id'] ?? '') === $vehicle_id ? $historical_vehicle : Vehicles::find($vehicle_id);
         if (!$vehicle) { throw new \InvalidArgumentException('This vehicle is no longer available. Please choose another vehicle.'); }
+        if (self::profiled_vehicle($vehicle) && (!$admin || array_key_exists('trip', $quote))) {
+            $context = self::booking_quote_trip($trip);
+            if (!is_array($quote['trip'] ?? null) || wp_json_encode($context) !== wp_json_encode($quote['trip'])) {
+                throw new \InvalidArgumentException('Your service, pickup time or stop waiting changed. Calculate the route again before submitting.');
+            }
+            if ($service === 'transfer' && !is_array($quote['route']['transferLegs'] ?? null)) {
+                throw new \InvalidArgumentException('Refresh the complete service-base and passenger route before submitting this transfer.');
+            }
+        }
         $clean = ['trip' => ['service' => $service, 'hours' => $hours, 'date' => $date, 'time' => $time, 'timezone' => $timezone, 'pickup' => self::text($trip['pickup'] ?? '', 1024, true), 'dropoff' => self::text($trip['dropoff'] ?? '', 1024, true), 'pickupPlace' => self::selected_metadata($points['origin'], $trip['pickupPlace']), 'dropoffPlace' => self::selected_metadata($points['destination'], $trip['dropoffPlace']), 'stops' => []], 'vehicle' => $vehicle['id'], 'passengers' => self::integer($body['passengers'] ?? null, 1, $vehicle['capacity']), 'luggage' => self::integer($body['luggage'] ?? null, 0, $vehicle['luggageCapacity'])];
         foreach ($trip['stops'] as $index => $stop) {
             $wait = self::integer($stop['waitMinutes'] ?? null, 0, 120);

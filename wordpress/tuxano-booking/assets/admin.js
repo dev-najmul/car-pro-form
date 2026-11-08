@@ -153,12 +153,12 @@
       const form = target.closest('form'); if (!form) return;
       form.querySelectorAll('[data-tuxano-row]').forEach(row => { row.checked = target.checked; }); selection(form);
     } else if (target.matches('[data-tuxano-row]')) { selection(target.closest('form')); }
-    if (target.matches('[data-tuxano-rate-toggle]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
+    if (target.matches('[data-tuxano-rate-toggle], [data-tuxano-hourly-toggle], [data-tuxano-transfer-mode]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
   });
   document.addEventListener('input', event => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (target.matches('[data-tuxano-rate]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
+    if (target.matches('[data-tuxano-rate], [data-tuxano-hourly-rate], [data-tuxano-transfer-rule]')) updateRates(target.closest('.tuxano-vehicle-pricing'));
     if (target.matches('[data-tuxano-email-logo-input]')) updateEmailLogo(target.closest('[data-tuxano-email-logo]'));
     if (target.matches('[data-tuxano-background-url]')) updateBackground(target.closest('[data-tuxano-background-group]'));
     if (target.matches('[data-tuxano-key-input]')) {
@@ -268,21 +268,64 @@
     picker.open();
   });
   function updateRates(wrapper) {
-    if (!wrapper) return; const values = {};
-    wrapper.querySelectorAll('[data-tuxano-rate]').forEach(input => {
-      const key = input.dataset.tuxanoRate;
-      const toggle = wrapper.querySelector(`[data-tuxano-rate-toggle="${key}"]`);
-      const disabled = Boolean(toggle?.checked); input.disabled = disabled; input.setAttribute('aria-disabled', String(disabled));
-      input.closest('.tuxano-rate-field')?.classList.toggle('is-disabled', disabled);
-      const number = Number(input.value); values[key] = disabled || !Number.isFinite(number) || number < 0 ? 0 : number;
-    });
-    const total = Math.max(values.minimum || 0, (values.base || 0) + 20 * (values.perMile || 0) + 30 * (values.perDrivingMinute || 0)) + 15 * (values.perWaitingMinute || 0);
-    const output = wrapper.querySelector('[data-tuxano-example-total]');
-    if (output) {
+    if (!wrapper) return;
+    const readRates = (attribute, toggleAttribute) => {
+      const values = {};
+      wrapper.querySelectorAll(`[${attribute}]`).forEach(input => {
+        const key = input.getAttribute(attribute);
+        const toggle = wrapper.querySelector(`[${toggleAttribute}="${key}"]`);
+        const disabled = Boolean(toggle?.checked);
+        input.disabled = disabled; input.setAttribute('aria-disabled', String(disabled));
+        input.closest('.tuxano-rate-field')?.classList.toggle('is-disabled', disabled);
+        const value = Number(input.value);
+        values[key] = disabled || !Number.isFinite(value) || value < 0 ? 0 : value;
+      });
+      return values;
+    };
+    const values = readRates('data-tuxano-rate', 'data-tuxano-rate-toggle');
+    const hourly = readRates('data-tuxano-hourly-rate', 'data-tuxano-hourly-toggle');
+    const format = value => {
       const currency = wrapper.dataset.tuxanoCurrency || 'USD';
-      try { output.textContent = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(total); }
-      catch { output.textContent = `${currency} ${total.toFixed(2)}`; }
+      try { return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value); }
+      catch { return `${currency} ${value.toFixed(2)}`; }
+    };
+    const mode = wrapper.querySelector('[data-tuxano-transfer-mode]');
+    const output = wrapper.querySelector('[data-tuxano-example-total]');
+    if (!mode) {
+      // Retain old editor fixtures and already-open legacy screen previews.
+      const total = Math.max(values.minimum || 0, (values.base || 0) + 20 * (values.perMile || 0) + 30 * (values.perDrivingMinute || 0)) + 15 * (values.perWaitingMinute || 0);
+      if (output) output.textContent = format(total);
+      return;
     }
+    wrapper.querySelectorAll('[data-tuxano-method-section]').forEach(section => {
+      const active = section.dataset.tuxanoMethodSection === mode.value;
+      section.classList.toggle('is-inactive', !active);
+      const status = section.querySelector('[data-tuxano-method-status]');
+      if (status) status.textContent = active ? 'Active method' : 'Saved · inactive';
+    });
+    const rules = {}; let valid = ['time', 'mileage'].includes(mode.value);
+    wrapper.querySelectorAll('[data-tuxano-transfer-rule]').forEach(input => {
+      const value = Number(input.value);
+      rules[input.dataset.tuxanoTransferRule] = value;
+      if (!input.checkValidity() || !Number.isFinite(value)) valid = false;
+    });
+    const amount = long => {
+      if (mode.value === 'time') {
+        const minutes = Math.max(0, (long ? 120 : 35) - rules.pickupFreeMinutes) + Math.ceil((long ? 104 : 30) / rules.roundingMinutes) * rules.roundingMinutes + Math.max(0, (long ? 45 : 15) - rules.returnFreeMinutes);
+        return Math.max(rules.minimumMinutes, minutes) / 60 * values.hourly;
+      }
+      const miles = Math.max(0, (long ? 123 : 15) - rules.pickupFreeMiles) + (long ? 96.5 : 30) + Math.max(0, (long ? 34.9 : 10) - rules.returnFreeMiles);
+      return Math.max(values.minimum, miles * values.perMile);
+    };
+    const longOutput = wrapper.querySelector('[data-tuxano-example-long]');
+    if (output) output.textContent = valid ? format(amount(false)) : 'Complete valid transfer settings to preview.';
+    if (longOutput) longOutput.textContent = valid ? format(amount(true)) : 'Complete valid transfer settings to preview.';
+    const detail = wrapper.querySelector('[data-tuxano-example-detail]');
+    const longDetail = wrapper.querySelector('[data-tuxano-example-long-detail]');
+    if (detail) detail.textContent = mode.value === 'time' ? 'Base → pickup: 35 min · passenger: 30 min · return: 15 min' : 'Base → pickup: 15 mi · passenger: 30 mi · return: 10 mi';
+    if (longDetail) longDetail.textContent = mode.value === 'time' ? 'Base → pickup: 120 min · passenger: 104 min · return: 45 min' : 'Base → pickup: 123 mi · passenger: 96.5 mi · return: 34.9 mi';
+    const hourlyOutput = wrapper.querySelector('[data-tuxano-hourly-example]');
+    if (hourlyOutput) hourlyOutput.textContent = format(3 * (hourly.hourly || 0) + 20 * (hourly.perMile || 0) + 15 * (hourly.perWaitingMinute || 0));
   }
   document.querySelectorAll('.tuxano-bulk-form').forEach(selection);
   document.querySelectorAll('.tuxano-vehicle-pricing').forEach(updateRates);

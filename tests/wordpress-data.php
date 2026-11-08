@@ -266,7 +266,9 @@ try {
         $check(is_string($vehicle['id']) && is_array($image_url) && in_array($image_url['scheme'] ?? '', ['https', 'http'], true) && !empty($image_url['host']) && isset($vehicle['tariff']['perDrivingMinute']), 'Seed records must expose valid IDs, absolute bundled photo URLs and tariffs.');
     }
     $check(count($seed) === 6, 'The isolated test installation must retain all six original seed records.');
-    $check($seed['premium']['tariff']['base'] === 65.0 && $seed['phantom']['tariff']['hourly'] === 1250.0, 'Original per-vehicle tariffs must be retained.');
+    $check($seed['premium']['tariff']['perMile'] === 3.0 && $seed['premium']['tariff']['minimum'] === 150.0 && $seed['premium']['tariff']['hourly'] === 150.0 && $seed['premium']['tariff']['perWaitingMinute'] === 2.5, 'Premium SUV receives the client Transfer rates without applying them to other categories.');
+    $check(($seed['premium']['tariff']['transfer']['version'] ?? null) === 2 && ($seed['premium']['tariff']['transfer']['mode'] ?? '') === 'mileage', 'New fleet configuration exposes the default mileage Transfer method.');
+    $check(($seed['premium']['tariff']['hourlyBooking']['hourly'] ?? null) === 150.0 && $seed['phantom']['tariff']['hourly'] === 1250.0, 'Premium hourly hire receives the documented rate while unspecified category rates are retained.');
     $check($seed['luxury']['category'] === 'SUV COLLECTION' && $seed['ghost']['category'] === 'ROLLS-ROYCE COLLECTION', 'Original collection grouping must be retained.');
 
     $term = wp_insert_term('Integration category', Vehicles::TAXONOMY, ['description' => 'Only this test category.']);
@@ -327,6 +329,17 @@ try {
     $check(Vehicles::find((string) $id) === null && Vehicles::find('javascript:1') === null && Vehicles::find('001') === null, 'Inactive/malformed vehicle IDs cannot be booked.');
 
     $settings = array_replace(Settings::defaults(), ['min_hours' => 1, 'max_hours' => 24]);
+    // Explicit historical flat snapshots keep legacy parity checks independent
+    // of the new active seed defaults and their required repositioning routes.
+    $legacy_rates = [
+        'premium' => [65, 2, 3, 100, 1, 95], 'luxury' => [75, 3, 3, 125, 1.5, 115],
+        'executive' => [105, 3.5, 3, 150, 2, 135], 'ghost' => [500, 15, 15, 600, 5, 500],
+        'cullinan' => [700, 20, 25, 900, 7.5, 750], 'phantom' => [1000, 30, 55, 1500, 10, 1250],
+    ];
+    $legacy_seed = [];
+    foreach ($legacy_rates as $name => $rates) {
+        $legacy_seed[$name] = array_replace($seed[$name], ['tariff' => array_combine(['base', 'perMile', 'perDrivingMinute', 'minimum', 'perWaitingMinute', 'hourly'], $rates)]);
+    }
     // Values independently produced by the shared JavaScript pricing module.
     $fixtures = [
         ['luxury', 16093.44, 1200, 0, 'transfer', 3, 165.0, 20.63, 410.63],
@@ -337,7 +350,7 @@ try {
     ];
     foreach ($fixtures as [$name, $distance, $duration, $wait, $service, $hours, $transportation, $tip, $total]) {
         $booking = ['trip' => ['service' => $service, 'hours' => $hours, 'stops' => $wait ? [['waitMinutes' => $wait]] : []], 'child' => true, 'carSeats' => 2, 'boosterSeats' => 1, 'meet' => true, 'inPerson' => false, 'gratuity' => 'custom', 'custom' => 12.5];
-        $result = Pricing::calculate($seed[$name], ['distanceMeters' => $distance, 'durationSeconds' => $duration], $booking, $settings);
+        $result = Pricing::calculate($legacy_seed[$name], ['distanceMeters' => $distance, 'durationSeconds' => $duration], $booking, $settings);
         $check($result['transportation'] === $transportation && $result['tip'] === $tip && $result['total'] === $total, 'PHP/JavaScript fare and gratuity cents must match: ' . $name . '/' . $service);
         $check($result['carCost'] === 125.0 && $result['boosterCost'] === 50.0 && $result['fare']['totalDurationSeconds'] === (float) ($duration + $wait * 60), 'Child seat allocation and stop durations must be correct.');
     }
@@ -347,17 +360,17 @@ try {
         $check($result['transportation'] === $expected, 'PHP should match JavaScript half-cent floating-point rounding at ' . $amount);
     }
     $base_booking = ['trip' => ['service' => 'transfer', 'stops' => []], 'child' => true, 'carSeats' => 0, 'boosterSeats' => 2, 'inPerson' => true];
-    $result = Pricing::calculate($seed['premium'], ['distanceMeters' => 0, 'durationSeconds' => 0], $base_booking, $settings);
+    $result = Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 0, 'durationSeconds' => 0], $base_booking, $settings);
     $check($result['carCost'] === 0.0 && $result['boosterCost'] === 125.0 && $result['tip'] === 0.0, 'Booster-only bookings charge the first-seat rate once; in-person tips are zero.');
     foreach ([
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => INF, 'durationSeconds' => 60], $base_booking, $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => -1, 'durationSeconds' => 60], $base_booking, $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['service' => 'flight']]), $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [['waitMinutes' => 121]]]]), $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5]]]]), $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5], 0 => ['waitMinutes' => 10]]]]), $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['carSeats' => 6, 'boosterSeats' => 2]), $settings),
-        static fn() => Pricing::calculate($seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['child' => 'false']), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => INF, 'durationSeconds' => 60], $base_booking, $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => -1, 'durationSeconds' => 60], $base_booking, $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['service' => 'flight']]), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [['waitMinutes' => 121]]]]), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5]]]]), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace_recursive($base_booking, ['trip' => ['stops' => [1 => ['waitMinutes' => 5], 0 => ['waitMinutes' => 10]]]]), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['carSeats' => 6, 'boosterSeats' => 2]), $settings),
+        static fn() => Pricing::calculate($legacy_seed['premium'], ['distanceMeters' => 1, 'durationSeconds' => 60], array_replace($base_booking, ['child' => 'false']), $settings),
     ] as $invalid_pricing) {
         $throws($invalid_pricing, 'Invalid pricing inputs must be rejected.');
     }

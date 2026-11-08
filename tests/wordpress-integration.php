@@ -35,6 +35,7 @@ $rate_snapshot = $wpdb->get_results($wpdb->prepare("SELECT option_name,option_va
 $sessions = [];
 $quotes = [];
 $created_ids = [];
+$created_vehicle_ids = [];
 $mail = [];
 $mail_results = ['customer' => true, 'admin' => false];
 $provider_mode = 'ok';
@@ -117,6 +118,14 @@ $mail_mock = static function ($preempt, array $args) use ($check, &$mail, &$crea
 try {
     wp_set_current_user((int) $admins[0]);
     $check(Settings::save(['browser_key' => 'integration_browser_key_123456789012345', 'routes_key' => $fixture_key, 'admin_email' => 'booking-admin@example.test', 'email_customer' => true, 'email_admin' => true, 'meet_price' => 50, 'first_seat_price' => 75, 'additional_seat_price' => 50, 'default_gratuity' => 20, 'min_hours' => 1, 'max_hours' => 24, 'max_stops' => 5, 'currency' => 'USD', 'route_daily_limit' => 10000, 'route_minute_limit' => 120, 'booking_hourly_limit' => 1000, 'session_hourly_limit' => 1000]) === true, 'Valid isolated fixture settings must save.');
+    // This suite protects the original flat-tariff booking and retry protocol.
+    // New Transfer profiles have separate route/security coverage; a standalone
+    // historical fixture avoids coupling those checks to the current seed rates.
+    $legacy_vehicle_id = wp_insert_post(['post_type' => Vehicles::POST_TYPE, 'post_status' => 'publish', 'post_title' => 'Legacy integration SUV ' . $run], true);
+    $check(!is_wp_error($legacy_vehicle_id) && $legacy_vehicle_id > 0, 'A separate legacy pricing fixture must be creatable.');
+    $created_vehicle_ids[] = (int) $legacy_vehicle_id;
+    update_post_meta((int) $legacy_vehicle_id, '_tuxano_vehicle_data', ['display' => 'Premium SUV', 'capacity' => 6, 'luggageCapacity' => 6, 'image' => '', 'models' => ['Legacy fixture'], 'features' => ['Legacy fixture'], 'tariff' => ['base' => 65, 'perMile' => 2, 'perDrivingMinute' => 3, 'minimum' => 100, 'perWaitingMinute' => 1, 'hourly' => 95]]);
+    $premium = Vehicles::find((string) $legacy_vehicle_id);
     $_SERVER['REMOTE_ADDR'] = '198.51.100.' . random_int(1, 254);
     wp_set_current_user(0);
     add_filter('pre_http_request', $http_mock, 10, 3);
@@ -217,13 +226,7 @@ try {
     $check(preg_match('/^[a-f0-9]{64}$/D', $quote['pricingRevision'] ?? '') === 1 && $quote['pricingRevision'] === get_transient($quote_name)['revision'], 'Route response and stored quote share the same opaque pricing revision.');
     $check($quote['pickupTimezone'] === 'America/New_York' && $quote['pickupTimezoneLabel'] === 'Eastern Time' && get_transient($quote_name)['pickupTimezone'] === 'America/New_York', 'The route quote binds the pickup geographic zone without using a browser-supplied timezone.');
     $other_token = $new_session();
-    $premium = null;
-    foreach (Vehicles::all() as $vehicle) {
-        if ($vehicle['name'] === 'PREMIUM SUV') {
-            $premium = $vehicle;
-        }
-    }
-    $check($premium !== null && $premium['tariff'] === ['base' => 65.0, 'perMile' => 2.0, 'perDrivingMinute' => 3.0, 'minimum' => 100.0, 'perWaitingMinute' => 1.0, 'hourly' => 95.0], 'Integration fixture requires the original Premium SUV tariffs.');
+    $check($premium !== null && $premium['tariff'] === ['base' => 65.0, 'perMile' => 2.0, 'perDrivingMinute' => 3.0, 'minimum' => 100.0, 'perWaitingMinute' => 1.0, 'hourly' => 95.0], 'The independent historical integration fixture retains the original Premium SUV tariffs.');
     $booking = [
         'trip' => ['service' => 'transfer', 'hours' => 3, 'date' => wp_date('Y-m-d', time() + 2 * DAY_IN_SECONDS), 'time' => '12:00', 'pickup' => 'Integration pickup', 'dropoff' => 'Integration destination', 'pickupPlace' => $points['origin'], 'dropoffPlace' => $points['destination'], 'stops' => [['text' => 'Integration stop', 'waitMinutes' => 30, 'place' => $points['stops'][0]]]],
         'vehicle' => $premium['id'], 'passengers' => 3, 'luggage' => 3, 'meet' => true, 'child' => true, 'carSeats' => 2, 'boosterSeats' => 1, 'inPerson' => false, 'same' => true, 'consent' => true, 'gratuity' => 'custom', 'custom' => 12.5,
@@ -334,6 +337,7 @@ try {
     foreach ($created_ids as $id) {
         Database::delete($id);
     }
+    foreach ($created_vehicle_ids as $vehicle_id) { wp_delete_post($vehicle_id, true); }
     foreach (array_merge($sessions, $quotes) as $name) {
         delete_transient($name);
     }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tuxano Booking
  * Description: Executive transportation requests, route-based pricing, fleet management and private booking administration.
- * Version: 2.5.0
+ * Version: 2.6.0
  * Plugin URI: https://farhanrajnajmul.com/
  * Requires at least: 6.6
  * Requires PHP: 7.4
@@ -16,12 +16,12 @@ namespace Tuxano\Booking;
 
 defined('ABSPATH') || exit;
 
-define('TUXANO_BOOKING_VERSION', '2.5.0');
+define('TUXANO_BOOKING_VERSION', '2.6.0');
 define('TUXANO_BOOKING_FILE', __FILE__);
 define('TUXANO_BOOKING_DIR', plugin_dir_path(__FILE__));
 define('TUXANO_BOOKING_URL', plugin_dir_url(__FILE__));
 
-foreach (['Countries', 'Timezones', 'Settings', 'Vehicles', 'Pricing', 'Database', 'Availability', 'Notifications', 'BookingUpdates', 'Rest', 'Frontend', 'Admin'] as $component) {
+foreach (['Countries', 'Timezones', 'Settings', 'Vehicles', 'Pricing', 'Database', 'Availability', 'TransferRoutes', 'Notifications', 'BookingUpdates', 'Rest', 'Frontend', 'Admin'] as $component) {
     require_once TUXANO_BOOKING_DIR . 'includes/' . $component . '.php';
 }
 
@@ -47,6 +47,7 @@ add_action('plugins_loaded', static function (): void {
     Frontend::register();
 });
 add_action('init', [Vehicles::class, 'register']);
+add_action('init', [Vehicles::class, 'upgrade_pricing'], 11);
 add_action('rest_api_init', [Rest::class, 'register']);
 add_action('tuxano_booking_maintenance', [Database::class, 'maintenance']);
 add_filter('wp_privacy_personal_data_exporters', static function (array $exporters): array {

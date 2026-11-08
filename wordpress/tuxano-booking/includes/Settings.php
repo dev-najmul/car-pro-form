@@ -62,6 +62,7 @@ final class Settings
             'first_seat_price' => 75.0,
             'additional_seat_price' => 50.0,
             'default_gratuity' => 20.0,
+            'transfer_base_address' => '304 Sype Dr., Carol Stream, IL 60188, USA',
             'company_name' => 'TUXANO',
             'support_email' => 'info@tuxano.com',
             'support_phone' => '+1 (717) 434-6195',
@@ -143,6 +144,14 @@ final class Settings
                     continue;
                 }
                 $next[$key] = $value;
+            } elseif ($key === 'transfer_base_address') {
+                if ($value === '' || strlen($value) > 512 || preg_match('/[\x00-\x1f\x7f<>]/', $value)) {
+                    $errors->add('tuxano_invalid_settings', __('Enter the exact service-base street address, up to 512 characters.', 'tuxano-booking'));
+                } else {
+                    $clean = sanitize_text_field($value);
+                    if ($clean === '') { $errors->add('tuxano_invalid_settings', __('The service-base address cannot be empty.', 'tuxano-booking')); }
+                    else { $next[$key] = $clean; }
+                }
             } elseif ($key === 'booking_page_id') {
                 if (!preg_match('/^\d{1,10}$/D', $value) || (float) $value > 2147483647 || ((int) $value > 0 && self::booking_page_url((int) $value) === '')) {
                     $errors->add('tuxano_invalid_settings', __('Choose a published, public booking page on this website.', 'tuxano-booking'));
@@ -286,6 +295,8 @@ final class Settings
         $public['bookingPageUrl'] = self::booking_page_url((int) $settings['booking_page_id']);
         $public['availabilityChecks'] = true;
         $public['pickupTimezones'] = true;
+        $public['transferPricing'] = true;
+        $public['transferTrafficBasis'] = 'pickup';
         return $public;
     }
 
@@ -371,7 +382,7 @@ final class Settings
         $settings = self::get();
         $prices = array_intersect_key($settings, array_flip([
             'currency', 'currency_symbol', 'meet_price', 'first_seat_price',
-            'additional_seat_price', 'default_gratuity', 'min_hours', 'max_hours', 'max_stops',
+            'additional_seat_price', 'default_gratuity', 'min_hours', 'max_hours', 'max_stops', 'transfer_base_address',
         ]));
         $vehicles = array_map(static fn(array $vehicle): array => [
             'id' => $vehicle['id'], 'name' => $vehicle['name'], 'display' => $vehicle['display'],

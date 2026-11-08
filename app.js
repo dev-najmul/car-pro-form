@@ -85,7 +85,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   let autocompleteCleanups = [];
   let advancing = false, locationGeneration = 0, navigationGeneration = 0, editGeneration = 0;
   let availabilityGeneration = 0, availabilityController = null, availabilityDialogClose = null, pendingAvailabilityAck = "";
-  let restoringPlaces = false;
+  let restoringPlaces = false, routeContextTimer = null;
   let deviceLocation = { status: "idle", candidate: null, message: "" };
   let deviceLocationController = null;
   let pickupMapCleanup;
@@ -643,9 +643,12 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     `<div class="security">${icon("shield")}<div><strong>Secure & Confidential</strong><p>Your information is encrypted and handled securely.</p></div></div>`;
   const total = () =>
     `<div class="total"><h4>ESTIMATED TOTAL</h4><strong data-testid="estimated-total">${money(costs().total)}</strong><p>All-Inclusive (${e(settings.currency)})</p></div>`;
+  const separateWaiting = c => Boolean(c.fare?.pricingMode && Number.isFinite(c.fare.waitingCharge) && c.fare.waitingCharge > 0);
+  const displayedDrivingCharge = c => separateWaiting(c) ? Math.round((c.transportation - c.fare.waitingCharge) * 100) / 100 : c.transportation;
+  const waitingPriceLine = c => separateWaiting(c) ? `<div data-pricing-waiting-line><span>Stop waiting (${waitingMinutes()} min)</span><strong>${money(c.fare.waitingCharge)}</strong></div>` : "";
   const lines = (compact = false) => {
     const c = costs();
-    return `<div class="price-lines"><div><span>Transportation${compact ? `<span class="desktop-copy"> (${e(selected().display)})</span>` : ""}</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>Child Seats${compact ? ` <span class="seat-detail">(${seatText()})</span>` : `<small>${seatText()}</small>`}</span><strong>${money(c.seats)}</strong></div><div><span>${compact ? '<span class="desktop-copy">Chauffeur </span>' : ""}Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div>`;
+    return `<div class="price-lines"><div><span>Transportation${compact ? `<span class="desktop-copy"> (${e(selected().display)})</span>` : ""}</span><strong>${money(displayedDrivingCharge(c))}</strong></div>${waitingPriceLine(c)}<div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>Child Seats${compact ? ` <span class="seat-detail">(${seatText()})</span>` : `<small>${seatText()}</small>`}</span><strong>${money(c.seats)}</strong></div><div><span>${compact ? '<span class="desktop-copy">Chauffeur </span>' : ""}Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div>`;
   };
   const summary = () =>
     `<aside class="panel trip-summary" aria-label="Your trip summary"><div class="summary-heading"><h3>YOUR TRIP SUMMARY</h3><button type="button" data-go="0">${step === 3 ? '<span class="desktop-copy">EDIT</span><span class="mobile-copy">Edit</span>' : "Edit"} ${icon("edit")}</button></div><div class="route-summary"><p>${icon("pin")}${e(state.trip.pickup)}</p>${icon("down")}<p>${icon("pin")}${e(state.trip.dropoff || "Hourly service")}</p><p>${icon("calendar")}<span>${dateLabel()}<span class="combined-time"> at ${timeLabel()}</span></span></p><p class="separate-time">${icon("clock")}${timeLabel()}</p>${time24Markup("summary-time-24h")}${state.trip.service === "hourly" ? `<p>${icon("clock")}${state.trip.hours} hours</p>` : ""}${usableRoute() ? `<div class="summary-route-estimate">${routeDetails()}</div>` : `<p class="route-status">${e(routeStatus === "error" ? routeMessage : "Route estimate is being refreshed…")}</p>`}</div><div class="summary-vehicle"><h3>VEHICLE SELECTED</h3><div class="small-vehicle">${selected().image ? `<img src="${e(asset(!runtime && state.vehicle === "luxury" ? "navigator-summary.png" : selected().image))}" alt="${e(selected().display)}">` : ""}<div><strong>${e(selected().display)}</strong><p>${e(model())}</p></div></div><div class="capacities">${icon("people")}<span><span class="desktop-copy">Up to </span>${selected().capacity} Passengers</span>${icon("luggage")}<span><span class="desktop-copy">Up to </span>${bags()} Bags</span></div></div><div class="summary-prices"><h3>TRIP DETAILS</h3>${lines()}</div>${total()}${security()}</aside>`;
@@ -887,7 +890,13 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     const trip = state.trip;
     if (!selectedPoint(trip.pickupPlace, trip.pickup) || !selectedPoint(trip.dropoffPlace, trip.dropoff) || trip.stops.some(stop => !selectedPoint(stop.place, stop.text))) return null;
     const waypoint = point => point.placeId ? { placeId: point.placeId } : { latitude: point.latitude, longitude: point.longitude };
-    return { origin: waypoint(trip.pickupPlace), destination: waypoint(trip.dropoffPlace), stops: trip.stops.map(stop => waypoint(stop.place)) };
+    const request = { origin: waypoint(trip.pickupPlace), destination: waypoint(trip.dropoffPlace), stops: trip.stops.map(stop => waypoint(stop.place)) };
+    if (runtime && settings.transferPricing === true) {
+      const completeSchedule = /^\d{4}-\d{2}-\d{2}$/.test(trip.date) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(trip.time);
+      if (trip.service === "transfer" && !completeSchedule) return null;
+      request.trip = { service: trip.service, date: completeSchedule ? trip.date : "", time: completeSchedule ? trip.time : "", waitMinutes: trip.stops.map(stop => stop.waitMinutes) };
+    }
+    return request;
   };
   const routeSignature = () => { const request = routeRequest(); return request ? JSON.stringify(request) : ""; };
   const waitingMinutes = () => state.trip.stops.reduce((sum, stop) => sum + stop.waitMinutes, 0);
@@ -902,7 +911,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   function routeDetails(full = false) {
     const route = usableRoute();
     const travel = route ? formatDuration(route.durationSeconds + waitingMinutes() * 60) : "";
-    const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : "Select pickup, drop-off, and any stops from the location suggestions.";
+    const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : settings.transferPricing === true ? "Select pickup, drop-off, any stops, and your pickup date and time to calculate the route." : "Select pickup, drop-off, and any stops from the location suggestions.";
     const hasGooglePlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId || point?.nearbyName);
     if (full && !route && routeStatus !== "loading" && routeStatus !== "error" && !restoringPlaces) {
       const attribution = hasGooglePlace && !DEMO_MODE ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span></div>${providerAttributions()}` : "";
@@ -910,7 +919,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       return attribution + policyLinks;
     }
     const previewNote = full && maps.previewExpiresAt ? `<p class="test-session-note">Temporary live test · Route server available until ${e(new Date(maps.previewExpiresAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))}.</p>` : '';
-    return `${previewNote}${full && route ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : routeStatus === "loading" ? "route-loading" : ""}" role="${routeStatus === "error" ? "alert" : "status"}" ${routeStatus === "loading" ? 'aria-busy="true"' : ""}>${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
+    return `${previewNote}${full && route ? `<label class="travel-time-label"><span class="label">TRAVEL TIME</span><input class="input travel-time" aria-label="Travel time" readonly placeholder="Calculated from your route" value="${travel}"></label>` : ""}${status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : routeStatus === "loading" ? "route-loading" : ""}" role="${routeStatus === "error" ? "alert" : "status"}" ${routeStatus === "loading" ? 'aria-busy="true"' : ""}>${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : ""}${route ? `<div class="route-metrics" aria-label="Journey estimate"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1000).toFixed(1)} km / ${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Driving time</span><strong data-testid="driving-duration">${formatDuration(route.durationSeconds)}</strong></div><div><span>Stop waiting</span><strong data-testid="stop-wait-duration">${waitingMinutes()} min</strong></div><div><span>Total journey</span><strong data-testid="total-duration">${travel}</strong></div></div>` : ""}${DEMO_MODE ? '<div class="route-provider">Example route · sample metrics</div>' : hasGooglePlace || route ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span>${route ? route.trafficAware === true ? '<span>Traffic-aware estimate for your selected pickup time. Actual travel time may vary.</span>' : '<span>Baseline driving estimate. Live traffic and pickup date/time are not included.</span>' : ''}</div>${providerAttributions()}` : ''}${routeComparison()}${full ? runtime ? `<p class="maps-policies">${policies()}</p>` : '<p class="maps-policies"><a href="terms.html" target="_blank" rel="noopener">Terms of Use</a><span> · </span><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></p>' : ''}`;
   }
   function providerAttributions() {
     const points = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)];
@@ -971,6 +980,12 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   function invalidateRoute() {
     ++routeGeneration; routeController?.abort(); routeController = null; routePromise = null; currentRoute = null; routeStatus = "idle"; routeMessage = "";
     refreshRoutePanel();
+  }
+  function refreshRouteContext() {
+    if (!runtime || settings.transferPricing !== true) return;
+    clearTimeout(routeContextTimer);
+    invalidateRoute();
+    routeContextTimer = setTimeout(() => { routeContextTimer = null; if (step === 0) calculateRoute(); }, 300);
   }
   async function calculateRoute({ quiet = false } = {}) {
     const conflict = countryConflict();
@@ -1256,7 +1271,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
         ["Billing Email:", state.billing.email],
         ["Billing Address:", billingAddress()],
       ],
-    )}${noteStrip("BILLING NOTES", "chat", state.billing.notes)}</section><section class="thank-section thank-pricing">${thankHeading("PRICING SUMMARY", "dollar")}<div class="thank-prices"><div class="price-lines"><div><span>Transportation (${e(selected().display)})</span><strong>${money(c.transportation)}</strong></div><div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>${state.child ? state.carSeats : 0} Car Seats</span><strong>${money(c.carCost)}</strong></div><div><span>${state.child ? state.boosterSeats : 0} Booster Seat${state.boosterSeats === 1 ? "" : "s"}</span><strong>${money(c.boosterCost)}</strong></div><div><span>Chauffeur Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div><p class="payment-note"><span class="dark-icon">${icon("wallet")}</span>Payment instructions will be sent separately.</p></div>${total()}</section><section class="thank-next"><span class="next-symbol">${icon("circlecheck")}</span><div><h3>WHAT HAPPENS NEXT?</h3><ol><li><span>1</span><p>We review availability and reservation details.</p></li><li><span>2</span><p>You’ll receive an email with confirmation details and any payment instructions.</p></li><li><span>3</span><p>Once confirmed, your reservation is secured.</p></li></ol></div></section><section class="assistance"><div>${icon("phone")}<div><h3>NEED ASSISTANCE?</h3><p>Call, text, or WhatsApp us anytime.</p>${phoneLink()}</div></div><div><strong>Thank you for choosing ${e(settings.companyName)}.</strong><p>We look forward to your journey with us.</p><strong>${e(settings.companyName)}${runtime ? "" : " Private Transportation"}.</strong></div></section><button class="text-link start-over" type="button" data-action="reset">Start a new request</button></main>${supportFooter()}`;
+    )}${noteStrip("BILLING NOTES", "chat", state.billing.notes)}</section><section class="thank-section thank-pricing">${thankHeading("PRICING SUMMARY", "dollar")}<div class="thank-prices"><div class="price-lines"><div><span>Transportation (${e(selected().display)})</span><strong>${money(displayedDrivingCharge(c))}</strong></div>${waitingPriceLine(c)}<div><span>Meet & Greet</span><strong>${money(c.meet)}</strong></div><div><span>${state.child ? state.carSeats : 0} Car Seats</span><strong>${money(c.carCost)}</strong></div><div><span>${state.child ? state.boosterSeats : 0} Booster Seat${state.boosterSeats === 1 ? "" : "s"}</span><strong>${money(c.boosterCost)}</strong></div><div><span>Chauffeur Gratuity (${c.percent}%)</span><strong>${money(c.tip)}</strong></div></div><p class="payment-note"><span class="dark-icon">${icon("wallet")}</span>Payment instructions will be sent separately.</p></div>${total()}</section><section class="thank-next"><span class="next-symbol">${icon("circlecheck")}</span><div><h3>WHAT HAPPENS NEXT?</h3><ol><li><span>1</span><p>We review availability and reservation details.</p></li><li><span>2</span><p>You’ll receive an email with confirmation details and any payment instructions.</p></li><li><span>3</span><p>Once confirmed, your reservation is secured.</p></li></ol></div></section><section class="assistance"><div>${icon("phone")}<div><h3>NEED ASSISTANCE?</h3><p>Call, text, or WhatsApp us anytime.</p>${phoneLink()}</div></div><div><strong>Thank you for choosing ${e(settings.companyName)}.</strong><p>We look forward to your journey with us.</p><strong>${e(settings.companyName)}${runtime ? "" : " Private Transportation"}.</strong></div></section><button class="text-link start-over" type="button" data-action="reset">Start a new request</button></main>${supportFooter()}`;
   }
 
   function render() {
@@ -1435,7 +1450,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     try {
       const response = await bookingFetch(runtime, runtime.restUrl + "availability", {
         method: "POST", signal: controller.signal,
-        body: JSON.stringify({ vehicleId: state.vehicle, date: state.trip.date, time: state.trip.time, ...(settings.pickupTimezones === true ? { quoteToken: usableRoute()?.quoteToken } : {}) }),
+        body: JSON.stringify({ vehicleId: state.vehicle, date: state.trip.date, time: state.trip.time, ...(settings.transferPricing === true ? { service: state.trip.service } : {}), ...(settings.pickupTimezones === true || settings.transferPricing === true ? { quoteToken: usableRoute()?.quoteToken } : {}) }),
       });
       let result;
       try { result = await response.json(); } catch { throw new Error("Please try again before continuing, or choose another vehicle."); }
@@ -1685,6 +1700,9 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     if (!fresh || !/^[a-f0-9]{64}$/.test(fresh.pricingRevision) || !fresh.settings || !Array.isArray(fresh.vehicles) || fresh.vehicles.some(vehicle => !vehicle || typeof vehicle.id !== "string" || !vehicle.tariff)) {
       throw new Error("The updated estimate could not be loaded. Your details are still here. Please try again.");
     }
+    // Adopt the endpoint's routing protocol before requesting the matching
+    // estimate; financial fields still commit only after it is verified.
+    settings.transferPricing = fresh.settings.transferPricing === true;
     // Commit displayed tariffs only after their matching route is verified.
     // A failed refresh must keep the old revision, so retry still requires review.
     invalidateRoute();
@@ -1887,6 +1905,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     if (display)
       display.textContent = path === "trip.date" ? dateLabel() : clockLabel();
     if (path === "trip.time") refreshTime24();
+    if (["trip.date", "trip.time"].includes(path)) refreshRouteContext();
     const count = app.querySelector(`[data-counter="${path}"]`);
     if (count) count.textContent = input.value.length + "/" + input.maxLength;
     if (path === "custom") refreshPrices();
@@ -1899,10 +1918,11 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       path = input.dataset.field;
     if (input.dataset.stopWait) {
       const stop = state.trip.stops.find(item => item.id === input.dataset.stopWait);
-      if (stop && WAIT_OPTIONS.includes(Number(input.value))) { dirty(); stop.waitMinutes = Number(input.value); save(); refreshRoutePanel(); }
+      if (stop && WAIT_OPTIONS.includes(Number(input.value))) { dirty(); stop.waitMinutes = Number(input.value); save(); if (settings.transferPricing === true) refreshRouteContext(); else refreshRoutePanel(); }
       return;
     }
     if (!path) return;
+    if (["trip.date", "trip.time"].includes(path)) refreshRouteContext();
     if (path === "trip.hours") { updateHoursControl(true); dirty(); save(); return; }
     dirty();
     if (input.type === "checkbox") {
@@ -1949,8 +1969,10 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       dirty();
     if (button.dataset.service) {
       state.trip.service = button.dataset.service;
+      if (settings.transferPricing === true) invalidateRoute();
       save();
       render();
+      if (settings.transferPricing === true) calculateRoute();
       return;
     }
     if (button.dataset.select) {

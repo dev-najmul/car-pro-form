@@ -40,40 +40,60 @@ final class BookingUpdates
             // Reject malformed fields before spending a provider request. UTC
             // here validates only calendar/field shape; the geographic zone is
             // resolved below and revalidated before anything can be saved.
-            Rest::validate_booking($booking, ['points' => $points, 'pickupTimezone' => 'UTC', 'allowLegacyTime' => true], true, $snapshot);
+            [$pre_clean, $pre_vehicle] = Rest::validate_booking($booking, ['points' => $points, 'pickupTimezone' => 'UTC', 'allowLegacyTime' => true], true, $snapshot);
         } catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
         $route_changed = wp_json_encode($points) !== wp_json_encode($old_points);
         $pickup_changed = wp_json_encode($points['origin']) !== wp_json_encode($old_points['origin']);
         $same_schedule = !$pickup_changed && ($old['trip']['date'] ?? '') === ($booking['trip']['date'] ?? '') && ($old['trip']['time'] ?? '') === ($booking['trip']['time'] ?? '');
-        $route = $row['route'];
-        // A contact/status-only edit must not reinterpret a historical wall
-        // timestamp. Changed schedules use the saved geographic zone, or fetch
-        // one provider origin when a legacy request has no geographic zone.
+        $priced_changed = wp_json_encode(self::priced_fields($pre_clean)) !== wp_json_encode(self::priced_fields($old));
+        $accepted_transfer_forecast = ($old['trip']['service'] ?? '') === 'transfer' && self::uses_new_pricing($old['vehicleSnapshot'] ?? []);
+        // Only accepted traffic-based transfers gain schedule-dependent pricing.
+        // A date-only correction of a legacy booking keeps its accepted fare.
+        $forecast_changed = $accepted_transfer_forecast && !$same_schedule;
+        $needs_price = $route_changed || $priced_changed || $reprice || $forecast_changed;
+        $pricing_revision = $needs_price ? Settings::revision() : '';
+        $vehicle = $needs_price ? (Vehicles::find((string) $pre_clean['vehicle']) ?: $pre_vehicle) : $pre_vehicle;
+        $pricing_settings = Settings::get();
+        $new_transfer = $needs_price && ($pre_clean['trip']['service'] ?? '') === 'transfer' && self::uses_new_pricing($vehicle);
+        $service_changed = ($old['trip']['service'] ?? '') !== ($pre_clean['trip']['service'] ?? '');
+        $route = $row['route']; $route_refreshed = false;
+        // Contact/status-only edits retain the accepted geographic interpretation.
         $timezone = $same_schedule ? ($old['trip']['timezone'] ?? wp_timezone_string()) : (!$pickup_changed ? ($route['pickupTimezone'] ?? null) : null);
-        if ($route_changed || !is_string($timezone) || $timezone === '') {
-            if (!Rest::admin_provider_budget()) { return self::error('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
-            $measured = Rest::measure_route($points, null, true);
+        $needs_route = $route_changed || !is_string($timezone) || $timezone === '' || $new_transfer || ($needs_price && ($service_changed || !empty($route['trafficAware'])));
+        if ($needs_route) {
+            if (self::uses_new_pricing($vehicle)) {
+                // This helper budgets every provider attempt, including all
+                // service-base legs. A reprice never reuses stale base metrics.
+                $measured = Rest::measure_booking_route($points, $pre_clean['trip'], true);
+            } else {
+                if (!Rest::admin_provider_budget()) { return self::error('tuxano_rate', 'The route request limit has been reached. Please try again later.', 429); }
+                $measured = Rest::measure_route($points, null, true);
+            }
             if (is_wp_error($measured)) { return $measured; }
-            if (!$same_schedule || $pickup_changed) { $timezone = $measured['pickupTimezone']; }
-            if ($route_changed) { $route = $measured; }
-            else { $route['pickupTimezone'] = $measured['pickupTimezone']; $route['pickupTimezoneLabel'] = $measured['pickupTimezoneLabel']; }
+            if (!$same_schedule || $pickup_changed || $new_transfer) { $timezone = $measured['pickupTimezone']; }
+            if ($route_changed || $new_transfer || ($needs_price && ($service_changed || !empty($route['trafficAware'])))) {
+                $route = $measured; $route_refreshed = true;
+            } else {
+                $route['pickupTimezone'] = $measured['pickupTimezone']; $route['pickupTimezoneLabel'] = $measured['pickupTimezoneLabel'];
+            }
         }
-        $validation_quote = ['points' => $points, 'pickupTimezone' => $timezone, 'allowLegacyTime' => $same_schedule];
-        try { [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, $validation_quote, true, $snapshot); }
+        $validation_quote = ['points' => $points, 'route' => $route, 'pickupTimezone' => $timezone, 'allowLegacyTime' => $same_schedule && !$new_transfer];
+        if (self::uses_new_pricing($vehicle) && ($needs_price || self::uses_new_pricing($old['vehicleSnapshot'] ?? []))) { $validation_quote['trip'] = Rest::booking_quote_trip($pre_clean['trip']); }
+        try { [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, $validation_quote, true, $vehicle); }
         catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
-        $priced_changed = wp_json_encode(self::priced_fields($clean)) !== wp_json_encode(self::priced_fields($old));
-        $needs_price = $route_changed || $priced_changed || $reprice;
         $pricing = $row['pricing'];
         if ($needs_price) {
-            $vehicle = Vehicles::find((string) $clean['vehicle']) ?: $vehicle;
-            try {
-                // Revalidate capacity against the current selected vehicle when
-                // recalculating, instead of silently using a larger old limit.
-                [$clean, $vehicle, $pickup] = Rest::validate_booking($booking, $validation_quote, true, $vehicle);
-                $pricing = Pricing::calculate($vehicle, $route, $clean, Settings::get());
-            } catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
+            try { $pricing = Pricing::calculate($vehicle, $route, $clean, $pricing_settings); }
+            catch (\InvalidArgumentException $error) { return self::error('tuxano_edit_validation', $error->getMessage()); }
+            if (!hash_equals($pricing_revision, Settings::revision())) {
+                return self::error('tuxano_pricing_changed', 'Pricing changed while this estimate was being calculated. Review the current rates and try again.', 409);
+            }
         } elseif (isset($old['vehicleSnapshot']) && is_array($old['vehicleSnapshot'])) {
             $clean['vehicleSnapshot'] = $old['vehicleSnapshot'];
+        } else {
+            // A contact correction cannot upgrade an old record to a new fare
+            // model without the corresponding verified service-base legs.
+            unset($clean['vehicleSnapshot']);
         }
         $notes = sanitize_textarea_field($notes);
         $changes = self::diff($old, $clean);
@@ -93,8 +113,8 @@ final class BookingUpdates
             'update_mail' => $notify_customer ? 'pending' : 'disabled',
             'update_mail_revision' => $next, 'update_mail_started' => null,
         ];
-        $entry = ['changes' => $changes, 'beforePricing' => $row['pricing'], 'afterPricing' => $pricing, 'recalculated' => $needs_price, 'routeChanged' => $route_changed, 'notificationRequested' => $notify_customer];
-        if ($route_changed) { $entry['beforeRoute'] = $row['route']; $entry['afterRoute'] = $route; }
+        $entry = ['changes' => $changes, 'beforePricing' => $row['pricing'], 'afterPricing' => $pricing, 'recalculated' => $needs_price, 'routeChanged' => $route_changed || $route_refreshed, 'notificationRequested' => $notify_customer];
+        if ($route_changed || $route_refreshed) { $entry['beforeRoute'] = $row['route']; $entry['afterRoute'] = $route; }
         $saved = Database::revise($id, (int) $revision, $data, $entry);
         if (is_wp_error($saved)) { return $saved; }
         if (($saved['update_mail'] ?? '') === 'pending') { Notifications::send_update($id, $next); }
@@ -112,6 +132,11 @@ final class BookingUpdates
         // Very old records without a tariff snapshot can still receive contact
         // corrections. They cannot be repriced without a valid current tariff.
         return ['id' => (string) $booking['vehicle'], 'name' => $row['vehicle_name'], 'display' => $row['vehicle_name'], 'capacity' => max(1, min(100, (int) ($booking['passengers'] ?? 1))), 'luggageCapacity' => max(0, min(100, (int) ($booking['luggage'] ?? 0))), 'tariff' => []];
+    }
+
+    private static function uses_new_pricing(array $vehicle): bool
+    {
+        return isset($vehicle['tariff']['transfer'], $vehicle['tariff']['hourlyBooking']) && ($vehicle['tariff']['transfer']['version'] ?? null) === 2;
     }
 
     private static function priced_fields(array $booking): array

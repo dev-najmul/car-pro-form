@@ -1,0 +1,1152 @@
+{
+  "description": "Independent literal client examples and service-boundary expectations shared by JS and PHP calculator checks.",
+  "settings": {
+    "currency": "USD",
+    "min_hours": 3,
+    "max_hours": 24,
+    "max_stops": 5,
+    "meet_price": 50,
+    "first_seat_price": 75,
+    "additional_seat_price": 50,
+    "default_gratuity": 20
+  },
+  "cases": [
+    {
+      "name": "client_time_short_local",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "time",
+        "billablePickupMinutes": 5,
+        "roundedPassengerMinutes": 30,
+        "billableReturnMinutes": 0,
+        "billableMinutes": 35,
+        "chargedMinutes": 60
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 30,
+        "total": 180
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time"
+        }
+      }
+    },
+    {
+      "name": "client_time_notre_dame",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 6240,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 7200
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 2700
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 525,
+        "waitingCharge": 0,
+        "transportation": 525,
+        "pricingMode": "time",
+        "billablePickupMinutes": 90,
+        "roundedPassengerMinutes": 105,
+        "billableReturnMinutes": 15,
+        "billableMinutes": 210,
+        "chargedMinutes": 210
+      },
+      "expectedPricing": {
+        "transportation": 525,
+        "tip": 105,
+        "total": 630
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time"
+        }
+      }
+    },
+    {
+      "name": "client_mileage_short_local",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "mileage",
+        "billablePickupMiles": 0,
+        "passengerMiles": 30,
+        "billableReturnMiles": 0,
+        "billableMiles": 30
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 30,
+        "total": 180
+      }
+    },
+    {
+      "name": "client_mileage_notre_dame",
+      "route": {
+        "distanceMeters": 155301.696,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 197949.312,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 56166.1056,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 643.2,
+        "waitingCharge": 0,
+        "transportation": 643.2,
+        "pricingMode": "mileage",
+        "billablePickupMiles": 103,
+        "passengerMiles": 96.5,
+        "billableReturnMiles": 14.9,
+        "billableMiles": 214.4
+      },
+      "expectedPricing": {
+        "transportation": 643.2,
+        "tip": 128.64,
+        "total": 771.84
+      }
+    },
+    {
+      "name": "time_ignores_legacy_money_minimum_and_mileage",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "time"
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 30,
+        "total": 180
+      },
+      "tariff": {
+        "base": 700,
+        "perMile": 80,
+        "perDrivingMinute": 90,
+        "minimum": 9999,
+        "transfer": {
+          "mode": "time"
+        }
+      }
+    },
+    {
+      "name": "mileage_allowances_are_not_pooled",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 8046.72,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 48280.32,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 120,
+        "waitingCharge": 0,
+        "transportation": 120,
+        "pricingMode": "mileage",
+        "billablePickupMiles": 0,
+        "billableReturnMiles": 10,
+        "billableMiles": 40
+      },
+      "expectedPricing": {
+        "transportation": 120,
+        "tip": 24,
+        "total": 144
+      },
+      "tariff": {
+        "minimum": 0
+      }
+    },
+    {
+      "name": "mileage_keeps_full_decimal_precision",
+      "route": {
+        "distanceMeters": 1986.8317286400002,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 32187.0409344,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 32187.0409344,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 4.32,
+        "waitingCharge": 0,
+        "transportation": 4.32,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 4.32,
+        "tip": 0.86,
+        "total": 5.18
+      },
+      "tariff": {
+        "perMile": 3.5,
+        "minimum": 0
+      }
+    },
+    {
+      "name": "time_does_not_round_pickup_or_return_seconds",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 3600,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 1801.0
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 1801.0
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150.08,
+        "waitingCharge": 0,
+        "transportation": 150.08,
+        "pricingMode": "time",
+        "billablePickupMinutes": 0.016666666666666666,
+        "roundedPassengerMinutes": 60,
+        "billableReturnMinutes": 0.016666666666666666,
+        "chargedMinutes": 60.03333333333333
+      },
+      "expectedPricing": {
+        "transportation": 150.08,
+        "tip": 30.02,
+        "total": 180.1
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time"
+        }
+      }
+    },
+    {
+      "name": "time_exact_increment_does_not_advance",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 900,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 1800
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 1800
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 37.5,
+        "waitingCharge": 0,
+        "transportation": 37.5,
+        "pricingMode": "time",
+        "roundedPassengerMinutes": 15
+      },
+      "expectedPricing": {
+        "transportation": 37.5,
+        "tip": 7.5,
+        "total": 45
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "minimumMinutes": 1
+        }
+      }
+    },
+    {
+      "name": "time_one_fractional_second_over_increment_rounds_up",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 900.0001,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 1800
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 1800
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 75,
+        "waitingCharge": 0,
+        "transportation": 75,
+        "pricingMode": "time",
+        "roundedPassengerMinutes": 30
+      },
+      "expectedPricing": {
+        "transportation": 75,
+        "tip": 15,
+        "total": 90
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "minimumMinutes": 1
+        }
+      }
+    },
+    {
+      "name": "time_rounds_aggregate_passenger_route_once",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 840,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 1800
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 1800
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 0
+            },
+            {
+              "waitMinutes": 0
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 37.5,
+        "waitingCharge": 0,
+        "transportation": 37.5,
+        "pricingMode": "time",
+        "roundedPassengerMinutes": 15
+      },
+      "expectedPricing": {
+        "transportation": 37.5,
+        "tip": 7.5,
+        "total": 45
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "minimumMinutes": 1
+        }
+      }
+    },
+    {
+      "name": "waiting_never_enters_passenger_rounding",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 840,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 1800
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 1800
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 15
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 37.5,
+        "waitingCharge": 37.5,
+        "transportation": 75,
+        "pricingMode": "time",
+        "roundedPassengerMinutes": 15
+      },
+      "expectedPricing": {
+        "transportation": 75,
+        "tip": 15,
+        "total": 90
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "minimumMinutes": 1
+        }
+      }
+    },
+    {
+      "name": "category_time_settings_apply_independently",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1140,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2400
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 2700
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 225,
+        "waitingCharge": 0,
+        "transportation": 225,
+        "pricingMode": "time",
+        "billableMinutes": 40,
+        "chargedMinutes": 90
+      },
+      "expectedPricing": {
+        "transportation": 225,
+        "tip": 45,
+        "total": 270
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "pickupFreeMinutes": 25,
+          "returnFreeMinutes": 40,
+          "roundingMinutes": 10,
+          "minimumMinutes": 90
+        }
+      }
+    },
+    {
+      "name": "hourly_uses_independent_booked_rates",
+      "route": {
+        "distanceMeters": 32186.88,
+        "durationSeconds": 1800
+      },
+      "booking": {
+        "trip": {
+          "service": "hourly",
+          "hours": 4,
+          "stops": [
+            {
+              "waitMinutes": 15
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 640,
+        "waitingCharge": 15,
+        "transportation": 655,
+        "pricingMode": "hourly"
+      },
+      "expectedPricing": {
+        "transportation": 655,
+        "tip": 131,
+        "total": 786
+      }
+    },
+    {
+      "name": "hourly_charges_driving_above_booked_hours",
+      "route": {
+        "distanceMeters": 32186.88,
+        "durationSeconds": 18000
+      },
+      "booking": {
+        "trip": {
+          "service": "hourly",
+          "hours": 4,
+          "stops": [
+            {
+              "waitMinutes": 15
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 790,
+        "waitingCharge": 15,
+        "transportation": 805,
+        "pricingMode": "hourly"
+      },
+      "expectedPricing": {
+        "transportation": 805,
+        "tip": 161,
+        "total": 966
+      }
+    },
+    {
+      "name": "hourly_does_not_require_base_legs",
+      "route": {
+        "distanceMeters": 0.0,
+        "durationSeconds": 0
+      },
+      "booking": {
+        "trip": {
+          "service": "hourly",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 450,
+        "waitingCharge": 0,
+        "transportation": 450,
+        "pricingMode": "hourly"
+      },
+      "expectedPricing": {
+        "transportation": 450,
+        "tip": 90,
+        "total": 540
+      }
+    },
+    {
+      "name": "legacy_transfer_snapshot_keeps_original_formula",
+      "route": {
+        "distanceMeters": 32186.88,
+        "durationSeconds": 1800
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 15
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 195,
+        "waitingCharge": 15,
+        "transportation": 210
+      },
+      "expectedPricing": {
+        "transportation": 210,
+        "tip": 42,
+        "total": 252
+      },
+      "legacyTariff": {
+        "base": 65,
+        "perMile": 2,
+        "perDrivingMinute": 3,
+        "minimum": 100,
+        "perWaitingMinute": 1,
+        "hourly": 95
+      }
+    },
+    {
+      "name": "legacy_hourly_snapshot_keeps_original_formula",
+      "route": {
+        "distanceMeters": 32186.88,
+        "durationSeconds": 1800
+      },
+      "booking": {
+        "trip": {
+          "service": "hourly",
+          "hours": 4,
+          "stops": [
+            {
+              "waitMinutes": 15
+            }
+          ]
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 520,
+        "waitingCharge": 22.5,
+        "transportation": 542.5
+      },
+      "expectedPricing": {
+        "transportation": 542.5,
+        "tip": 108.5,
+        "total": 651
+      },
+      "legacyTariff": {
+        "base": 75,
+        "perMile": 3,
+        "perDrivingMinute": 3,
+        "minimum": 125,
+        "perWaitingMinute": 1.5,
+        "hourly": 115
+      }
+    },
+    {
+      "name": "waiting_extras_and_gratuity_are_charged_once",
+      "route": {
+        "distanceMeters": 155301.696,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 197949.312,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 56166.1056,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 5
+            },
+            {
+              "waitMinutes": 10
+            }
+          ]
+        },
+        "gratuity": "20",
+        "child": true,
+        "carSeats": 1,
+        "boosterSeats": 1,
+        "meet": true
+      },
+      "expectedFare": {
+        "drivingCharge": 643.2,
+        "waitingCharge": 37.5,
+        "transportation": 680.7,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 680.7,
+        "tip": 136.14,
+        "total": 991.84
+      }
+    },
+    {
+      "name": "customer_custom_gratuity_uses_transportation_only",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 5
+            }
+          ]
+        },
+        "gratuity": "custom",
+        "custom": 12.5,
+        "child": false,
+        "carSeats": 1,
+        "boosterSeats": 2
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 12.5,
+        "transportation": 162.5,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 162.5,
+        "tip": 20.31,
+        "total": 182.81
+      }
+    },
+    {
+      "name": "tip_in_person_does_not_add_gratuity",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20",
+        "inPerson": true
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 0,
+        "total": 150
+      }
+    },
+    {
+      "name": "new_transfer_rounds_separate_money_lines_consistently",
+      "route": {
+        "distanceMeters": 3225.125376,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 32186.88,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 32186.88,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 5
+            }
+          ]
+        },
+        "gratuity": "20",
+        "inPerson": true
+      },
+      "expectedFare": {
+        "drivingCharge": 2,
+        "waitingCharge": 0,
+        "transportation": 2,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 2,
+        "tip": 0,
+        "total": 2
+      },
+      "tariff": {
+        "perMile": 1,
+        "minimum": 0,
+        "perWaitingMinute": 0.0008
+      }
+    },
+    {
+      "name": "legacy_rounding_stage_is_preserved",
+      "route": {
+        "distanceMeters": 3225.125376,
+        "durationSeconds": 0
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": [
+            {
+              "waitMinutes": 5
+            }
+          ]
+        },
+        "gratuity": "20",
+        "inPerson": true
+      },
+      "expectedFare": {
+        "drivingCharge": 2,
+        "waitingCharge": 0,
+        "transportation": 2.01
+      },
+      "expectedPricing": {
+        "transportation": 2.01,
+        "tip": 0,
+        "total": 2.01
+      },
+      "legacyTariff": {
+        "base": 0,
+        "perMile": 1,
+        "perDrivingMinute": 0,
+        "minimum": 0,
+        "perWaitingMinute": 0.0008,
+        "hourly": 0
+      }
+    },
+    {
+      "name": "explicit_zero_rates_keep_optional_extras",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20",
+        "meet": true
+      },
+      "expectedFare": {
+        "drivingCharge": 0,
+        "waitingCharge": 0,
+        "transportation": 0,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 0,
+        "tip": 0,
+        "total": 50
+      },
+      "tariff": {
+        "perMile": 0,
+        "perDrivingMinute": 0,
+        "minimum": 0,
+        "perWaitingMinute": 0,
+        "hourly": 0
+      }
+    },
+    {
+      "name": "mileage_minimum_applies_after_combined_legs",
+      "route": {
+        "distanceMeters": 64373.76,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 40233.6,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 32186.88,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "mileage",
+        "billableMiles": 45
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 30,
+        "total": 180
+      }
+    },
+    {
+      "name": "time_allowances_are_not_pooled",
+      "route": {
+        "distanceMeters": 48280.32,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 24140.16,
+            "durationSeconds": 2700
+          },
+          "return": {
+            "distanceMeters": 16093.44,
+            "durationSeconds": 2700
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 150,
+        "waitingCharge": 0,
+        "transportation": 150,
+        "pricingMode": "time",
+        "billablePickupMinutes": 30,
+        "billableReturnMinutes": 0,
+        "billableMinutes": 60
+      },
+      "expectedPricing": {
+        "transportation": 150,
+        "tip": 30,
+        "total": 180
+      },
+      "tariff": {
+        "transfer": {
+          "mode": "time",
+          "pickupFreeMinutes": 15,
+          "returnFreeMinutes": 60,
+          "minimumMinutes": 1
+        }
+      }
+    },
+    {
+      "name": "mileage_allowance_fraction_survives_until_final_money",
+      "route": {
+        "distanceMeters": 0.0,
+        "durationSeconds": 1800,
+        "transferLegs": {
+          "pickup": {
+            "distanceMeters": 32188.489344,
+            "durationSeconds": 2100
+          },
+          "return": {
+            "distanceMeters": 32186.88,
+            "durationSeconds": 900
+          }
+        }
+      },
+      "booking": {
+        "trip": {
+          "service": "transfer",
+          "hours": 3,
+          "stops": []
+        },
+        "gratuity": "20"
+      },
+      "expectedFare": {
+        "drivingCharge": 0.01,
+        "waitingCharge": 0,
+        "transportation": 0.01,
+        "pricingMode": "mileage"
+      },
+      "expectedPricing": {
+        "transportation": 0.01,
+        "tip": 0,
+        "total": 0.01
+      },
+      "tariff": {
+        "perMile": 10,
+        "minimum": 0
+      }
+    }
+  ],
+  "baseTariff": {
+    "base": 0,
+    "perMile": 3,
+    "perDrivingMinute": 2.5,
+    "minimum": 150,
+    "perWaitingMinute": 2.5,
+    "hourly": 150,
+    "transfer": {
+      "version": 2,
+      "mode": "mileage",
+      "pickupFreeMinutes": 30,
+      "returnFreeMinutes": 30,
+      "roundingMinutes": 15,
+      "minimumMinutes": 60,
+      "pickupFreeMiles": 20,
+      "returnFreeMiles": 20
+    },
+    "hourlyBooking": {
+      "hourly": 150,
+      "perMile": 2,
+      "perWaitingMinute": 1
+    }
+  }
+}

@@ -447,7 +447,7 @@ export class MapsClient {
     const cancel = () => controller.abort();
     if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, globalThis.TuxanoBooking?.restUrl ? 35000 : 15000);
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, globalThis.TuxanoBooking?.settings?.transferPricing === true && request?.trip?.service === 'transfer' ? 90000 : globalThis.TuxanoBooking?.restUrl ? 35000 : 15000);
     let response;
     try {
       const runtime = globalThis.TuxanoBooking;
@@ -472,6 +472,10 @@ export class MapsClient {
       let valid = typeof data.pickupTimezone === 'string' && data.pickupTimezone.length <= 100 && /^(?:UTC|[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){1,4})$/.test(data.pickupTimezone);
       try { if (valid) new Intl.DateTimeFormat('en-US', { timeZone: data.pickupTimezone }).format(0); } catch { valid = false; }
       if (!valid || typeof data.pickupTimezoneLabel !== 'string' || !data.pickupTimezoneLabel.trim() || data.pickupTimezoneLabel !== data.pickupTimezoneLabel.trim() || data.pickupTimezoneLabel.length > 120 || /[\u0000-\u001f\u007f<>\u202a-\u202e\u2066-\u2069]/u.test(data.pickupTimezoneLabel)) throw new Error('The pickup time zone could not be verified. Please select your pickup again and try again.');
+    }
+    if (globalThis.TuxanoBooking?.settings?.transferPricing === true && request?.trip?.service === 'transfer') {
+      const validLeg = leg => leg && typeof leg === 'object' && !Array.isArray(leg) && Number.isFinite(leg.distanceMeters) && leg.distanceMeters >= 0 && leg.distanceMeters <= 100000000 && Number.isFinite(leg.durationSeconds) && leg.durationSeconds >= 0 && leg.durationSeconds <= 31536000;
+      if (data.trafficAware !== true || !validLeg(data.transferLegs?.pickup) || !validLeg(data.transferLegs?.return) || typeof data.quoteToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.quoteToken)) throw new Error('The complete transfer estimate could not be verified. Please calculate your route again.');
     }
     return data;
   }
