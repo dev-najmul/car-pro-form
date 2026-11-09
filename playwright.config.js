@@ -13,7 +13,7 @@ export default defineConfig({
   retries: 0,
   timeout: 45_000,
   expect: { timeout: 7_500 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [["list"], ["html", { open: "never" }], ...(process.env.GITHUB_ACTIONS ? [["github"]] : [])],
   use: {
     baseURL: "http://127.0.0.1:4173",
     browserName: "chromium",

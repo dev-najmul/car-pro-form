@@ -3,9 +3,9 @@ name: Verify WordPress plugin
 on:
   push:
     branches: [main]
-    paths: ['wordpress/**', 'app.js', 'maps.js', 'session-client.js', 'pickup-map.js', 'countries.js', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css', 'time-picker.js', 'time-picker.css', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'package*.json', '.github/workflows/wordpress.yml']
+    paths: ['wordpress/**', 'app.js', 'maps.js', 'session-client.js', 'pickup-map.js', 'countries.js', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css', 'time-picker.js', 'time-picker.css', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'playwright.config.js', 'package*.json', '.github/workflows/wordpress.yml']
   pull_request:
-    paths: ['wordpress/**', 'app.js', 'maps.js', 'session-client.js', 'pickup-map.js', 'countries.js', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css', 'time-picker.js', 'time-picker.css', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'package*.json', '.github/workflows/wordpress.yml']
+    paths: ['wordpress/**', 'app.js', 'maps.js', 'session-client.js', 'pickup-map.js', 'countries.js', 'quick-booking.js', 'quick-handoff.js', 'quick-booking.css', 'time-picker.js', 'time-picker.css', 'pricing.js', 'styles.css', 'assets/**', 'scripts/build-wordpress.mjs', 'tests/**', 'playwright.config.js', 'package*.json', '.github/workflows/wordpress.yml']
   workflow_dispatch:
 
 permissions:
