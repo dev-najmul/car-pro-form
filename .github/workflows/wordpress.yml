@@ -15,6 +15,8 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      TUXANO_CI_WP_CLI: /tmp/tuxano-wp-cli-2.12.0.phar
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +47,6 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: mysqli, mbstring, zip
-          tools: wp-cli
           coverage: none
       - run: npm ci && npm run check && npm run test:unit && npm run build:wordpress
       - name: Lint all plugin PHP
@@ -53,12 +54,18 @@ jobs:
         run: |
           set -euo pipefail
           find wordpress/tuxano-booking -type f -name '*.php' -print0 | xargs -0 -r -n 1 php -l
+      - name: Prepare checksum-pinned WP-CLI 2.12.0
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 https://raw.githubusercontent.com/wp-cli/builds/4eb8e13e4d49f604aae2448e40a3c0dcaa934cfa/phar/wp-cli.phar --output "$TUXANO_CI_WP_CLI"
+          printf '%s  %s\n' ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c "$TUXANO_CI_WP_CLI" | sha256sum --check --strict
+          php "$TUXANO_CI_WP_CLI" --version
       - name: Install WordPress and activate the actual packaged ZIP
         env:
           WP_TEST_VERSION: ${{ matrix.wordpress }}
         run: |
           set -euo pipefail
-          for tool in php python3 curl wp; do
+          for tool in php python3 curl; do
             command -v "$tool" >/dev/null || { echo "::error::Required WordPress CI tool is unavailable: $tool"; exit 1; }
           done
           php -r '$db=new mysqli("127.0.0.1","root","tuxano-ci-test-only",null,3306);if(!$db->query("CREATE DATABASE tuxano_ci")){exit(1);}'
@@ -73,24 +80,24 @@ jobs:
           mkdir /tmp/tuxano-core
           python3 -m zipfile -e /tmp/tuxano-core.zip /tmp/tuxano-core
           mv /tmp/tuxano-core/wordpress /tmp/tuxano-wp
-          wp core verify-checksums --path=/tmp/tuxano-wp
-          wp config create --path=/tmp/tuxano-wp --dbname=tuxano_ci --dbuser=root --dbpass=tuxano-ci-test-only --dbhost=127.0.0.1:3306
-          wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/tuxano-wp
-          wp config set DISABLE_WP_CRON true --raw --path=/tmp/tuxano-wp
-          wp core install --path=/tmp/tuxano-wp --url=http://127.0.0.1:8085 --title='Tuxano CI' --admin_user=tuxano_ci --admin_password="$(openssl rand -hex 24)" --admin_email=ci@example.invalid --skip-email
-          wp plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.6.1.zip" --activate --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" core verify-checksums --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" config create --path=/tmp/tuxano-wp --dbname=tuxano_ci --dbuser=root --dbpass=tuxano-ci-test-only --dbhost=127.0.0.1:3306
+          php "$TUXANO_CI_WP_CLI" config set WP_ENVIRONMENT_TYPE local --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" config set DISABLE_WP_CRON true --raw --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" core install --path=/tmp/tuxano-wp --url=http://127.0.0.1:8085 --title='Tuxano CI' --admin_user=tuxano_ci --admin_password="$(openssl rand -hex 24)" --admin_email=ci@example.invalid --skip-email
+          php "$TUXANO_CI_WP_CLI" plugin install "$GITHUB_WORKSPACE/releases/tuxano-booking-2.6.1.zip" --activate --path=/tmp/tuxano-wp
       - name: Test settings, native fleet CRUD, pricing, REST, persistence and notifications
         run: |
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-data.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-data.php" --path=/tmp/tuxano-wp
           php "$GITHUB_WORKSPACE/tests/wordpress-pricing-v2.php"
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-pricing-upgrade.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-routing-v2.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-integration.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-updates.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-email-logo.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-notifications.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-availability.php" --path=/tmp/tuxano-wp
-          wp eval-file "$GITHUB_WORKSPACE/tests/wordpress-timezones.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-pricing-upgrade.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-routing-v2.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-integration.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-updates.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-email-logo.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-notifications.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-availability.php" --path=/tmp/tuxano-wp
+          php "$TUXANO_CI_WP_CLI" eval-file "$GITHUB_WORKSPACE/tests/wordpress-timezones.php" --path=/tmp/tuxano-wp
       - if: matrix.php == '8.3'
         run: npx playwright install --with-deps chromium && npm test
       - if: matrix.php == '8.3'
