@@ -101,6 +101,7 @@ test('service switching retains route stops but Hourly has no hidden waiting cha
   await expect(page.getByTestId('service-end')).toHaveText('2:00 PM');
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   await expect(page.getByTestId('total-duration')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'View route on Google Maps', exact: true })).toBeVisible();
   await expect.poll(() => controls.get(page).routes.at(-1)?.trip).toMatchObject({ service: 'hourly', waitMinutes: [0] });
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);

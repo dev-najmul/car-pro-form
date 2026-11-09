@@ -44,6 +44,6 @@ All **225 Node checks** passed. The ten native backend suites passed on both **P
 
 Review caught and fixed duplicate map controls during GPS preview and a service rerender. Three affected regressions passed after the correction. Stop-bearing quick intents use protocol version 2 so a cached older consumer rejects them instead of silently dropping the stops; new consumers continue accepting older no-stop intents. Both updated stop handoff journeys passed.
 
-The final ZIP contains **57 files / 25,039,765 bytes**, SHA-256 **`738baad7bb91862aa1f1a8aec7162db53c672a968721f21ecccd53395cf9a8ac`**. CRC, complete plugin-source and twelve shared frontend-file byte parity passed. Original images and geographic timezone data remain unchanged. Desktop and phone screenshots were inspected; temporary helpers, credentials and uploaded client documents are excluded.
+The final ZIP contains **57 files / 25,039,775 bytes**, SHA-256 **`e2c136aa0c179e4a582e822b5374b48e3c56e35cc10a90f5934bdb3f7ffe9ddb`**. CRC, complete plugin-source and twelve shared frontend-file byte parity passed. Original images and geographic timezone data remain unchanged. Desktop and phone screenshots were inspected; temporary helpers, credentials and uploaded client documents are excluded.
 
 A real iPhone Safari permission/picker session, live Google-provider acceptance and live-site installation must not be inferred from controlled automated browser tests. This ZIP is prepared for manual replacement; the verified pinned download and final hosted checks will be recorded below.

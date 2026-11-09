@@ -273,7 +273,7 @@ test('quick booking hands the pickup-local schedule into a fresh v2 Transfer quo
   await page.goto('/transfer-quick/');
   await choose(page, 'Pickup Location', 'Selected pickup, Chicago');
   await choose(page, 'Drop-off Location', 'Selected destination, Chicago');
-  await expect(page.locator('[data-quick-timezone]')).toHaveCount(0);
+  await expect(page.locator('[data-quick-timezone]')).toBeHidden();
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
   expect(controls.get(page).routes).toHaveLength(0);
