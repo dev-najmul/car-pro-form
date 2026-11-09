@@ -51,7 +51,7 @@ async function passengers(page) {
   await choose(page, 'Drop-off location', 'Selected airport, Chicago');
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await expect(page).toHaveURL(/#passengers$/);

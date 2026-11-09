@@ -64,7 +64,7 @@ async function originalTrip(page) {
   await selectPlace(page, 'Drop-off location', 'Patuakhali, Bangladesh');
   await page.getByLabel('Date', { exact: true }).fill('2027-11-12');
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 
 async function respond(page, coords = precise, age = 0) {
@@ -112,7 +112,7 @@ test('a 100 km PC estimate offers an exact map correction without accepting its 
   expect(controls.get(page).requests).toHaveLength(before);
   await mapConfirm(page).click();
   await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: 22.7095, longitude: 90.3667 });
-  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  await expect(page.locator('[data-selected-place="pickup"]')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toBeVisible();
 });
 
@@ -147,8 +147,9 @@ test('map search shows the selected area and requires confirmation before replac
   await expect(pickup(page)).toHaveValue(query);
   await expect(mapPicker(page)).toHaveCount(0);
   await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ placeId: pointId(query) });
-  const selectedLink = new URL(await page.getByRole('link', { name: 'View selected pickup location in Google Maps' }).getAttribute('href'));
-  expect(selectedLink.searchParams.get('query_place_id')).toBe(pointId(query));
+  await expect(page.getByRole('link', { name: 'View selected pickup location in Google Maps' })).toHaveCount(0);
+  const selectedLink = new URL(await page.getByRole('link', { name: 'View route on Google Maps' }).getAttribute('href'));
+  expect(selectedLink.searchParams.get('origin_place_id')).toBe(pointId(query));
   expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).getCenter().lat())).toBe(22.7095);
   await expect(page).toHaveURL(/#trip$/);
 
@@ -205,8 +206,10 @@ test('opening and cancelling the map invalidates late GPS and map callbacks with
 
 test('map selection survives a service rerender but manual pickup typing cancels it', async ({ page }) => {
   await originalTrip(page); await openMap(page);
+  await expect(page.locator('.location-map-open[data-map-field="pickup"]')).toBeHidden();
   await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
   await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
+  await expect(page.locator('.location-map-open[data-map-field="pickup"]')).toBeHidden();
   await expect(mapConfirm(page)).toBeEnabled();
   await expect(mapPicker(page)).toContainText('22.70950, 90.36670');
   await pickup(page).fill('My different pickup');
@@ -249,7 +252,7 @@ test('map picker fits a phone and confirmed coordinate pickup requires reselecti
   await page.evaluate(() => window.__mapPickerMock.click(22.7095, 90.3667));
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await mapConfirm(page).click();
-  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  await expect(page.locator('[data-selected-place="pickup"]')).toBeHidden();
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')));
   expect(saved.trip.pickupPlace).toBeNull();
   expect(saved.trip.pickup).toBe('');
@@ -284,7 +287,7 @@ test('precise device position requires confirmation and routes original coordina
   await expect.poll(() => controls.get(page).requests.at(-1)?.origin).toEqual({ latitude: precise.latitude, longitude: precise.longitude });
   expect(controls.get(page).requests.at(-1).destination).toEqual({ placeId: pointId('Patuakhali, Bangladesh') });
   expect(controls.get(page).requests.at(-1).origin).not.toHaveProperty('placeId');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   const stored = await page.evaluate(() => sessionStorage.getItem('tuxano-booking-v1'));
   expect(stored).not.toContain('Nathullabad nearby landmark');
   expect(stored).not.toContain('nearby-landmark-id');
@@ -299,7 +302,7 @@ test('an imprecise device result with no usable nearby place keeps the confirmed
   await expect(mapPicker(page)).toContainText(/approximate|exact pickup/i);
   await expect(confirm(page)).toHaveCount(0);
   await expect(pickup(page)).toHaveValue('Original confirmed pickup');
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
   expect(controls.get(page).requests).toHaveLength(initialRequests);
   const lookups = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'nearby'));
   expect(lookups.map(call => call.request.locationRestriction.radius)).toEqual([500, 1500]);
@@ -415,7 +418,7 @@ test('reload requires a new pickup for both confirmed and legacy coordinates whi
   await page.reload();
   await expect(pickup(page)).toHaveValue('');
   await expect(page.getByLabel('Drop-off location', { exact: true })).toHaveValue('Patuakhali, Bangladesh');
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
 
   await page.evaluate(() => {
     const saved = JSON.parse(sessionStorage.getItem('tuxano-booking-v1'));
@@ -425,12 +428,12 @@ test('reload requires a new pickup for both confirmed and legacy coordinates whi
   });
   await page.reload();
   await expect(pickup(page)).toHaveValue('');
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await selectPlace(page, 'Pickup location', 'A restored manual pickup');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.reload();
   await expect(pickup(page)).toHaveValue('A restored manual pickup');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(controls.get(page).requests.at(-1).origin).toEqual({ placeId: pointId('A restored manual pickup') });
 });
 

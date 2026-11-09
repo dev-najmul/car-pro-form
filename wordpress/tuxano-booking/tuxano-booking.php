@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tuxano Booking
  * Description: Executive transportation requests, route-based pricing, fleet management and private booking administration.
- * Version: 2.6.0
+ * Version: 2.6.1
  * Plugin URI: https://farhanrajnajmul.com/
  * Requires at least: 6.6
  * Requires PHP: 7.4
@@ -16,7 +16,7 @@ namespace Tuxano\Booking;
 
 defined('ABSPATH') || exit;
 
-define('TUXANO_BOOKING_VERSION', '2.6.0');
+define('TUXANO_BOOKING_VERSION', '2.6.1');
 define('TUXANO_BOOKING_FILE', __FILE__);
 define('TUXANO_BOOKING_DIR', plugin_dir_path(__FILE__));
 define('TUXANO_BOOKING_URL', plugin_dir_url(__FILE__));
@@ -30,6 +30,7 @@ register_activation_hook(__FILE__, static function (bool $network_wide = false):
         wp_die(esc_html__('Activate Tuxano Booking separately for each site. Network-wide activation is not supported.', 'tuxano-booking'), '', ['back_link' => true]);
     }
     Database::install();
+    Settings::upgrade_form_limits();
     Vehicles::register();
     Vehicles::seed();
     if (!wp_next_scheduled('tuxano_booking_maintenance')) {
@@ -43,6 +44,7 @@ add_action('plugins_loaded', static function (): void {
     if (get_option('tuxano_booking_db_version') !== TUXANO_BOOKING_VERSION) {
         Database::install();
     }
+    Settings::upgrade_form_limits();
     Admin::register();
     Frontend::register();
 });

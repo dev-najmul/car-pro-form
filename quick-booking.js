@@ -1,6 +1,7 @@
 import { MapsClient, mountAutocomplete, assertSameCountry, countryCodeOf, requestDeviceLocation, normalizeDevicePosition, googlePlaceUrl } from './maps.js';
 import { createQuickHandoff, quickDestination, quickWebsiteClock, validateQuickPickupTime } from './quick-handoff.js';
 import { mountPickupMap } from './pickup-map.js';
+import { mountTimePicker } from './time-picker.js';
 import { bookingFetch, fetchBookingSession } from './session-client.js';
 
 const sessions = new Map();
@@ -60,15 +61,19 @@ async function initialize(container) {
     const minimum = Number.isInteger(session.settings.minHours) ? Math.max(3, Math.min(24, session.settings.minHours)) : 3;
     const maximum = Number.isInteger(session.settings.maxHours) ? Math.max(minimum, Math.min(24, session.settings.maxHours)) : 24;
     const initialHours = Math.min(maximum, Math.max(minimum, 3));
+    const maxStops = Number.isInteger(session.settings.maxStops) ? Math.max(0, Math.min(5, session.settings.maxStops)) : 5;
+    const waitOptions = [15, 30, 45, 60, 75, 90, 120];
     const timezoneEnabled = session.settings.pickupTimezones === true;
     const defaultTimezone = timezoneEnabled ? 'America/New_York' : session.settings.timezone;
     const today = quickWebsiteClock(defaultTimezone).slice(0, 10);
     const locationField = (key, title, locate = false) => `<label class="tuxano-quick-booking-field" for="${id}-${key}"><span class="tuxano-quick-booking-label">${title}</span><span class="tuxano-quick-booking-control location-input">${icon('pin')}<input id="${id}-${key}" class="input" type="text" data-quick-place="${key}" aria-label="${title}" placeholder="${title}" autocomplete="off" maxlength="256" required>${locate ? `<button type="button" class="tuxano-quick-booking-locate" data-quick-locate aria-label="Use current location">${icon('target')}</button>` : ''}</span></label>`;
     const picker = (key, title, type, symbol) => `<label class="tuxano-quick-booking-field" data-quick-picker for="${id}-${key}"><span class="tuxano-quick-booking-label">${title}</span><span class="tuxano-quick-booking-control">${icon(symbol)}<span data-quick-display="${key}" aria-hidden="true">${title}</span><input id="${id}-${key}" class="input tuxano-quick-booking-native-picker" data-quick-field="${key}" aria-label="${key === 'time' ? 'Pickup time' : title}" type="${type}" ${key === 'date' ? `min="${today}"` : ''} required></span></label>`;
-    container.innerHTML = `<form class="tuxano-quick-booking-form" novalidate><h2 class="tuxano-quick-booking-title">PLAN YOUR RIDE</h2><div class="tuxano-quick-booking-segments" role="group" aria-label="Service type"><button type="button" data-quick-service="transfer" aria-pressed="true">TRANSFER</button><button type="button" data-quick-service="hourly" aria-pressed="false">HOURLY</button></div>${locationField('pickup', 'Pickup Location', true)}<div class="tuxano-quick-booking-device" data-quick-device hidden></div>${locationField('dropoff', 'Drop-off Location')}<div class="tuxano-quick-booking-field tuxano-quick-booking-hours" data-quick-hours hidden><div class="tuxano-quick-booking-control">${icon('clock')}<label class="tuxano-quick-booking-hours-title" for="${id}-hours">Number of hours</label><div class="tuxano-quick-booking-stepper"><button type="button" data-quick-hours-change="-1" aria-label="Decrease hours" disabled>−</button><span class="tuxano-quick-booking-hours-editor"><input id="${id}-hours" class="input" type="number" inputmode="numeric" min="${minimum}" max="${maximum}" step="1" value="${initialHours}" aria-label="Hours" aria-describedby="${id}-hours-help ${id}-hours-error" data-quick-field="hours" disabled required><span aria-hidden="true">hours</span></span><button type="button" data-quick-hours-change="1" aria-label="Increase hours">+</button></div></div><p id="${id}-hours-help" class="tuxano-quick-booking-hours-limit">${minimum}-hour minimum (max ${maximum} hours)</p><p id="${id}-hours-error" class="tuxano-quick-booking-hours-error" data-quick-hours-error role="alert" hidden></p><div class="tuxano-quick-booking-hours-help"><strong>Need less or more than 24 hours or multiple day service?</strong><span>Please add this in your Trip Notes section when completing your reservation.</span></div></div><div class="tuxano-quick-booking-date-time">${picker('date', 'Date', 'date', 'calendar')}${picker('time', 'Time', 'time', 'clock')}</div><p class="tuxano-quick-booking-timezone" data-quick-timezone ${timezoneEnabled ? '' : 'hidden'}>Pickup time: Eastern Time. Choose your pickup to confirm its time zone.</p><p class="tuxano-quick-booking-error" role="alert" hidden></p><button type="submit" class="tuxano-quick-booking-submit">CHECK PRICE</button><p class="tuxano-quick-booking-note">${icon('shield')}<span>Estimated pricing shown before reservation request.</span></p></form>`;
+    container.innerHTML = `<form class="tuxano-quick-booking-form" novalidate><h2 class="tuxano-quick-booking-title">PLAN YOUR RIDE</h2><div class="tuxano-quick-booking-segments" role="group" aria-label="Service type"><button type="button" data-quick-service="transfer" aria-pressed="true">TRANSFER</button><button type="button" data-quick-service="hourly" aria-pressed="false">HOURLY</button></div>${locationField('pickup', 'Pickup Location', true)}<div class="tuxano-quick-booking-device" data-quick-device hidden></div><div class="tuxano-quick-booking-stops" data-quick-stops></div><button class="tuxano-quick-booking-add-stop" type="button" data-quick-add-stop ${maxStops ? '' : 'disabled'}><span aria-hidden="true">+</span> Add stop</button>${locationField('dropoff', 'Drop-off Location')}<div class="tuxano-quick-booking-field tuxano-quick-booking-hours" data-quick-hours hidden><div class="tuxano-quick-booking-control">${icon('clock')}<label class="tuxano-quick-booking-hours-title" for="${id}-hours">Number of hours</label><div class="tuxano-quick-booking-stepper"><button type="button" data-quick-hours-change="-1" aria-label="Decrease hours" disabled>−</button><span class="tuxano-quick-booking-hours-editor"><input id="${id}-hours" class="input" type="number" inputmode="numeric" min="${minimum}" max="${maximum}" step="1" value="${initialHours}" aria-label="Hours" aria-describedby="${id}-hours-help ${id}-hours-error" data-quick-field="hours" disabled required></span><button type="button" data-quick-hours-change="1" aria-label="Increase hours">+</button></div></div><p id="${id}-hours-help" class="tuxano-quick-booking-hours-limit">${minimum}-hour minimum · ${maximum}-hour maximum</p><p id="${id}-hours-error" class="tuxano-quick-booking-hours-error" data-quick-hours-error role="alert" hidden></p><p class="tuxano-quick-booking-hours-help">Need more time or multi-day service? Add details in Trip Notes later.</p></div><div class="tuxano-quick-booking-date-time">${picker('date', 'Date', 'date', 'calendar')}${picker('time', 'Time', 'time', 'clock')}</div><span data-quick-timezone hidden></span><p class="tuxano-quick-booking-error" role="alert" hidden></p><button type="submit" class="tuxano-quick-booking-submit">CHECK PRICE</button></form>`;
     const form = container.querySelector('form');
     const fields = Object.fromEntries(['pickup', 'dropoff'].map(key => [key, form.querySelector(`[data-quick-place="${key}"]`)]));
     const points = { pickup: null, dropoff: null }, queries = { pickup: '', dropoff: '' };
+    const stops = [];
+    let stopSequence = 0, stopGeneration = 0;
     const output = form.querySelector('.tuxano-quick-booking-error');
     const deviceBox = form.querySelector('[data-quick-device]');
     let service = 'transfer', locating = 0, deviceCandidate = null, navigating = false;
@@ -139,6 +144,44 @@ async function initialize(container) {
       const current = Number(hoursInput.value);
       form.querySelector('[data-quick-hours-change="-1"]').disabled = service !== 'hourly' || !Number.isFinite(current) || current <= minimum;
       form.querySelector('[data-quick-hours-change="1"]').disabled = service !== 'hourly' || !Number.isFinite(current) || current >= maximum;
+    };
+    const stopList = form.querySelector('[data-quick-stops]');
+    const refreshStopLabels = () => {
+      stops.forEach((stop, index) => {
+        const title = `Stop ${index + 1}`;
+        stop.element.querySelector('.tuxano-quick-booking-label').textContent = title;
+        stop.input.setAttribute('aria-label', title);
+        stop.input.placeholder = title;
+        stop.element.querySelector('[data-quick-remove-stop]').setAttribute('aria-label', `Remove stop ${index + 1}`);
+        stop.element.querySelector('select').setAttribute('aria-label', `Stop ${index + 1} wait time`);
+        stop.element.querySelector('[data-quick-stop-wait-wrap]').hidden = service === 'hourly';
+        stop.element.querySelector('select').disabled = service === 'hourly';
+      });
+      form.querySelector('[data-quick-add-stop]').disabled = stops.length >= maxStops;
+    };
+    const addStop = () => {
+      if (stops.length >= maxStops) return;
+      const stopId = `${id}-stop-${++stopSequence}`;
+      const element = document.createElement('div');
+      element.className = 'tuxano-quick-booking-stop'; element.dataset.quickStop = stopId;
+      element.innerHTML = `<label class="tuxano-quick-booking-field" for="${stopId}"><span class="tuxano-quick-booking-label"></span><span class="tuxano-quick-booking-control location-input">${icon('pin')}<input id="${stopId}" class="input" type="text" data-quick-stop-place autocomplete="off" maxlength="256" required><button type="button" class="tuxano-quick-booking-remove-stop" data-quick-remove-stop="${stopId}">×</button></span></label><label class="tuxano-quick-booking-stop-wait" data-quick-stop-wait-wrap>Stop waiting time<select data-quick-stop-wait="${stopId}">${waitOptions.map(wait => `<option value="${wait}">${wait} minutes</option>`).join('')}</select></label>`;
+      const input = element.querySelector('input');
+      const stop = { id: stopId, element, input, point: null, query: '', waitMinutes: 15, cleanup: null };
+      stops.push(stop); stopList.append(element); ++stopGeneration; refreshStopLabels();
+      input.addEventListener('input', () => {
+        stop.point = null; stop.query = input.value; ++stopGeneration;
+        input.setCustomValidity(''); input.removeAttribute('aria-invalid'); syncField(input); showError('');
+      });
+      element.querySelector('select').addEventListener('change', event => {
+        const wait = Number(event.target.value);
+        if (waitOptions.includes(wait)) { stop.waitMinutes = wait; ++stopGeneration; showError(''); }
+      });
+      stop.cleanup = mountAutocomplete(input, { client, fieldId: stopId, countryCode: () => countryCodeOf(points.pickup?.countryCode), onSelect: place => {
+        if (!alive() || navigating || !stops.includes(stop)) return;
+        stop.point = { ...place, query: stop.query || input.value }; input.value = place.text;
+        ++stopGeneration; syncField(input); input.setCustomValidity(''); input.removeAttribute('aria-invalid'); showError('');
+      }, onError: message => { if (stops.includes(stop) && alive() && !navigating) showError(message); } });
+      input.focus();
     };
     hoursInput.addEventListener('input', () => syncHours());
     hoursInput.addEventListener('change', () => syncHours(true));
@@ -217,6 +260,11 @@ async function initialize(container) {
     window.addEventListener('pagehide', clearDevice);
     for (const input of form.querySelectorAll('[data-quick-picker] input')) {
       const field = input.closest('[data-quick-picker]');
+      if (input.type === 'time') {
+        field.classList.add('has-native-picker');
+        mountTimePicker(input, { label: 'Pickup time' });
+        continue;
+      }
       if (typeof input.showPicker !== 'function') continue;
       field.classList.add('has-native-picker');
       const openPicker = event => {
@@ -260,7 +308,18 @@ async function initialize(container) {
         form.querySelectorAll('[data-quick-service]').forEach(control => control.setAttribute('aria-pressed', String(control.dataset.quickService === service)));
         form.querySelector('[data-quick-hours]').hidden = service !== 'hourly';
         hoursInput.disabled = service !== 'hourly';
+        refreshStopLabels(); ++stopGeneration;
         syncHours();
+        return;
+      }
+      if (button.hasAttribute('data-quick-add-stop')) { addStop(); showError(''); return; }
+      if (button.hasAttribute('data-quick-remove-stop')) {
+        const index = stops.findIndex(stop => stop.id === button.dataset.quickRemoveStop);
+        if (index >= 0) {
+          const [stop] = stops.splice(index, 1); stop.cleanup?.(); stop.element.remove();
+          ++stopGeneration; refreshStopLabels(); showError('');
+          form.querySelector('[data-quick-add-stop]').focus();
+        }
         return;
       }
       if (button.hasAttribute('data-quick-hours-change')) {
@@ -379,18 +438,19 @@ async function initialize(container) {
       for (const [key, input] of Object.entries(fields)) {
         input.setCustomValidity(!points[key] || input.value !== points[key].text ? 'Choose this location from the Google Maps suggestions.' : '');
       }
-      try { assertSameCountry([points.pickup, points.dropoff]); }
+      for (const stop of stops) stop.input.setCustomValidity(!stop.point || stop.input.value !== stop.point.text ? 'Choose this stop from the Google Maps suggestions.' : '');
+      try { assertSameCountry([points.pickup, ...stops.map(stop => stop.point), points.dropoff]); }
       catch (failure) { fields.dropoff.setCustomValidity(failure.message); }
       const invalid = [...form.querySelectorAll('input,select')].filter(input => input.willValidate && !input.validity.valid);
       invalid.forEach(input => input.setAttribute('aria-invalid', 'true'));
       if (invalid.length) { showError(invalid[0].validationMessage || 'Complete your trip details before checking prices.'); invalid[0].focus(); return; }
-      const submitTimezoneGeneration = timezoneGeneration;
+      const submitTimezoneGeneration = timezoneGeneration, submitStopGeneration = stopGeneration;
       try {
         const selectedPoint = key => points[key].placeId ? { placeId: points[key].placeId, query: points[key].query, ...(points[key].suggestedPickup ? { suggestedPickup: true } : {}) } : points[key];
         const selectedPickup = points.pickup, selectedDropoff = points.dropoff;
-        const trip = { service, hours: Number(form.querySelector('[data-quick-field="hours"]').value), date: form.querySelector('[data-quick-field="date"]').value, time: form.querySelector('[data-quick-field="time"]').value, pickup: selectedPoint('pickup'), dropoff: selectedPoint('dropoff') };
+        const trip = { service, hours: Number(form.querySelector('[data-quick-field="hours"]').value), date: form.querySelector('[data-quick-field="date"]').value, time: form.querySelector('[data-quick-field="time"]').value, pickup: selectedPoint('pickup'), dropoff: selectedPoint('dropoff'), ...(stops.length ? { stops: stops.map(stop => ({ placeId: stop.point.placeId, query: stop.point.query, waitMinutes: service === 'hourly' ? 0 : stop.waitMinutes })) } : {}) };
         const selectedTimezone = timezoneEnabled ? await resolvePickupTimezone() : defaultTimezone;
-        if (!alive() || navigating || points.pickup !== selectedPickup || points.dropoff !== selectedDropoff || service !== trip.service || Number(hoursInput.value) !== trip.hours || trip.date !== form.querySelector('[data-quick-field="date"]').value || trip.time !== form.querySelector('[data-quick-field="time"]').value) return;
+        if (!alive() || navigating || stopGeneration !== submitStopGeneration || points.pickup !== selectedPickup || points.dropoff !== selectedDropoff || service !== trip.service || Number(hoursInput.value) !== trip.hours || trip.date !== form.querySelector('[data-quick-field="date"]').value || trip.time !== form.querySelector('[data-quick-field="time"]').value) return;
         validateQuickPickupTime(trip, selectedTimezone);
         const url = createQuickHandoff(sessionStorage, trip, destination.href);
         navigating = true; clearDevice();
@@ -398,7 +458,7 @@ async function initialize(container) {
         location.assign(url);
         setTimeout(() => { if (navigating && alive()) { restoreNavigation(); showError('The booking page did not open. Please try again.'); } }, 12000);
       } catch (failure) {
-        if (!alive() || timezoneEnabled && submitTimezoneGeneration !== timezoneGeneration) return;
+        if (!alive() || stopGeneration !== submitStopGeneration || timezoneEnabled && submitTimezoneGeneration !== timezoneGeneration) return;
         restoreNavigation(); showError(failure.message || 'Your trip could not be transferred. Please try again.');
       }
     });

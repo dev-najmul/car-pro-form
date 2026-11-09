@@ -46,7 +46,7 @@ async function place(page, label, value) {
 }
 async function trip(page) {
   await place(page, 'Pickup location', original); await place(page, 'Drop-off location', destination);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function watch(page, index = 0) {
   await detect(page).click(); await expect.poll(() => page.evaluate(() => window.__watchMock.entries.length)).toBe(index + 1);
@@ -70,7 +70,7 @@ for (const phone of [false, true]) {
       await emit(page, 0, exact);
       await expect(input(page)).toHaveValue(address); await cleared(page, [0]);
       await expect.poll(() => controls.get(page).routes.at(-1)?.origin).toEqual({ latitude: exact.latitude, longitude: exact.longitude });
-      await expect(page.locator('[data-selected-place="pickup"]')).toContainText('accuracy within 25 m');
+      await expect(page.locator('[data-selected-place="pickup"]')).toBeHidden();
       await emit(page, 0, { latitude: 23.7891, longitude: 90.4126, accuracy: 2 });
       await expect(input(page)).toHaveValue(address);
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
@@ -96,7 +96,7 @@ test('the best coarse reading opens a correction map and becomes a route only af
   await expect(page.getByRole('button', { name: 'Use this map point', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Use this map point', exact: true }).click();
   await expect.poll(() => controls.get(page).routes.at(-1)?.origin).toEqual({ latitude: 22.75, longitude: 90.43 });
-  await expect(page.locator('[data-selected-place="pickup"]')).toContainText('Manually selected map point');
+  await expect(page.locator('[data-selected-place="pickup"]')).toBeHidden();
 });
 
 test('cancelling current-location detection clears the watch immediately and late GPS callbacks stay cancelled', async ({ page }) => {
@@ -126,7 +126,10 @@ test('typing a different pickup while locating aborts its watch instead of overw
 
 test('opening the map while locating aborts device tracking and preserves the deliberate map workflow', async ({ page }) => {
   await install(page); await trip(page);
-  await watch(page); await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
+  await watch(page);
+  await expect(page.locator('.location-map-open[data-map-field="pickup"]')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Choose pickup on map', exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
   await cleared(page, [0]); await expect(map(page)).toBeVisible();
   await emit(page, 0, exact); await expect(input(page)).toHaveValue(original); await expect(map(page)).toBeVisible();
 });

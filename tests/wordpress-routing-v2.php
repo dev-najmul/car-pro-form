@@ -1,6 +1,7 @@
 <?php
 /** Complete transfer positioning routes, forecasts and quote/service isolation. */
 use Tuxano\Booking\Rest;
+use Tuxano\Booking\Database;
 use Tuxano\Booking\Settings;
 use Tuxano\Booking\Vehicles;
 
@@ -13,7 +14,7 @@ $check = static function (bool $ok, string $message) use (&$checks): void { if (
 $old_cursor = get_option('tuxano_schedule_cursor', null);
 $old_settings = get_option(Settings::OPTION, null); $old_user = get_current_user_id(); $old_remote = $_SERVER['REMOTE_ADDR'] ?? null;
 $rates = $wpdb->get_results($wpdb->prepare("SELECT option_name,option_value FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like('_tuxano_rate_') . '%'), OBJECT_K);
-$ids = []; $transients = []; $calls = []; $fail_at = 0; $bad_legs = false; $omit_pickup = false; $change_base_at = 0; $zero_pickup = false; $unverified_zero = false;
+$ids = []; $booking_ids = []; $transients = []; $calls = []; $fail_at = 0; $bad_legs = false; $omit_pickup = false; $change_base_at = 0; $zero_pickup = false; $unverified_zero = false;
 $base = '304 Sype Dr., Carol Stream, IL 60188, USA'; $run = bin2hex(random_bytes(5)); $date = ((int) gmdate('Y') + 1) . '-07-15';
 $site = wp_parse_url(home_url('/')); $origin = $site['scheme'] . '://' . $site['host'] . (isset($site['port']) ? ':' . $site['port'] : '');
 $request = static function (string $path, $body = [], string $token = '') use ($origin): WP_REST_Response {
@@ -100,6 +101,23 @@ try {
         $rejected = false; try { Rest::validate_booking($other, $quote); } catch (InvalidArgumentException $error) { $rejected = true; }
         $check($rejected, 'A changed service, date, time or wait cannot reuse the forecast quote.');
     }
+    $calls = []; $waiting_input = $input; $waiting_input['trip']['waitMinutes'] = [75];
+    $waiting_response = $request('route', $waiting_input, $token); $waiting_route = $waiting_response->get_data();
+    $check($waiting_response->get_status() === 200 && count($calls) === 4, 'A 75-minute stop is accepted by the complete Transfer route endpoint.');
+    $waiting_quote_name = 'tuxano_quote_' . hash('sha256', $waiting_route['quoteToken']); $transients[] = $waiting_quote_name;
+    $waiting_quote = get_transient($waiting_quote_name);
+    $check($waiting_quote['trip']['waitMinutes'] === [75] && strtotime($calls[3]['departureTime']) === $pickup_at->getTimestamp() + 6240 + 4500, 'A 75-minute wait is bound to the quote and counted once in return departure.');
+    $waiting_booking = $booking; $waiting_booking['trip']['stops'][0]['waitMinutes'] = 75;
+    [$waiting_clean] = Rest::validate_booking($waiting_booking, $waiting_quote);
+    $check($waiting_clean['trip']['stops'][0]['waitMinutes'] === 75, 'Public submission validation retains the selected 75-minute waiting time.');
+    $session_name = 'tuxano_session_' . hash('sha256', $token); $stored_session = get_transient($session_name); $stored_session['created'] = time() - 3; set_transient($session_name, $stored_session, 2 * HOUR_IN_SECONDS);
+    $waiting_key = 'routing_wait75_' . $run;
+    $saved_waiting = $request('bookings', ['booking' => $waiting_booking, 'quoteToken' => $waiting_route['quoteToken'], 'requestKey' => $waiting_key, 'website' => ''], $token);
+    $waiting_row = Database::by_request(hash_hmac('sha256', $waiting_key, wp_salt('secure_auth')));
+    if ($waiting_row) { $booking_ids[] = (int) $waiting_row['id']; }
+    $waiting_receipt = $saved_waiting->get_data();
+    $check($saved_waiting->get_status() === 200 && $waiting_row !== null && $waiting_row['payload']['trip']['stops'][0]['waitMinutes'] === 75, 'The real bookings endpoint durably saves a matching 75-minute stop.');
+    $check($waiting_receipt['pricing']['fare']['waitingCharge'] === 187.5 && $waiting_receipt['pricing']['transportation'] === 830.7 && $waiting_receipt['pricing']['total'] === 996.84, 'The server charges the 75-minute wait once: 643.20 driving + 187.50 waiting + 166.14 gratuity.');
     $unbound = $quote; unset($unbound['trip']); $rejected = false; try { Rest::validate_booking($booking, $unbound); } catch (InvalidArgumentException $error) { $rejected = true; } $check($rejected, 'A current v2 vehicle cannot borrow a legacy unbound quote.');
     $availability = ['vehicleId' => (string) $vehicle_id, 'date' => $date, 'time' => '17:50', 'quoteToken' => $route['quoteToken'], 'service' => 'transfer'];
     $check($request('availability', $availability, $token)->get_status() === 200, 'Matching v2 service/schedule availability works.');
@@ -125,6 +143,7 @@ try {
 } finally {
     remove_filter('pre_http_request', $mock, 10); remove_filter('pre_wp_mail', $no_mail);
     foreach ($transients as $name) { delete_transient($name); }
+    foreach ($booking_ids as $id) { Database::delete($id); }
     foreach ($ids as $id) { wp_delete_post((int) $id, true); }
     foreach ($wpdb->get_col($wpdb->prepare("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like('_tuxano_rate_') . '%')) as $name) { if (!isset($rates[$name])) { delete_option($name); } }
     foreach ($rates as $name => $row) { update_option($name, $row->option_value, false); }

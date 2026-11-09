@@ -207,6 +207,24 @@ try {
     $check($public_tip_rejected, 'Historical administrator gratuity support must not relax public submission presets.');
     Settings::save(['default_gratuity' => 20]);
 
+    // New public stop choices must not invalidate historical contact/status edits.
+    foreach ([['transfer', 0], ['transfer', 5], ['transfer', 10], ['transfer', 20], ['hourly', 10]] as [$legacy_service, $legacy_wait]) {
+        $legacy_booking = $booking; $legacy_booking['trip']['service'] = $legacy_service; $legacy_booking['trip']['stops'][0]['waitMinutes'] = $legacy_wait;
+        $legacy_pricing = Pricing::calculate($vehicle, $route, $legacy_booking, Settings::get());
+        $legacy_storage = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . Database::table() . ' WHERE id=%d', $id), ARRAY_A); unset($legacy_storage['id']);
+        $legacy_storage['reference'] = 'TUX-' . gmdate('Y') . '-' . strtoupper(bin2hex(random_bytes(6)));
+        $legacy_storage['request_key'] = hash('sha256', $run . $legacy_service . $legacy_wait);
+        $legacy_storage['request_hash'] = hash('sha256', wp_json_encode($legacy_booking));
+        $legacy_storage['payload'] = wp_json_encode($legacy_booking); $legacy_storage['pricing'] = wp_json_encode($legacy_pricing); $legacy_storage['total'] = $legacy_pricing['total'];
+        $legacy_id = Database::insert($legacy_storage);
+        $check(!is_wp_error($legacy_id), 'A historical waiting fixture must save independently of current public choices.');
+        $legacy_id = (int) $legacy_id; $fixture_ids[] = $legacy_id; $legacy_before = Database::find($legacy_id);
+        $legacy_contact = $legacy_before['payload']; $legacy_contact['billing']['company'] = 'Updated historical waiting contact';
+        $legacy_saved = BookingUpdates::save($legacy_id, $legacy_contact, BookingUpdates::revision($legacy_before), 'reviewing', '', false);
+        $check(!is_wp_error($legacy_saved) && $legacy_saved['payload']['trip']['stops'][0]['waitMinutes'] === $legacy_wait && $legacy_saved['pricing'] === $legacy_before['pricing'] && $legacy_saved['route'] === $legacy_before['route'], 'Historical Transfer/Hourly contact/status edits retain their original waiting, fare and route.');
+        $check(!$provider_calls && !$mail, 'Preserving historical stop waits needs no provider call or unsolicited notification.');
+    }
+
     // New business prices must not silently alter a historical contact-only edit.
     $changed_meta = $meta; $changed_meta['tariff']['perMile'] = 5;
     update_post_meta($vehicle_id, '_tuxano_vehicle_data', $changed_meta);

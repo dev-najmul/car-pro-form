@@ -90,11 +90,11 @@ test.beforeEach(async ({ page }) => {
     expect(quote).toBeTruthy();
     expect(body.booking.trip).toMatchObject({ service: quote.request.trip.service, date: quote.request.trip.date, time: quote.request.trip.time });
     expect(body.booking.trip.stops.map(stop => stop.waitMinutes)).toEqual(quote.request.trip.waitMinutes);
-    // This literal server receipt includes waiting exactly once: 150 + 25
-    // transportation, 50 meet, 75 seat, and 35 gratuity = 335.
+    // This literal server receipt includes waiting exactly once: 150 + 37.50
+    // transportation, 50 meet, 75 seat, and 37.50 gratuity = 350.
     return route.fulfill({ json: {
       requestId: 'TUX-V2-VERIFIED', route: quote.result,
-      pricing: { transportation: 175, carCost: 75, boosterCost: 0, seats: 75, meet: 50, percent: 20, tip: 35, total: 335, currency: 'USD', fare: { drivingCharge: 150, waitingCharge: 25, transportation: 175, pricingMode: 'mileage', waitingMinutes: 10 } },
+      pricing: { transportation: 187.5, carCost: 75, boosterCost: 0, seats: 75, meet: 50, percent: 20, tip: 37.5, total: 350, currency: 'USD', fare: { drivingCharge: 150, waitingCharge: 37.5, transportation: 187.5, pricingMode: 'mileage', waitingMinutes: 15 } },
     } });
   });
   await page.route(origin + '/transfer-pricing/', route => {
@@ -129,13 +129,13 @@ async function schedule(page, time = '14:44') {
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill(time);
 }
-async function trip(page, { stop = false, wait = '5' } = {}) {
+async function trip(page, { stop = false, wait = '15' } = {}) {
   await page.goto('/transfer-pricing/'); await places(page, stop);
   if (stop) await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption(wait);
   await schedule(page);
   const minutes = (controls.get(page).scenario === 'long' ? 104 : 30) + (stop ? Number(wait) : 0);
   const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} hr${minutes >= 120 ? 's' : ''}${minutes % 60 ? ` ${minutes % 60} min` : ''}` : `${minutes} min`;
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue(duration);
+  await expect(page.getByTestId('total-duration')).toHaveText(duration);
 }
 async function vehicles(page) {
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -174,15 +174,19 @@ test('Transfer waits for a complete pickup schedule without sending malformed fo
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.waitForTimeout(450);
   expect(controls.get(page).routes).toHaveLength(0);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('total-duration')).toHaveCount(0);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(controls.get(page).routes.at(-1).trip).toEqual({ service: 'transfer', date, time: '14:44', waitMinutes: [] });
 });
 
 test('Hourly preview accepts incomplete schedules as an empty pair and uses independent service prices', async ({ page }) => {
   await page.goto('/transfer-pricing/'); await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
-  await places(page); await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await places(page);
+  await expect.poll(() => controls.get(page).routes.at(-1)?.trip.service).toBe('hourly');
+  await expect(page.getByTestId('service-hours')).toHaveText('3 hours');
+  await expect(page.getByTestId('total-duration')).toHaveCount(0);
+  await expect(page.getByTestId('route-distance')).toHaveCount(0);
   expect(controls.get(page).routes.at(-1).trip).toEqual({ service: 'hourly', date: '', time: '', waitMinutes: [] });
   await page.getByLabel('Date', { exact: true }).fill(date); await page.waitForTimeout(450);
   expect(controls.get(page).routes.at(-1).trip).toMatchObject({ service: 'hourly', date: '', time: '' });
@@ -209,17 +213,17 @@ test('switching service invalidates the previous service quote in both direction
 
 test('pickup date, time and ordered waiting changes each refresh the bound Transfer forecast', async ({ page }) => {
   await trip(page, { stop: true }); const control = controls.get(page);
-  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
-  await expect.poll(() => control.routes.at(-1)?.trip.waitMinutes).toEqual([15]);
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('30');
+  await expect.poll(() => control.routes.at(-1)?.trip.waitMinutes).toEqual([30]);
   await page.getByLabel('Date', { exact: true }).fill('2030-11-19');
   await expect.poll(() => control.routes.at(-1)?.trip.date).toBe('2030-11-19');
   await page.getByLabel('Pickup time', { exact: true }).fill('16:05');
   await expect.poll(() => control.routes.at(-1)?.trip.time).toBe('16:05');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
-  await vehicles(page); await expect(page.locator('.vehicle-price > strong')).toHaveText('$187.5USD');
-  await select(page); await total(page, 225);
+  await expect(page.getByTestId('total-duration')).toHaveText('1 hr');
+  await vehicles(page); await expect(page.locator('.vehicle-price > strong')).toHaveText('$225USD');
+  await select(page); await total(page, 270);
   const quote = control.quotes.get(control.availability.at(-1).quoteToken);
-  expect(quote.request.trip).toEqual({ service: 'transfer', date: '2030-11-19', time: '16:05', waitMinutes: [15] });
+  expect(quote.request.trip).toEqual({ service: 'transfer', date: '2030-11-19', time: '16:05', waitMinutes: [30] });
 });
 
 for (const malformed of ['pickup', 'return', 'traffic', 'unreachable']) {
@@ -234,31 +238,31 @@ for (const malformed of ['pickup', 'return', 'traffic', 'unreachable']) {
     await expect(page.getByLabel('Date', { exact: true })).toHaveValue(date);
     control.malformed = '';
     await page.locator('.route-error').getByRole('button', { name: 'Try again', exact: true }).click();
-    await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+    await expect(page.getByTestId('total-duration')).toHaveText('30 min');
     await vehicles(page); await expect(page.locator('.vehicle-price > strong')).toHaveText('$150USD');
   });
 }
 
 test('v2 submission includes the bound schedule and waiting while the verified receipt charges extras once', async ({ page }) => {
-  await trip(page, { stop: true, wait: '10' }); await vehicles(page); await select(page);
+  await trip(page, { stop: true, wait: '15' }); await vehicles(page); await select(page);
   await page.getByLabel('Meet & Greet', { exact: true }).check();
   await page.getByLabel('Child Seats', { exact: true }).check();
   await page.getByRole('button', { name: 'Increase car seats', exact: true }).click();
-  await total(page, 335);
-  await expect(page.locator('.trip-summary [data-pricing-waiting-line]')).toContainText('$25.00');
+  await total(page, 350);
+  await expect(page.locator('.trip-summary [data-pricing-waiting-line]')).toContainText('$37.50');
   await page.getByRole('button', { name: /continue to contact/i }).click();
   for (const [label, value] of Object.entries({ 'Billing first name': 'Alex', 'Billing last name': 'Verified', 'Billing email': 'verified@example.test', 'Billing phone': '+1 312 555 0134', 'Street address': '10 Test Street', City: 'Chicago' })) await page.getByLabel(label, { exact: true }).fill(value);
   await page.getByLabel('Country', { exact: true }).selectOption({ label: 'United States' });
   await page.getByLabel('Same as billing contact', { exact: true }).check();
   await page.getByRole('button', { name: /continue to review/i }).click();
-  await total(page, 335);
-  await expect(page.locator('[data-pricing-waiting-line]').first()).toContainText('$25.00');
+  await total(page, 350);
+  await expect(page.locator('[data-pricing-waiting-line]').first()).toContainText('$37.50');
   await page.getByRole('checkbox', { name: /I agree to the Terms/i }).check();
   await page.locator('#booking-form').evaluate(form => { const input = document.createElement('input'); input.type = 'hidden'; input.name = 'total'; input.value = '0'; form.append(input); });
   const control = controls.get(page); control.expectedBookings = 1;
   await page.getByRole('button', { name: 'SUBMIT RESERVATION REQUEST', exact: true }).click();
-  await expect(page).toHaveURL(/#thank-you$/); await total(page, 335);
-  await expect(page.locator('[data-pricing-waiting-line]')).toContainText('$25.00');
+  await expect(page).toHaveURL(/#thank-you$/); await total(page, 350);
+  await expect(page.locator('[data-pricing-waiting-line]')).toContainText('$37.50');
   expect(control.bookings[0].booking).not.toHaveProperty('total');
   expect(control.bookings[0].booking).not.toHaveProperty('pricing');
   expect(control.bookings[0].booking.billing.email).toBe('verified@example.test');
@@ -269,7 +273,7 @@ test('quick booking hands the pickup-local schedule into a fresh v2 Transfer quo
   await page.goto('/transfer-quick/');
   await choose(page, 'Pickup Location', 'Selected pickup, Chicago');
   await choose(page, 'Drop-off Location', 'Selected destination, Chicago');
-  await expect(page.locator('[data-quick-timezone]')).toContainText('Central Time');
+  await expect(page.locator('[data-quick-timezone]')).toHaveCount(0);
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
   expect(controls.get(page).routes).toHaveLength(0);

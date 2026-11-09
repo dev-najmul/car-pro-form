@@ -47,9 +47,9 @@ test('a real static subpath build searches locations and prices stops without an
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await mockPlaces(page);
   await page.goto(base);
-  const popupPromise = page.waitForEvent('popup');
-  await page.getByRole('link', { name: 'Privacy Policy', exact: true }).click();
-  const policy = await popupPromise;
+  await expect(page.getByRole('link', { name: 'Privacy Policy', exact: true })).toHaveCount(0);
+  const policy = await page.context().newPage();
+  await policy.goto(base + 'privacy.html');
   await expect(policy).toHaveURL(base + 'privacy.html');
   await policy.getByRole('link', { name: /Return to the reservation form/ }).first().click();
   await expect(policy).toHaveURL(base + '#trip');
@@ -58,13 +58,13 @@ test('a real static subpath build searches locations and prices stops without an
     await page.getByLabel(label, { exact: true }).fill(query);
     await page.getByRole('option', { name: query, exact: true }).click();
   }
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await page.getByLabel('Stop 1', { exact: true }).fill('Pages Stop');
   await page.getByRole('option', { name: 'Pages Stop', exact: true }).click();
   await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await expect(page.getByTestId('total-duration')).toHaveText('45 min');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
   await page.getByLabel('Date', { exact: true }).fill('2027-11-12');
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -92,13 +92,13 @@ test('a Pages form can use a separate private Routes backend with real CORS and 
     for (const [label, query] of [['Pickup location', 'Remote Pickup'], ['Drop-off location', 'Remote Destination']]) {
       await page.getByLabel(label, { exact: true }).fill(query); await page.getByRole('option', { name: query, exact: true }).click();
     }
-    await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-    await expect(page.getByText(/Temporary live test/)).toBeVisible();
+    await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+    await expect(page.getByText(/Temporary live test/)).toHaveCount(0);
     await page.getByRole('button', { name: 'Add stop', exact: true }).click();
     await page.getByLabel('Stop 1', { exact: true }).fill('Remote Stop');
     await page.getByRole('option', { name: 'Remote Stop', exact: true }).click();
     await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
-    await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
+    await expect(page.getByTestId('total-duration')).toHaveText('45 min');
     await page.getByLabel('Date', { exact: true }).fill('2027-11-12'); await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
     await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
     await page.getByRole('button', { name: 'Select & continue with Luxury SUV', exact: true }).click();
@@ -121,6 +121,6 @@ test('an expired test session blocks new routes without falling back to browser 
     await page.getByLabel(label, { exact: true }).fill(query); await page.getByRole('option', { name: query, exact: true }).click();
   }
   await expect(page.getByRole('alert').filter({ hasText: /temporary test session has ended/i })).toBeVisible();
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   expect(routeRequests).toEqual([]); expect(await page.evaluate(() => window.__mapsMock.libraries.includes('routes'))).toBe(false);
 });

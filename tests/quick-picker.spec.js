@@ -49,9 +49,9 @@ async function expectReadableEditor(input) {
   expect(box.height).toBeGreaterThanOrEqual(44);
 }
 
-test('desktop field-center clicks open both native pickers without submitting the form', async ({ page }) => {
+test('desktop date clicks open its native picker while time opens the controlled AM/PM chooser', async ({ page }) => {
   await visit(page);
-  for (const type of ['date', 'time']) {
+  for (const type of ['date']) {
     const input = field(page, type);
     await expect(input).toHaveValue('');
     await input.click();
@@ -62,47 +62,63 @@ test('desktop field-center clicks open both native pickers without submitting th
     await page.keyboard.press('Escape');
     await expect(input).toHaveValue('');
   }
-  expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }, { type: 'time', active: true }]);
+  await field(page, 'time').click();
+  await expect(page.getByRole('dialog', { name: 'Choose pickup time' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByLabel('AM / PM', { exact: true })).toHaveValue('AM');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }]);
 });
 
 test.describe('touch phone picker activation', () => {
   test.use({ viewport: { width: 393, height: 900 }, isMobile: true, hasTouch: true });
-  test('tapping either field opens its native picker without submitting or losing the label', async ({ page }) => {
+  test('phone taps open the native date picker and controlled AM/PM clock', async ({ page }) => {
     await visit(page);
-    for (const type of ['date', 'time']) {
+    for (const type of ['date']) {
       const input = field(page, type);
       await input.tap();
       await expectPopup(input);
       await page.keyboard.press('Escape');
       await expect(input).toHaveValue('');
     }
-    expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }, { type: 'time', active: true }]);
+    await field(page, 'time').tap();
+    await expect(page.getByRole('dialog', { name: 'Choose pickup time' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByLabel('AM / PM', { exact: true })).toHaveValue('AM');
+    await page.getByRole('button', { name: 'CANCEL', exact: true }).tap();
+    expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   });
 });
 
-test('keyboard Enter and Space open the corresponding date and time picker', async ({ page }) => {
+test('keyboard Enter opens the date picker and Space opens the controlled clock', async ({ page }) => {
   await visit(page);
-  for (const [type, key] of [['date', 'Enter'], ['time', 'Space']]) {
+  for (const [type, key] of [['date', 'Enter']]) {
     const input = field(page, type);
     await input.focus();
     await input.press(key);
     await expectPopup(input);
     await page.keyboard.press('Escape');
   }
-  expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }, { type: 'time', active: true }]);
+  await field(page, 'time').focus();
+  await field(page, 'time').press('Space');
+  await expect(page.getByRole('dialog', { name: 'Choose pickup time' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByLabel('AM / PM', { exact: true })).toHaveValue('AM');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => window.__quickPickerCalls)).toEqual([{ type: 'date', active: true }]);
 });
 
 test('browser without showPicker retains visible editable native controls', async ({ page, context }) => {
   await context.addInitScript(() => { HTMLInputElement.prototype.showPicker = undefined; });
   await visit(page);
-  for (const [type, value] of [['date', '2027-11-08'], ['time', '14:30']]) {
+  for (const [type, value] of [['date', '2027-11-08']]) {
     const input = field(page, type);
     await expectReadableEditor(input);
     await input.fill(value);
     await input.press('Tab');
     await expect(input).toHaveValue(value);
   }
+  await field(page, 'time').click();
+  await expect(page.getByRole('dialog', { name: 'Choose pickup time' })).toBeVisible();
+  await page.getByRole('button', { name: 'CANCEL', exact: true }).click();
 });
 
 test('denied native picker falls back to visible editors without an unhandled exception', async ({ page, context }) => {
@@ -110,7 +126,7 @@ test('denied native picker falls back to visible editors without an unhandled ex
     HTMLInputElement.prototype.showPicker = function () { throw new DOMException('Picker unavailable', 'NotAllowedError'); };
   });
   await visit(page);
-  for (const [type, value] of [['date', '2027-11-08'], ['time', '14:30']]) {
+  for (const [type, value] of [['date', '2027-11-08']]) {
     const input = field(page, type);
     await input.click();
     await expectReadableEditor(input);
@@ -118,6 +134,9 @@ test('denied native picker falls back to visible editors without an unhandled ex
     await input.press('Tab');
     await expect(input).toHaveValue(value);
   }
+  await field(page, 'time').click();
+  await expect(page.getByRole('dialog', { name: 'Choose pickup time' })).toBeVisible();
+  await page.getByRole('button', { name: 'CANCEL', exact: true }).click();
 });
 
 

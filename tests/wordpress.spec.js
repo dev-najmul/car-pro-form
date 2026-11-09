@@ -78,11 +78,11 @@ async function trip(page, { stop = false } = {}) {
   if (stop) {
     await page.getByRole('button', { name: 'Add stop', exact: true }).click();
     await choosePlace(page, 'Stop 1', 'Selected Stop, London');
-    await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('10');
+    await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
   }
   await page.getByLabel('Date', { exact: true }).fill(pickupDate);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue(stop ? '40 min' : '30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText(stop ? '45 min' : '30 min');
 }
 async function passengers(page, options) {
   await trip(page, options);
@@ -120,10 +120,14 @@ test('admin fleet, categories, tariffs, currency, extras and separate luggage ca
   await expect(page.getByRole('heading', { name: 'AIRPORT COLLECTION', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'GROUP TRAVEL', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Select & continue with / })).toHaveCount(2);
-  await expect(page.locator('.vehicle-card').filter({ has: page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }) })).toContainText('£150');
+  await expect(page.locator('.vehicle-card').filter({ has: page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }) })).toContainText('£165');
+  await expect(page.locator('.vehicle-card .waiting-price')).toHaveCount(0);
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await expect(page.getByRole('button', { name: '12.5%', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await total(page, 168.75); // (50 + 20mi*2 + 30min*1 + 10min*3) * 1.125.
+  await total(page, 185.63); // (50 + 20mi*2 + 30min*1 + 15min*3) + 12.5% tip.
+  await expect(page.locator('.trip-summary [data-pricing-waiting-line]')).toHaveCount(1);
+  await expect(page.locator('.trip-summary [data-pricing-waiting-line]')).toContainText('£45.00');
+  await expect(page.locator('.trip-summary .price-lines > div').first()).toContainText('£120.00');
   await page.getByRole('button', { name: 'Increase passengers', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Increase passengers', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Increase luggage', exact: true }).click();
@@ -134,7 +138,7 @@ test('admin fleet, categories, tariffs, currency, extras and separate luggage ca
   await page.getByRole('button', { name: 'Increase booster seats', exact: true }).click();
   await expect(page.locator('.seat-area')).toContainText('First seat £22');
   await expect(page.locator('.seat-area')).toContainText('Each additional seat £9');
-  await total(page, 217.25); // Transportation 150 + tip18.75 + meet17.50 + seats31.
+  await total(page, 234.13); // Transportation165 + tip20.63 + meet17.50 + seats31.
   const requests = controls.get(page).routes;
   expect(requests.at(-1).body.stops).toEqual([{ placeId: 'test-' + encodeURIComponent('Selected Stop, London') }]);
   expect(requests.at(-1).headers).toMatchObject({ 'x-tuxano-session': runtime.token, 'content-type': 'application/json' });
@@ -155,7 +159,8 @@ test('admin stop and hourly bounds govern controls and hourly quotation', async 
   await expect(hours).toHaveValue('4');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
-  await total(page, 438.75); // (4hr*80 + 20mi*2 + 10min*3) * 1.125.
+  await expect(page.getByLabel('Stop 1 wait time', { exact: true })).toHaveCount(0);
+  await total(page, 405); // (4hr*80 + 20mi*2) * 1.125; hourly waiting is included.
 });
 
 test('pending booking waits for durable save; a rejected request retries with the same key and displays the server receipt', async ({ page }) => {

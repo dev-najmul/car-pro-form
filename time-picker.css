@@ -1,0 +1,20 @@
+.tuxano-time-picker {
+  box-sizing: border-box; width: min(390px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  margin: auto; padding: 24px; border: 1px solid #cbd5e4; border-radius: 8px;
+  color: #172642; background: #fff; box-shadow: 0 12px 36px #0a121f33;
+  font-size: 14px; line-height: 1.5; letter-spacing: normal; text-align: left;
+}
+.tuxano-time-picker::backdrop { background: #0a121f66; }
+.tuxano-time-picker h2 { margin: 0 0 20px; color: #172642; font: inherit; font-size: 18px; font-weight: 600; letter-spacing: normal; }
+.tuxano-time-picker .tuxano-time-picker-fields { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 10px; }
+.tuxano-time-picker label { display: flex; flex-direction: column; min-width: 0; gap: 7px; font: inherit; }
+.tuxano-time-picker label > span { font-size: 12px; color: #52617a; letter-spacing: normal; }
+.tuxano-time-picker select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 8px 9px; border: 1px solid #cbd5e4; border-radius: 4px; color: #172642; background: #fff; font: inherit; font-size: 16px; letter-spacing: normal; }
+.tuxano-time-picker .tuxano-time-picker-note { margin: 12px 0 20px; font-size: 12px; color: #52617a; letter-spacing: normal; }
+.tuxano-time-picker .tuxano-time-picker-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.tuxano-time-picker button { box-sizing: border-box; min-height: 44px; min-width: 92px; margin: 0; padding: 9px 14px; border: 1px solid #cbd5e4; border-radius: 4px; color: #172642; background: #fff; font: inherit; font-size: 12px; font-weight: 500; letter-spacing: normal; cursor: pointer; text-decoration: none; }
+.tuxano-time-picker .tuxano-time-picker-confirm { background: linear-gradient(135deg, #0a1f5c, #0e2a7a, #0a1f5c); border: 2px solid #1e3a9a; color: #fff; }
+.tuxano-time-picker .tuxano-time-picker-confirm:hover:not(:disabled) { background: #ccc; border-color: #ccc; color: #030b1e; }
+.tuxano-time-picker button:disabled { opacity: .5; cursor: default; }
+.tuxano-time-picker :is(select, button):focus-visible { outline: 2px solid #5079c4; outline-offset: 2px; }
+@media (max-width: 360px) { .tuxano-time-picker { padding: 20px 16px; } .tuxano-time-picker .tuxano-time-picker-fields { gap: 8px; } }

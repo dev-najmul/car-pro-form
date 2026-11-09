@@ -30,22 +30,21 @@ async function select(page, label, query, canonical = query) {
 async function directTrip(page) {
   await select(page, 'Pickup location', pickupQuery, pickupLabel);
   await select(page, 'Drop-off location', dropoff);
-  await expect(page.getByTestId('route-distance')).toHaveText('166.7 km / 103.6 mi');
+  await expect(page.getByTestId('route-distance')).toHaveText('103.6 mi');
 }
 const selectedPickup = page => page.locator('[data-selected-place="pickup"]');
-const comparison = page => page.getByRole('link', { name: 'View route in Google Maps', exact: true });
+const comparison = page => page.getByRole('link', { name: 'View route on Google Maps', exact: true });
 
-test('full selected addresses and Maps links retain exact pickup and destination IDs and direction', async ({ page }) => {
+test('canonical address inputs and one route link retain exact pickup and destination IDs without duplicate panels', async ({ page }) => {
   await directTrip(page);
-  await expect(selectedPickup(page)).toContainText(pickupLabel);
-  const placeLink = new URL(await page.getByRole('link', { name: 'View selected pickup location in Google Maps' }).getAttribute('href'));
-  expect(placeLink.origin + placeLink.pathname).toBe('https://www.google.com/maps/search/');
-  expect(placeLink.searchParams.get('query_place_id')).toBe(id(pickupQuery));
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(pickupLabel);
+  await expect(selectedPickup(page)).toBeHidden();
+  await expect(page.getByRole('link', { name: 'View selected pickup location in Google Maps' })).toHaveCount(0);
   const routeLink = new URL(await comparison(page).getAttribute('href'));
   expect(routeLink.searchParams.get('origin_place_id')).toBe(id(pickupQuery));
   expect(routeLink.searchParams.get('destination_place_id')).toBe(id(dropoff));
   expect(routeLink.searchParams.get('travelmode')).toBe('driving');
-  await expect(page.getByText('Baseline driving estimate. Live traffic and pickup date/time are not included.')).toBeVisible();
+  await expect(page.getByText('Baseline driving estimate. Live traffic and pickup date/time are not included.')).toHaveCount(0);
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')));
   expect(saved.trip.pickupPlace).toEqual({ placeId: id(pickupQuery), text: pickupQuery });
   expect(JSON.stringify(saved)).not.toContain(pickupAddress);
@@ -53,7 +52,7 @@ test('full selected addresses and Maps links retain exact pickup and destination
   await expect(selectedPickup(page)).toBeHidden();
   await expect(comparison(page)).toHaveCount(0);
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
 });
 
 test('route comparison preserves stop order and removal replaces the old Maps link', async ({ page }) => {
@@ -66,8 +65,10 @@ test('route comparison preserves stop order and removal replaces the old Maps li
   let link = new URL(await comparison(page).getAttribute('href'));
   expect(link.searchParams.get('waypoint_place_ids')).toBe([id('First selected stop'), id('Second selected stop')].join('|'));
   await page.getByRole('button', { name: 'Remove stop 1', exact: true }).click();
-  await expect(page.locator('.selected-location:visible')).toHaveCount(3);
-  await expect(page.getByRole('link', { name: 'View selected stop 1 in Google Maps' })).toBeVisible();
+  await expect(page.locator('.selected-location')).toHaveCount(0);
+  await expect(page.getByLabel('Stop 1', { exact: true })).toHaveValue('Second selected stop');
+  await expect(page.getByRole('button', { name: 'Choose stop 1 on map', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'View selected stop 1 in Google Maps' })).toHaveCount(0);
   await expect.poll(async () => new URL(await comparison(page).getAttribute('href')).searchParams.get('waypoint_place_ids')).toBe(id('Second selected stop'));
   link = new URL(await comparison(page).getAttribute('href'));
   expect(link.searchParams.get('origin_place_id')).toBe(id(pickupQuery));
@@ -82,29 +83,29 @@ test('fresh draft restoration repopulates readable canonical locations and exact
     return route.fulfill({ contentType: 'text/javascript', body: `window.__placeCanonicalLabels[${JSON.stringify(id(pickupQuery))}]=${JSON.stringify(replacement)};(${installPlacesStub.toString()})();window[${JSON.stringify(callback)}]?.();` });
   });
   await page.reload();
-  await expect(selectedPickup(page)).toContainText(replacement);
-  await expect(selectedPickup(page)).not.toContainText(pickupAddress);
+  await expect(selectedPickup(page)).toBeHidden();
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(`${pickupQuery}, ${replacement}`);
   await expect(comparison(page)).toBeVisible();
   expect(new URL(await comparison(page).getAttribute('href')).searchParams.get('origin_place_id')).toBe(id(pickupQuery));
 });
 
-test('long canonical address text is safe and fully readable at phone widths; demo data gets no real Maps links', async ({ page }) => {
+test('long canonical address text remains safely editable at phone widths without duplicate panels; demo data gets no real Maps links', async ({ page }) => {
   const hostile = '<img src=x onerror="window.__unsafeLocation=1">';
   const address = `${hostile}, ${'দীর্ঘ সড়কের নাম '.repeat(16)}, Barishal, Bangladesh`;
   const query = 'Long selected location';
   await page.evaluate(({ placeId, address }) => { window.__placeCanonicalLabels[placeId] = address; }, { placeId: id(query), address });
   await select(page, 'Pickup location', query, address);
-  await expect(selectedPickup(page)).toContainText(address);
+  await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(address);
+  await expect(selectedPickup(page)).toBeHidden();
   expect(await page.evaluate(() => window.__unsafeLocation)).toBeUndefined();
   await expect(page.locator('img[src="x"]')).toHaveCount(0);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(selectedPickup(page)).toBeVisible();
+    await expect(page.getByLabel('Pickup location', { exact: true })).toBeEditable();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    expect(await selectedPickup(page).evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(address);
   }
   await page.goto('/?demo=1#trip');
   await expect(page.locator('.selected-location:visible')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /in Google Maps/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /(?:in|on) Google Maps/ })).toHaveCount(0);
 });

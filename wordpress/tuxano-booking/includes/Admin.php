@@ -444,7 +444,7 @@ final class Admin {
         echo '<div class="tuxano-admin-stop" data-tuxano-stop><div class="tuxano-stop-heading"><strong data-tuxano-stop-title>' . esc_html(sprintf(__('Stop %s', 'tuxano-booking'), is_numeric($index) ? (int) $index + 1 : '')) . '</strong><button type="button" class="button-link-delete" data-tuxano-remove-stop>' . esc_html__('Remove', 'tuxano-booking') . '</button></div><div class="tuxano-editor-grid">';
         self::editor_field('trip.stops.' . $index . '.text', __('Stop address', 'tuxano-booking'), $stop['text'] ?? '', 'text', [], ['maxlength' => 1024, 'required' => 'required', 'autocomplete' => 'off', 'data-tuxano-place' => 'stop-' . $index]);
         $waits = [];
-        foreach ([0, 5, 10, 15, 20, 30, 45, 60, 90, 120] as $minutes) { $waits[$minutes] = sprintf(__('%s minutes', 'tuxano-booking'), $minutes); }
+        foreach ([0, 5, 10, 15, 20, 30, 45, 60, 75, 90, 120] as $minutes) { $waits[$minutes] = sprintf(__('%s minutes', 'tuxano-booking'), $minutes); }
         self::editor_field('trip.stops.' . $index . '.waitMinutes', __('Waiting time', 'tuxano-booking'), $stop['waitMinutes'] ?? 0, 'select', $waits);
         echo '</div>';
         self::editor_point('stop-' . $index, $stop['place'] ?? null);

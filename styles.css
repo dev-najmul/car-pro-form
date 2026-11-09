@@ -4129,6 +4129,30 @@ html[data-label-spacing] body.form-page .custom-tip { letter-spacing: var(--form
 .location-map-open:hover, .location-map-open:focus-visible { color: #173e79; text-decoration: none; }
 .location-map-open:focus-visible { outline: 2px solid #315b9b; outline-offset: 3px; border-radius: 2px; }
 
+/* Map adjustments stay within the existing address fields. */
+.has-map-action > .location-map-open { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 32px; height: 32px; margin: 0; padding: 4px; color: var(--ink); }
+.has-map-action > .location-map-open[hidden] { display: none; }
+.has-map-action.has-location-target > .location-map-open { right: 48px; }
+.has-map-action.has-location-target > .input { padding-right: 88px; }
+.location-context { margin-top: 8px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.location-context[hidden] { display: none; }
+.hour-quantity input.input { text-align: center; width: 100%; font-size: 15px; }
+.trip-estimate { padding: 16px; border: 1px solid #e0e5ed; border-radius: 4px; background: #f7f8fb; }
+.trip-estimate > h4 { margin: 0 0 14px; font: 600 13px/1.5 var(--sans); color: var(--ink); }
+.trip-estimate-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.trip-estimate-metrics > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.trip-estimate-metrics span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.trip-estimate-metrics strong { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.trip-estimate .route-comparison { margin-top: 14px; }
+.view-terms { display: inline-block; margin: 8px 0 0 36px; font-size: 14px; line-height: 1.5; }
+@media (max-width: 639px) {
+  .trip-estimate { padding: 12px; }
+  .trip-estimate-metrics { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .trip-estimate-metrics > div { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 14px; }
+  .trip-estimate-metrics strong { text-align: right; font-size: 14px; }
+  .view-terms { margin-left: 32px; }
+}
+
 /* Restore the original compact trip bar without letting addresses squeeze dates. */
 body.form-page .trip-strip {
   display: grid;

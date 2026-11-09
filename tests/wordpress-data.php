@@ -44,6 +44,9 @@ $throws = static function (callable $callback, string $message) use ($check): vo
 $original_user = get_current_user_id();
 $original_post = $_POST;
 $original_option = get_option(Settings::OPTION, null);
+$original_form_limits_upgrade = get_option(Settings::FORM_LIMITS_UPGRADE, null);
+$original_form_limits_backup = get_option(Settings::FORM_LIMITS_BACKUP, null);
+$form_limits_race_filter = null;
 $created_posts = [];
 $created_terms = [];
 $created_users = [];
@@ -56,6 +59,72 @@ try {
     $check($defaults['meet_price'] === 50.0 && $defaults['first_seat_price'] === 75.0 && $defaults['additional_seat_price'] === 50.0, 'Original extras defaults must match the form.');
     $check($defaults['dashboard_recent_limit'] === 3, 'The dashboard defaults to the three newest submissions.');
     $check($defaults['min_hours'] === 3 && $defaults['max_hours'] === 24, 'New hourly bookings default to a three-hour minimum and twenty-four-hour maximum.');
+    // The client explicitly increased the old live maximum from twelve to
+    // twenty-four hours. Apply it once without dropping unrelated raw keys.
+    delete_option(Settings::FORM_LIMITS_UPGRADE);
+    delete_option(Settings::FORM_LIMITS_BACKUP);
+    $limits_fixture = ['min_hours' => 3, 'max_hours' => 12, 'company_name' => 'Preserved client settings', 'meet_price' => 64.75, 'browser_key' => 'test_preserved_browser_key', 'legacy_extension' => ['keep' => 'Exact raw value']];
+    update_option(Settings::OPTION, $limits_fixture, false);
+    $limits_revision = Settings::revision();
+    $limits_vehicles = Vehicles::all();
+    Settings::upgrade_form_limits();
+    $limits_target = array_replace($limits_fixture, ['min_hours' => 3, 'max_hours' => 24]);
+    $check(get_option(Settings::OPTION) === $limits_target, 'The first form upgrade changes only the two requested duration bounds, preserving all raw preferences.');
+    $check((int) get_option(Settings::FORM_LIMITS_UPGRADE, 0) === 1, 'The completed duration upgrade records its independent one-time marker.');
+    $check(get_option(Settings::FORM_LIMITS_BACKUP) === ['min_hours' => 3, 'max_hours' => 12], 'The pre-update numeric duration bounds remain available for deliberate rollback.');
+    $check(Settings::revision() !== $limits_revision, 'Changed service limits invalidate a previously accepted quote revision.');
+    $check(Vehicles::all() === $limits_vehicles, 'The duration upgrade cannot change fleet rates or vehicle records.');
+    Settings::upgrade_form_limits();
+    $check(get_option(Settings::OPTION) === $limits_target && get_option(Settings::FORM_LIMITS_BACKUP) === ['min_hours' => 3, 'max_hours' => 12], 'Repeated initialization preserves the completed settings and original duration backup.');
+    $check(Settings::save(['min_hours' => '4', 'max_hours' => '18']) === true, 'Administrators may deliberately change the service limits after the one-time client update.');
+    Settings::upgrade_form_limits();
+    $check(Settings::get()['min_hours'] === 4 && Settings::get()['max_hours'] === 18 && get_option(Settings::FORM_LIMITS_BACKUP) === ['min_hours' => 3, 'max_hours' => 12], 'Later initialization or reactivation never resets a subsequent administrator duration edit.');
+
+    delete_option(Settings::FORM_LIMITS_UPGRADE);
+    delete_option(Settings::FORM_LIMITS_BACKUP);
+    delete_option(Settings::OPTION);
+    Settings::upgrade_form_limits();
+    $check(get_option(Settings::OPTION) === ['min_hours' => 3, 'max_hours' => 24] && (int) get_option(Settings::FORM_LIMITS_UPGRADE, 0) === 1, 'A fresh installation atomically records the same explicit service bounds.');
+    $check(get_option(Settings::FORM_LIMITS_BACKUP) === [], 'A missing settings row does not invent pre-upgrade values in its backup.');
+
+    delete_option(Settings::FORM_LIMITS_UPGRADE);
+    delete_option(Settings::FORM_LIMITS_BACKUP);
+    update_option(Settings::OPTION, ['max_hours' => '12', 'custom_key' => ['still' => 'saved']], false);
+    Settings::upgrade_form_limits();
+    $check(get_option(Settings::OPTION) === ['max_hours' => 24, 'custom_key' => ['still' => 'saved'], 'min_hours' => 3] && get_option(Settings::FORM_LIMITS_BACKUP) === ['max_hours' => '12'], 'Partial legacy settings preserve raw key order, unknown values and the numeric-string backup.');
+
+    delete_option(Settings::FORM_LIMITS_UPGRADE);
+    delete_option(Settings::FORM_LIMITS_BACKUP);
+    update_option(Settings::OPTION, 'malformed-settings-fixture', false);
+    Settings::upgrade_form_limits();
+    $check(get_option(Settings::OPTION) === 'malformed-settings-fixture' && get_option(Settings::FORM_LIMITS_UPGRADE, null) === null && get_option(Settings::FORM_LIMITS_BACKUP, null) === null, 'A malformed non-array settings row remains untouched and unmarked for deliberate repair.');
+
+    global $wpdb;
+    update_option(Settings::OPTION, $limits_fixture, false);
+    $concurrent_limits = array_replace($limits_fixture, ['company_name' => 'Concurrent editor wins', 'max_hours' => 9, 'custom_key' => 'Preserved concurrent value']);
+    $limits_raced = false;
+    $form_limits_race_filter = static function ($query) use (&$form_limits_race_filter, &$limits_raced, $concurrent_limits, $wpdb) {
+        if (strpos($query, "UPDATE {$wpdb->options} SET option_value") === 0 && strpos($query, 'AND BINARY option_value') !== false) {
+            remove_filter('query', $form_limits_race_filter);
+            $limits_raced = true;
+            update_option(Settings::OPTION, $concurrent_limits, false);
+        }
+        return $query;
+    };
+    add_filter('query', $form_limits_race_filter);
+    Settings::upgrade_form_limits();
+    remove_filter('query', $form_limits_race_filter);
+    $form_limits_race_filter = null;
+    $check($limits_raced && get_option(Settings::OPTION) === $concurrent_limits, 'A concurrent settings save cannot be overwritten by the duration migration compare-and-swap.');
+    $check(get_option(Settings::FORM_LIMITS_UPGRADE, null) === null, 'A lost comparison leaves the upgrade unmarked so a later request can retry safely.');
+    Settings::upgrade_form_limits();
+    $check(get_option(Settings::OPTION) === array_replace($concurrent_limits, ['min_hours' => 3, 'max_hours' => 24]) && (int) get_option(Settings::FORM_LIMITS_UPGRADE, 0) === 1, 'A retry updates only the requested bounds while retaining the successful concurrent editor values.');
+    $check(get_option(Settings::FORM_LIMITS_BACKUP) === ['min_hours' => 3, 'max_hours' => 12], 'A retry does not replace the immutable original pre-update duration backup.');
+
+    // Restore the installation state before the existing settings regressions.
+    foreach ([Settings::OPTION => $original_option, Settings::FORM_LIMITS_UPGRADE => $original_form_limits_upgrade, Settings::FORM_LIMITS_BACKUP => $original_form_limits_backup] as $option => $value) {
+        if ($value === null) { delete_option($option); } else { update_option($option, $value, false); }
+    }
     $legacy = Settings::get();
     unset($legacy['dashboard_recent_limit']);
     update_option(Settings::OPTION, $legacy, false);
@@ -376,6 +445,7 @@ try {
     }
     WP_CLI::success('WordPress data/settings/fleet/pricing checks passed: ' . $checks);
 } finally {
+    if ($form_limits_race_filter !== null) { remove_filter('query', $form_limits_race_filter); }
     $_POST = [];
     wp_set_current_user((int) $admin[0]);
     foreach ($created_posts as $post_id) {
@@ -392,6 +462,9 @@ try {
         delete_option(Settings::OPTION);
     } else {
         update_option(Settings::OPTION, $original_option, false);
+    }
+    foreach ([Settings::FORM_LIMITS_UPGRADE => $original_form_limits_upgrade, Settings::FORM_LIMITS_BACKUP => $original_form_limits_backup] as $option => $value) {
+        if ($value === null) { delete_option($option); } else { update_option($option, $value, false); }
     }
     delete_transient('tuxano_vehicle_error_' . $admin[0]);
     $_POST = $original_post;

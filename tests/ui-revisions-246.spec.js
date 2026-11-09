@@ -24,15 +24,16 @@ test.afterEach(async ({ page }) => {
 });
 
 for (const width of [1440, 390, 320]) {
-  test(`Step 1 keeps matching map links and full-width waiting/hour controls at ${width}px`, async ({ page }) => {
+  test(`Step 1 keeps matching map icons and full-width waiting/hour controls at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1100 });
     await page.getByRole('button', { name: 'Add stop', exact: true }).click();
     const links = page.locator('.location-map-open');
     await expect(links).toHaveCount(3);
     const families = [];
     for (const link of await links.all()) {
-      await expect(link).toHaveCSS('font-size', '13px');
-      await expect(link).toHaveCSS('font-weight', '400');
+      await expect(link).toHaveAttribute('aria-label', /^Choose (?:pickup|drop-off|stop 1) on map$/);
+      await expect(link).toHaveText('');
+      await expect(link.locator('svg')).toHaveCount(1);
       await expect(link).toHaveCSS('letter-spacing', 'normal');
       await expect(link).toHaveCSS('text-decoration-line', 'none');
       families.push(await link.evaluate(el => getComputedStyle(el).fontFamily));
@@ -62,6 +63,7 @@ for (const width of [1440, 390, 320]) {
     expect(message.width).toBeGreaterThanOrEqual(stopRow.width - 1);
 
     await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
+    await expect(waiting).toHaveCount(0);
     const quantity = page.locator('.hour-quantity');
     await expect(quantity).toBeVisible();
     const sizing = await quantity.evaluate(el => ({ control: el.getBoundingClientRect().width, parent: el.parentElement.getBoundingClientRect().width }));
@@ -70,6 +72,8 @@ for (const width of [1440, 390, 320]) {
     await page.getByRole('button', { name: 'Increase hours', exact: true }).click();
     await expect(page.getByLabel('Hours', { exact: true })).toHaveValue('4');
     await expect(page.getByLabel('Hours', { exact: true })).toHaveCSS('letter-spacing', 'normal');
+    await expect(quantity.locator('label > span')).toHaveCount(0);
+    await expect(page.locator('.hours-limits')).toHaveText('3-hour minimum · 24-hour maximum');
     await expect(page.locator('.picker-time-24h, [data-time24]')).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);

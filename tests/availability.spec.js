@@ -64,7 +64,7 @@ async function vehicles(page) {
   await choosePlace(page, 'Drop-off location', 'Confirmed destination, London');
   await page.getByLabel('Date', { exact: true }).fill(pickupDate);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
 }
@@ -257,7 +257,7 @@ test('availability dialog stays inside the visible parent viewport in a tall boo
   await choosePlace(frame, 'Drop-off location', 'Embedded destination, London');
   await frame.getByLabel('Date', { exact: true }).fill(pickupDate);
   await frame.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(frame.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(frame.getByTestId('total-duration')).toHaveText('30 min');
   await frame.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
   await page.evaluate(() => scrollTo(0, document.querySelector('iframe').offsetTop + 250));

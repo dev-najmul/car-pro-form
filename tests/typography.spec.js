@@ -39,7 +39,7 @@ async function trip(page, quick = false) {
   await choose(page, quick ? 'Drop-off Location' : 'Drop-off location', 'Dropoff');
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
-  if (!quick) await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  if (!quick) await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function fit(page) {
   await page.evaluate(async () => { await document.fonts.ready; });
@@ -97,7 +97,7 @@ test('quick card typography remains scoped and does not recolor host typography'
   await expect(page.locator('.tuxano-quick-booking-title')).toHaveCSS('letter-spacing', '1px');
   await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveCSS('letter-spacing', 'normal');
   await expect(page.locator('.tuxano-quick-booking-label').first()).toHaveCSS('letter-spacing', '1px');
-  await expect(page.locator('.tuxano-quick-booking-note')).toHaveCSS('letter-spacing', 'normal');
+  await expect(page.locator('.tuxano-quick-booking-note')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'CHECK PRICE', exact: true })).toHaveCSS('letter-spacing', '2px');
   await expect(page.locator('.host-copy')).toHaveCSS('letter-spacing', '3px');
   await expect(page.locator('.host-button')).toHaveCSS('letter-spacing', '4px');

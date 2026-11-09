@@ -2,7 +2,8 @@ import { MapsClient, mountAutocomplete, googlePlaceUrl, googleRouteLinks, normal
 import { quoteTransportation, formatDuration } from "./pricing.js";
 import { mountPickupMap } from "./pickup-map.js";
 import { COUNTRY_NAMES } from "./countries.js";
-import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock } from "./quick-handoff.js";
+import { normalizeQuickTrip, validateQuickPickupTime, quickWebsiteClock, resolveQuickPickupInstant } from "./quick-handoff.js";
+import { mountTimePicker } from "./time-picker.js";
 import { bookingFetch, renewBookingSession } from "./session-client.js";
 /* The shared frontend supports both the static prototype and WordPress runtime. */
 (() => {
@@ -79,10 +80,11 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   let DEMO_MODE = !runtime && new URLSearchParams(location.search).get("demo") === "1";
   let receipt = null, requestKey = "", submitting = false;
   const gratuities = [...new Set([10, 15, 20, 25, settings.defaultGratuity])].sort((a, b) => a - b).map(String);
-  const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+  const WAIT_OPTIONS = [15, 30, 45, 60, 75, 90, 120];
   const maps = new MapsClient();
   let currentRoute = null, routeStatus = "idle", routeMessage = "", routeGeneration = 0, routeController = null, routePromise = null;
   let autocompleteCleanups = [];
+  let timePickerCleanup;
   let advancing = false, locationGeneration = 0, navigationGeneration = 0, editGeneration = 0;
   let availabilityGeneration = 0, availabilityController = null, availabilityDialogClose = null, pendingAvailabilityAck = "";
   let restoringPlaces = false, routeContextTimer = null;
@@ -93,7 +95,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   const fieldErrors = new Map();
   const touchedFields = new Set();
   const newStopId = () => "stop-" + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
-  const makeStop = (text = "") => ({ id: newStopId(), text, query: text, place: null, waitMinutes: 5 });
+  const makeStop = (text = "", service = "transfer") => ({ id: newStopId(), text, query: text, place: null, waitMinutes: service === "hourly" ? 0 : 15 });
   const routes = [
     "trip",
     "vehicles",
@@ -288,6 +290,10 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   const policies = () => runtime
     ? `${settings.termsUrl ? `<a href="${e(safeUrl(settings.termsUrl))}" target="_blank" rel="noopener noreferrer">Terms & Conditions</a>` : "Terms & Conditions"} and ${settings.privacyUrl ? `<a href="${e(safeUrl(settings.privacyUrl))}" target="_blank" rel="noopener noreferrer">Privacy Policy</a>` : "Privacy Policy"}`
     : '<button type="button" class="text-link" data-policy="Terms & Conditions">Terms & Conditions</button> and <button type="button" class="text-link" data-policy="Cancellation Policy">Cancellation Policy</button>';
+  const viewTerms = () => {
+    const url = typeof settings.termsUrl === "string" && settings.termsUrl.trim() ? safeUrl(settings.termsUrl) : "";
+    return url ? `<a class="text-link view-terms" href="${e(url)}" target="_blank" rel="noopener noreferrer">View Terms</a>` : "";
+  };
   const brand = (hero = false) => !runtime || settings.companyName === "TUXANO"
     ? `<img src="${e(asset("tuxano-wordmark.png"))}" alt="${e(settings.companyName)} Private Transportation"${hero ? ' class="brand-logo"' : ""}>`
     : `<strong${hero ? ' class="brand-logo" style="font:500 48px var(--serif);color:white"' : ""}>${e(settings.companyName)}</strong>`;
@@ -424,12 +430,13 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       seen.add(result.id);
       result.query = typeof stop.query === "string" ? stop.query.slice(0, 1024) : result.text;
       result.place = safePlace(stop.place, result.text);
-      result.waitMinutes = WAIT_OPTIONS.includes(stop.waitMinutes) ? stop.waitMinutes : 5;
+      result.waitMinutes = clean.trip.service === "hourly" ? 0 : WAIT_OPTIONS.includes(stop.waitMinutes) ? stop.waitMinutes : 15;
       return result;
     }) : [];
     clean.trip.service = ["transfer", "hourly"].includes(clean.trip.service)
       ? clean.trip.service
       : "transfer";
+    if (clean.trip.service === "hourly") clean.trip.stops.forEach(stop => { stop.waitMinutes = 0; });
     clean.vehicle = vehicles.some((v) => v.id === clean.vehicle)
       ? clean.vehicle
       : "";
@@ -448,6 +455,11 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     for (const name of ["luggage", "carSeats", "boosterSeats"])
       clean[name] = integer(clean[name], 0, 100, 0);
     clean.completed = integer(clean.completed, 0, 4, 0);
+    // Revisit vehicle prices when a pre-update draft used different stop waits.
+    if (clean.trip.stops.some((stop, index) => stop.waitMinutes !== saved.trip?.stops?.[index]?.waitMinutes)) {
+      clean.completed = 0;
+      clean.consent = false;
+    }
     clean.custom =
       Number.isFinite(clean.custom) && clean.custom >= 0 && clean.custom <= 100
         ? clean.custom
@@ -559,12 +571,13 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       ? new Date("2000-01-01T" + state.trip.time).toLocaleTimeString("en-US", {
           hour: "numeric",
           minute: "2-digit",
+          hour12: true,
         })
       : "Select a time";
   const zoneLabel = () => settings.pickupTimezones === true
     ? (usableRoute()?.pickupTimezoneLabel || (pickupZone?.signature === pickupZoneSignature() ? pickupZone.label : ""))
     : "";
-  const pickupZoneName = () => usableRoute()?.pickupTimezone || (pickupZone?.signature === pickupZoneSignature() ? pickupZone.timezone : "") || (settings.pickupTimezones === true ? "America/New_York" : settings.timezone);
+  const pickupZoneName = () => usableRoute()?.pickupTimezone || (pickupZone?.signature === pickupZoneSignature() ? pickupZone.timezone : "") || (settings.pickupTimezones === true ? "America/New_York" : settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const timeLabel = () => clockLabel() + (state.trip.time && zoneLabel() ? ` (${zoneLabel()})` : "");
   const fullDate = () => `${dateLabel(true)} at ${timeLabel()}`;
   // Alternate display only: the stored pickup wall time and authoritative zone
@@ -621,7 +634,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   const qty = (key, label, value, max, min = 0) =>
     `<div class="quantity" role="group" aria-label="${label}"><button type="button" data-count="${key}" data-delta="-1" aria-label="Decrease ${label}" ${value <= min ? "disabled" : ""}>${icon("minus")}</button><output>${value}</output><button type="button" data-count="${key}" data-delta="1" aria-label="Increase ${label}" ${value >= max ? "disabled" : ""}>${icon("plus")}</button></div>`;
   function hourControl() {
-    return `<div class="hour-control"><div class="hour-quantity" role="group" aria-label="Number of service hours"><button type="button" data-hour-delta="-1" aria-label="Decrease hours" ${state.trip.hours <= settings.minHours ? "disabled" : ""}>${icon("minus")}</button><label><input id="hours" class="input" type="number" inputmode="numeric" min="${settings.minHours}" max="${settings.maxHours}" step="1" data-field="trip.hours" aria-label="Hours" aria-describedby="hours-limits hours-feedback" value="${state.trip.hours}" required><span>hours</span></label><button type="button" data-hour-delta="1" aria-label="Increase hours" ${state.trip.hours >= settings.maxHours ? "disabled" : ""}>${icon("plus")}</button></div><p class="hours-limits" id="hours-limits">${settings.minHours}-hour minimum (max ${settings.maxHours} hours)</p><p id="hours-feedback" class="field-error" role="status" ${hoursFeedback ? "" : "hidden"}>${e(hoursFeedback)}</p><div class="hours-service-note">${icon("info")}<p><strong>Need less or more than 24 hours or multiple day service?</strong><span>Please add this in your Trip Notes section when completing your reservation.</span></p></div></div>`;
+    return `<div class="hour-control"><div class="hour-quantity" role="group" aria-label="Number of service hours"><button type="button" data-hour-delta="-1" aria-label="Decrease hours" ${state.trip.hours <= settings.minHours ? "disabled" : ""}>${icon("minus")}</button><label><input id="hours" class="input" type="number" inputmode="numeric" min="${settings.minHours}" max="${settings.maxHours}" step="1" data-field="trip.hours" aria-label="Hours" aria-describedby="hours-limits hours-feedback" value="${state.trip.hours}" required></label><button type="button" data-hour-delta="1" aria-label="Increase hours" ${state.trip.hours >= settings.maxHours ? "disabled" : ""}>${icon("plus")}</button></div><p class="hours-limits" id="hours-limits">${settings.minHours}-hour minimum · ${settings.maxHours}-hour maximum</p><p id="hours-feedback" class="field-error" role="status" ${hoursFeedback ? "" : "hidden"}>${e(hoursFeedback)}</p><div class="hours-service-note">${icon("info")}<p>Need more time or a multi-day service? Add details in Trip Notes later in the booking.</p></div></div>`;
   }
   function updateHoursControl(commit = false) {
     const input = app.querySelector('[data-field="trip.hours"]');
@@ -638,12 +651,14 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     if (output) { output.textContent = hoursFeedback; output.hidden = !hoursFeedback; }
     for (const button of app.querySelectorAll("[data-hour-delta]")) button.disabled = Number(button.dataset.hourDelta) < 0 ? Number(input.value) <= settings.minHours : Number(input.value) >= settings.maxHours;
     updateValidity();
+    const estimate = app.querySelector(".route-live");
+    if (estimate && state.trip.service === "hourly") estimate.innerHTML = tripEstimate();
   }
   const security = () =>
     `<div class="security">${icon("shield")}<div><strong>Secure & Confidential</strong><p>Your information is encrypted and handled securely.</p></div></div>`;
   const total = () =>
     `<div class="total"><h4>ESTIMATED TOTAL</h4><strong data-testid="estimated-total">${money(costs().total)}</strong><p>All-Inclusive (${e(settings.currency)})</p></div>`;
-  const separateWaiting = c => Boolean(c.fare?.pricingMode && Number.isFinite(c.fare.waitingCharge) && c.fare.waitingCharge > 0);
+  const separateWaiting = c => Boolean(Number.isFinite(c.fare?.waitingCharge) && c.fare.waitingCharge > 0);
   const displayedDrivingCharge = c => separateWaiting(c) ? Math.round((c.transportation - c.fare.waitingCharge) * 100) / 100 : c.transportation;
   const waitingPriceLine = c => separateWaiting(c) ? `<div data-pricing-waiting-line><span>Stop waiting (${waitingMinutes()} min)</span><strong>${money(c.fare.waitingCharge)}</strong></div>` : "";
   const lines = (compact = false) => {
@@ -860,19 +875,15 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     announce(automatic ? "Your current pickup address has been filled. Check it before continuing." : "Detected pickup confirmed. The route uses your original device coordinates.");
   }
   function selectedLocationMarkup(fieldId) {
-    if (DEMO_MODE || restoringPlaces) return "";
-    const stopIndex = fieldId.startsWith("stop:") ? state.trip.stops.findIndex(stop => stop.id === fieldId.slice(5)) : -1;
-    const stop = state.trip.stops[stopIndex];
-    const point = stop ? stop.place : state.trip[fieldId + "Place"];
-    const value = stop ? stop.text : state.trip[fieldId];
-    if (!selectedPoint(point, value)) return "";
-    const label = stop ? `stop ${stopIndex + 1}` : `${fieldId} location`;
-    const url = googlePlaceUrl(point);
-    return `<span class="selected-location-label">Selected ${e(label)}</span><span class="selected-location-address">${e(point.text)}</span>${fieldId === "pickup" && point.suggestedPickup === true ? `<span class="pickup-suggestion-notice" data-suggested-pickup>Suggested pickup nearby. Check or adjust on map. <button type="button" class="text-link" data-action="choose-map" data-map-field="pickup">Adjust on map</button></span>` : ""}${point.source === "device" ? `<span class="selected-location-label">Device coordinates: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} · accuracy within ${accuracyLabel(point.accuracyMeters)}. Confirmed ${e(new Date(point.confirmedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))}.</span>` : point.source === "map" ? `<span class="selected-location-label">Manually selected map point: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}. Nearby names are approximate context.</span>` : ""}${url ? `<a href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="View selected ${e(label)} in Google Maps">View place in Google Maps</a>` : ""}${fieldId === "pickup" && point.suggestedPickup === true ? attributionsMarkup(point.attributions || []) : ""}`;
+    if (DEMO_MODE || restoringPlaces || fieldId !== "pickup") return "";
+    const point = state.trip.pickupPlace;
+    return selectedPoint(point, state.trip.pickup) && point.suggestedPickup === true
+      ? '<span class="pickup-suggestion-notice" data-suggested-pickup>Suggested pickup nearby. Check or adjust using the map icon.</span>'
+      : "";
   }
   function selectedLocationBox(fieldId) {
     const content = selectedLocationMarkup(fieldId);
-    return `<div class="selected-location" data-selected-place="${e(fieldId)}" ${content ? "" : "hidden"}>${content}</div>`;
+    return `<div class="location-context" data-selected-place="${e(fieldId)}" ${content ? "" : "hidden"}>${content}</div>`;
   }
   function refreshSelectedLocations() {
     app.querySelectorAll("[data-selected-place]").forEach(box => {
@@ -883,7 +894,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   function routeComparison() {
     if (DEMO_MODE || !usableRoute()) return "";
     const links = googleRouteLinks([state.trip.pickupPlace, ...state.trip.stops.map(stop => stop.place), state.trip.dropoffPlace]);
-    return links.length ? `<div class="route-comparison">${links.map((url, i) => `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">View ${links.length > 1 ? `route part ${i + 1}` : "route"} in Google Maps</a>`).join("")}${links.length > 1 ? "<p>All stops are included. Open each route part to check the full journey.</p>" : ""}</div>` : "";
+    return links.length ? `<div class="route-comparison">${links.map((url, i) => `<a href="${e(url)}" target="_blank" rel="noopener noreferrer">View ${links.length > 1 ? `route part ${i + 1}` : "route"} on Google Maps</a>`).join("")}${links.length > 1 ? "<p>All stops are included. Open each route part to check the full journey.</p>" : ""}</div>` : "";
   }
   const routeRequest = () => {
     if (restoringPlaces || countryConflict()) return null;
@@ -899,7 +910,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     return request;
   };
   const routeSignature = () => { const request = routeRequest(); return request ? JSON.stringify(request) : ""; };
-  const waitingMinutes = () => state.trip.stops.reduce((sum, stop) => sum + stop.waitMinutes, 0);
+  const waitingMinutes = () => state.trip.service === "hourly" ? 0 : state.trip.stops.reduce((sum, stop) => sum + stop.waitMinutes, 0);
   const usableRoute = () => currentRoute && currentRoute.signature === routeSignature() ? currentRoute : null;
   function transportQuote(vehicle = selected()) {
     const route = usableRoute();
@@ -907,8 +918,34 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     if (runtime && !vehicle.tariff) return null;
     return quoteTransportation(vehicle.id, route, waitingMinutes(), state.trip.service, state.trip.hours, runtime ? vehicle.tariff : null, settings);
   }
-  const stopDescription = () => state.trip.stops.map(stop => `${stop.text} (${stop.waitMinutes} min stop)`).join(" → ");
+  const stopDescription = () => state.trip.stops.map(stop => `${stop.text}${state.trip.service === "hourly" ? "" : ` (${stop.waitMinutes} min stop)`}`).join(" → ");
+  function estimateEnd(durationSeconds) {
+    if (!state.trip.date || !state.trip.time || !Number.isFinite(durationSeconds)) return "—";
+    try {
+      const zone = pickupZoneName();
+      const pickup = resolveQuickPickupInstant(state.trip, zone);
+      const end = pickup + durationSeconds * 1000;
+      const clock = new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit", hour12: true }).format(end);
+      const endDate = quickWebsiteClock(zone, end).slice(0, 10);
+      const date = endDate !== state.trip.date ? ` · ${new Intl.DateTimeFormat("en-US", { timeZone: zone, month: "short", day: "numeric" }).format(end)}` : "";
+      return e(clock + date);
+    } catch { return "—"; }
+  }
+  function tripEstimate() {
+    const route = usableRoute();
+    const hasPlace = [state.trip.pickupPlace, state.trip.dropoffPlace, ...state.trip.stops.map(stop => stop.place)].some(point => point?.placeId || point?.nearbyName);
+    const attribution = !DEMO_MODE && (hasPlace || route) ? `<div class="route-provider"><span class="google-maps-attribution" translate="no">Google Maps</span></div>${providerAttributions()}` : "";
+    const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : "";
+    const statusMarkup = status ? `<div class="route-status ${routeStatus === "error" ? "route-error" : routeStatus === "loading" ? "route-loading" : ""}" role="${routeStatus === "error" ? "alert" : "status"}" ${routeStatus === "loading" ? 'aria-busy="true"' : ""}>${e(status)}${routeStatus === "error" ? '<button type="button" class="text-link" data-action="retry-route">Try again</button>' : ""}</div>` : "";
+    if (state.trip.service === "hourly") {
+      const validHours = Number.isInteger(state.trip.hours) && state.trip.hours >= settings.minHours && state.trip.hours <= settings.maxHours;
+      return `<section class="trip-estimate" aria-label="Hourly summary"><h4>HOURLY SUMMARY</h4><div class="trip-estimate-metrics"><div><span>Total Service</span><strong data-testid="service-hours">${validHours ? state.trip.hours + " hours" : "—"}</strong></div><div><span>Service Start</span><strong data-testid="service-start">${state.trip.time ? clockLabel() : "—"}</strong></div><div><span>Estimated Service End</span><strong data-testid="service-end">${validHours ? estimateEnd(state.trip.hours * 3600) : "—"}</strong></div></div></section>${statusMarkup}${attribution}`;
+    }
+    if (!route) return statusMarkup + attribution;
+    return `<section class="trip-estimate" aria-label="Trip estimate"><h4>TRIP ESTIMATE</h4><div class="trip-estimate-metrics"><div><span>Distance</span><strong data-testid="route-distance">${(route.distanceMeters / 1609.344).toFixed(1)} mi</strong></div><div><span>Estimated Travel Time</span><strong data-testid="total-duration">${formatDuration(route.durationSeconds + waitingMinutes() * 60)}</strong></div><div><span>Estimated Arrival Time</span><strong data-testid="estimated-arrival">${estimateEnd(route.durationSeconds + waitingMinutes() * 60)}</strong></div></div>${routeComparison()}</section>${statusMarkup}${attribution}`;
+  }
   function routeDetails(full = false) {
+    if (full) return tripEstimate();
     const route = usableRoute();
     const travel = route ? formatDuration(route.durationSeconds + waitingMinutes() * 60) : "";
     const status = restoringPlaces ? "Restoring selected locations…" : routeStatus === "loading" ? "Calculating driving route…" : routeStatus === "error" ? routeMessage : route ? "" : settings.transferPricing === true ? "Select pickup, drop-off, any stops, and your pickup date and time to calculate the route." : "Select pickup, drop-off, and any stops from the location suggestions.";
@@ -948,6 +985,8 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
         : pickupZoneSignature() ? "Checking the time zone for your pickup location…" : "Select your pickup to set its local time zone. Eastern Time is the default.";
     const input = app.querySelector('[data-field="trip.date"]');
     if (input && settings.pickupTimezones === true) input.min = pickupZoneSignature() && !zoneLabel() ? "" : quickWebsiteClock(pickupZoneName()).slice(0, 10);
+    const estimate = app.querySelector(".route-live");
+    if (estimate && state.trip.service === "hourly") estimate.innerHTML = tripEstimate();
     refreshTime24();
   }
   async function resolvePickupTimezone() {
@@ -982,7 +1021,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     refreshRoutePanel();
   }
   function refreshRouteContext() {
-    if (!runtime || settings.transferPricing !== true) return;
+    if (!runtime || settings.transferPricing !== true) { refreshRoutePanel(); return; }
     clearTimeout(routeContextTimer);
     invalidateRoute();
     routeContextTimer = setTimeout(() => { routeContextTimer = null; if (step === 0) calculateRoute(); }, 300);
@@ -1069,8 +1108,10 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     const unchanged = () => state === originalState && navigationGeneration === navigation && editGeneration === edits && locationGeneration === locationIntent && step === 0;
     const adjustedHours = Math.min(settings.maxHours, Math.max(settings.minHours, trip.hours));
     const hoursChanged = trip.service === "hourly" && adjustedHours !== trip.hours;
+    if ((trip.stops || []).length > settings.maxStops) { error("Too many stops. Please enter your trip again."); return; }
     state.trip = {
-      ...state.trip, service: trip.service, hours: adjustedHours, date: trip.date, time: trip.time, stops: [],
+      ...state.trip, service: trip.service, hours: adjustedHours, date: trip.date, time: trip.time,
+      stops: (trip.stops || []).map(point => ({ ...makeStop(point.query, trip.service), place: { placeId: point.placeId, text: point.query }, query: point.query, waitMinutes: trip.service === "hourly" ? 0 : point.waitMinutes })),
       pickup: trip.pickup.query, pickupQuery: trip.pickup.query,
       dropoff: trip.dropoff.query, dropoffQuery: trip.dropoff.query,
       pickupPlace: { ...trip.pickup, text: trip.pickup.query },
@@ -1081,16 +1122,20 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     render();
     announce("Restoring your quick booking locations and checking the driving route.");
     let failed = false;
-    await Promise.all(["pickup", "dropoff"].map(async key => {
-      const original = state.trip[key + "Place"];
+    const imports = [
+      ...["pickup", "dropoff"].map(key => ({ current: () => state.trip[key + "Place"], apply: place => { state.trip[key + "Place"] = place; if (place) state.trip[key] = place.text; } })),
+      ...state.trip.stops.map(stop => ({ current: () => state.trip.stops.find(item => item.id === stop.id)?.place, apply: place => { stop.place = place; if (place) stop.text = place.text; } })),
+    ];
+    await Promise.all(imports.map(async item => {
+      const original = item.current();
       if (!original.placeId) return;
       try {
         const place = await maps.restore(original.placeId);
-        if (state === originalState && state.trip[key + "Place"] === original) {
-          state.trip[key + "Place"] = key === "pickup" && original.suggestedPickup === true ? { ...place, suggestedPickup: true } : place; state.trip[key] = place.text;
+        if (state === originalState && item.current() === original) {
+          item.apply(original.suggestedPickup === true ? { ...place, suggestedPickup: true } : place);
         }
       } catch {
-        if (state === originalState && state.trip[key + "Place"] === original) { state.trip[key + "Place"] = null; failed = true; }
+        if (state === originalState && item.current() === original) { item.apply(null); failed = true; }
       }
     }));
     restoringPlaces = false;
@@ -1102,6 +1147,10 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
         const input = app.querySelector(`[data-place-field="${key}"]`);
         if (input && state.trip[key + "Place"]) input.value = state.trip[key];
       }
+      for (const stop of state.trip.stops) {
+        const input = app.querySelector(`[data-stop="${CSS.escape(stop.id)}"]`);
+        if (input && stop.place) input.value = stop.text;
+      }
       refreshSelectedLocations(); refreshRoutePanel(); updateValidity(); calculateRoute();
       return;
     }
@@ -1110,7 +1159,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     try {
       if (hoursChanged) throw new Error(`Service hours changed. Choose between ${settings.minHours} and ${settings.maxHours} hours before continuing.`);
       if (settings.pickupTimezones !== true) validateQuickPickupTime(trip, settings.timezone);
-      assertSameCountry([state.trip.pickupPlace, state.trip.dropoffPlace]);
+      assertSameCountry([state.trip.pickupPlace, ...state.trip.stops.map(stop => stop.place), state.trip.dropoffPlace]);
     } catch (failure) { error(failure.message); return; }
     if (!validate()) return;
     const ready = await calculateRoute();
@@ -1125,16 +1174,24 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
   // Step 1: selected Google places, ordered stopovers, separate pickup clock time,
   // and an automatic driving + waiting duration.
   function tripPage() {
-    const mapControls = fieldId => DEMO_MODE ? "" : `<button type="button" class="text-link location-map-open${fieldId === "pickup" ? " pickup-map-open" : ""}" data-action="choose-map" data-map-field="${e(fieldId)}" ${deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? mapTarget() === fieldId : fieldId === "pickup") ? "hidden" : ""}>Choose ${mapFieldLabel(fieldId)} on map</button><div class="location-map-wrap${fieldId === "pickup" ? " device-location-wrap" : ""}" data-map-wrap="${e(fieldId)}">${deviceLocationMarkup(fieldId)}</div>`;
-    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${selectedLocationBox(path)}${mapControls(path)}`;
+    const mapButton = fieldId => DEMO_MODE ? "" : `<button type="button" class="location-map-open" data-action="choose-map" data-map-field="${e(fieldId)}" aria-label="Choose ${mapFieldLabel(fieldId)} on map" title="Adjust ${mapFieldLabel(fieldId)} on map" ${deviceLocation.status !== "idle" && (deviceLocation.status === "map" ? mapTarget() === fieldId : fieldId === "pickup") ? "hidden" : ""}>${icon("edit")}</button>`;
+    const mapControls = fieldId => DEMO_MODE ? "" : `${selectedLocationBox(fieldId)}<div class="location-map-wrap${fieldId === "pickup" ? " device-location-wrap" : ""}" data-map-wrap="${e(fieldId)}">${deviceLocationMarkup(fieldId)}</div>`;
+    const locationInput = (path, label, placeholder, target = false) => `<div class="location-input has-map-action${target ? " has-location-target" : ""}">${icon("pin")}${field("trip." + path, label, placeholder, { required: true }).replace("<input ", `<input data-place-field="${path}" `)}${mapButton(path)}${target ? `<button type="button" class="location-target" data-action="locate" aria-label="Use current location" ${deviceBusy() ? 'disabled aria-busy="true"' : ""}>${icon("target")}</button>` : ""}</div>${mapControls(path)}`;
     const picker = (path, label, symbol, value, type) => `<label class="picker-field"><span class="label">${label.toUpperCase()}</span><span class="picker-box">${icon(symbol)}<span data-display="${path}">${value}</span>${field(path, label, "", { type, required: true })}</span></label>`;
-    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}<div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div><div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark${DEMO_MODE ? "" : ". Include the city and choose the exact place."}</p></div><div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off"></div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${selectedLocationBox("stop:" + stop.id)}${mapControls("stop:" + stop.id)}<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label><p class="stop-wait-note">Waiting adds a charge based on your vehicle class.</p></div>`).join("")}</div><button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button><div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label>${hourControl()}</div>` : ""}<div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", clockLabel(), "time")}</div>${runtime ? `<p class="route-status" data-pickup-timezone>Pickup dates and times use ${e(zoneLabel() || "Eastern Time")}, local to your pickup location.</p>` : ""}<div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
+    return `<form id="booking-form" class="panel trip-panel" data-step="1">${panelHeader(1, "TRIP", "calendar", "Tell us where and when you need service.")}
+      <div class="field-block"><span class="label">SERVICE TYPE</span><div class="segments service-choice"><button type="button" data-service="transfer" aria-pressed="${state.trip.service === "transfer"}">TRANSFER</button><button type="button" data-service="hourly" aria-pressed="${state.trip.service === "hourly"}">HOURLY</button></div></div>
+      <div class="field-block"><label class="label" for="pickup">PICKUP LOCATION</label>${locationInput("pickup", "Pickup location", "Enter pickup location", true)}<p class="helper">${icon("info")}Search by address, hotel, airport, or landmark.</p></div>
+      <div class="stop-list">${state.trip.stops.map((stop, index) => `<div class="stop-field"><label class="label" for="${e(stop.id)}">STOP ${index + 1}</label><div class="stop-row"><div class="location-input has-map-action">${icon("pin")}<input id="${e(stop.id)}" class="input" data-place-field="stop:${e(stop.id)}" data-stop="${e(stop.id)}" aria-label="Stop ${index + 1}" placeholder="Enter stop location" value="${e(stop.text)}" required autocomplete="off">${mapButton("stop:" + stop.id)}</div><button type="button" class="remove-stop" data-remove-stop="${e(stop.id)}" aria-label="Remove stop ${index + 1}">×</button></div>${mapControls("stop:" + stop.id)}${state.trip.service === "transfer" ? `<label class="stop-wait-label">Stop waiting time<select class="input" aria-label="Stop ${index + 1} wait time" data-stop-wait="${e(stop.id)}">${WAIT_OPTIONS.map(value => `<option value="${value}" ${value === stop.waitMinutes ? "selected" : ""}>${value} minutes</option>`).join("")}</select></label>` : ""}</div>`).join("")}</div>
+      <button type="button" class="add-stop" data-action="add-stop" ${state.trip.stops.length >= settings.maxStops ? "disabled" : ""}>${icon("plus")}Add stop</button>
+      <div class="field-block"><label class="label">DROP-OFF LOCATION</label>${locationInput("dropoff", "Drop-off location", "Enter drop-off location")}</div>
+      ${state.trip.service === "hourly" ? `<div class="field-block"><label class="label" for="hours">NUMBER OF HOURS</label>${hourControl()}</div>` : ""}
+      <div class="field-grid date-time">${picker("trip.date", "Date", "calendar", dateLabel(), "date")}${picker("trip.time", "Pickup time", "clock", clockLabel(), "time")}</div>
+      <div class="route-live" aria-live="polite">${routeDetails(true)}</div><div class="form-error" role="alert" hidden></div><button class="btn primary check-price" type="submit">CHECK PRICE</button></form>`;
   }
 
-  // Step 2: all six vehicle classes, using the original supplied pictures.
   function vehicleCard(v) {
     const quote = transportQuote(v)?.transportation ?? null;
-    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${e(v.id)}">${v.image ? `<img class="vehicle-photo" src="${e(asset(v.image))}" alt="${e(v.display)} outside a luxury hotel">` : ""}<h3>${e(v.name)}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${bags(v)} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${e(m)}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${e(f)}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>${e(settings.currency)}</small></strong>${waitingMinutes() ? `<small class="waiting-price">Includes ${waitingMinutes()} min waiting (${money(transportQuote(v)?.waitingCharge ?? null)})</small>` : ""}</div><button class="btn primary" type="button" data-select="${e(v.id)}" aria-label="Select &amp; continue with ${e(v.display)}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? icon("check") + " " : ""}SELECT &amp; CONTINUE</button></article>`;
+    return `<article class="vehicle-card ${state.vehicle === v.id ? "is-selected" : ""}" data-vehicle-card="${e(v.id)}">${v.image ? `<img class="vehicle-photo" src="${e(asset(v.image))}" alt="${e(v.display)} outside a luxury hotel">` : ""}<h3>${e(v.name)}</h3><div class="card-capacity">${icon("people")} ${v.capacity} Passengers <span></span>${icon("luggage")} ${bags(v)} Bags</div><div class="vehicle-models"><h4>${v.capacity === 6 ? "VEHICLES" : "IDEAL FOR"}</h4>${v.models.map((m) => `<p>${e(m)}</p>`).join("")}</div><ul class="features">${v.features.map((f) => `<li>${icon("check")}${e(f)}</li>`).join("")}</ul><div class="vehicle-price"><p>TOTAL ALL-INCLUSIVE</p><strong>${whole(quote)}<small>${e(settings.currency)}</small></strong></div><button class="btn primary" type="button" data-select="${e(v.id)}" aria-label="Select &amp; continue with ${e(v.display)}" aria-pressed="${state.vehicle === v.id}">${state.vehicle === v.id ? icon("check") + " " : ""}SELECT &amp; CONTINUE</button></article>`;
   }
   function collections() {
     if (!runtime) return `<section class="collection"><h2>SUV COLLECTION</h2><p>Spacious, comfortable, and perfect for everyday executive travel,</p><div class="vehicle-grid">${vehicles.slice(0, 3).map(vehicleCard).join("")}</div></section><section class="collection"><h2>ROLLS-ROYCE COLLECTION</h2><p>The ultimate in luxury, prestige, and refinement.</p><div class="vehicle-grid">${vehicles.slice(3).map(vehicleCard).join("")}</div></section>`;
@@ -1212,7 +1269,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     ])}</div></div><div class="billing-review">${rows([
       ["Billing Address:", billingAddress()],
       ["Billing Notes:", state.billing.notes || "None"],
-    ])}</div></section><label class="checkbox consent"><input type="checkbox" data-field="consent" ${state.consent ? "checked" : ""} required><span>I agree to the ${policies()}.</span></label>${runtime ? '<label style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden" aria-hidden="true">Leave this field empty<input name="website" data-booking-honeypot tabindex="-1" autocomplete="off"></label>' : ""}<div class="form-error" role="alert" hidden></div>${nav("SUBMIT RESERVATION REQUEST", true)}</form><div class="review-sidebar"><aside class="price-summary"><h3>PRICE SUMMARY</h3>${lines(true)}${total()}${security()}</aside>${nextSteps()}</div></div>`;
+    ])}</div></section><label class="checkbox consent"><input type="checkbox" data-field="consent" ${state.consent ? "checked" : ""} required><span>I agree to the Terms &amp; Conditions.</span></label>${viewTerms()}${runtime ? '<label style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden" aria-hidden="true">Leave this field empty<input name="website" data-booking-honeypot tabindex="-1" autocomplete="off"></label>' : ""}<div class="form-error" role="alert" hidden></div>${nav("SUBMIT RESERVATION REQUEST", true)}</form><div class="review-sidebar"><aside class="price-summary"><h3>PRICE SUMMARY</h3>${lines(true)}${total()}${security()}</aside>${nextSteps()}</div></div>`;
   }
 
   // Confirmation follows a durable WordPress receipt; static mode remains a demo.
@@ -1296,6 +1353,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
             .join("")
         : "";
     autocompleteCleanups.forEach(cleanup => cleanup()); autocompleteCleanups = [];
+    timePickerCleanup?.(); timePickerCleanup = null;
     pickupMapCleanup?.(); pickupMapCleanup = null;
     document.body.className =
       step === 5 ? "thank-page" : `form-page step-${step + 1}`;
@@ -1313,6 +1371,8 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
     app.querySelectorAll("form").forEach(form => { form.noValidate = true; });
     updateValidity();
     mountPlaces();
+    const timeInput = app.querySelector('[data-field="trip.time"]');
+    if (timeInput) timePickerCleanup = mountTimePicker(timeInput);
     mountDeviceMap();
     refreshTimezoneDisplay();
     if (focusAttributes) {
@@ -1969,6 +2029,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
       dirty();
     if (button.dataset.service) {
       state.trip.service = button.dataset.service;
+      for (const stop of state.trip.stops) stop.waitMinutes = state.trip.service === "hourly" ? 0 : WAIT_OPTIONS.includes(stop.waitMinutes) ? stop.waitMinutes : 15;
       if (settings.transferPricing === true) invalidateRoute();
       save();
       render();
@@ -2042,7 +2103,7 @@ import { bookingFetch, renewBookingSession } from "./session-client.js";
         break;
       case "add-stop":
         if (state.trip.stops.length < settings.maxStops) {
-          state.trip.stops.push(makeStop()); invalidateRoute();
+          state.trip.stops.push(makeStop("", state.trip.service)); invalidateRoute();
           save();
           render();
           app

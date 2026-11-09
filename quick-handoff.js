@@ -46,7 +46,17 @@ export function normalizeQuickTrip(value, now = Date.now()) {
   const date = new Date(value.date + 'T12:00:00Z');
   if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.date) throw new Error('Choose a valid pickup date.');
   if (typeof value.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value.time)) throw new Error('Choose a valid pickup time.');
-  return { service: value.service, hours: value.hours, date: value.date, time: value.time, pickup: pointOf(value.pickup, true, now), dropoff: pointOf(value.dropoff, false, now) };
+  // Optional ordered stops extend the v1 intent without changing old links.
+  // Only Google identity, the visitor's query and selected waiting cross pages.
+  let stops;
+  if (Object.hasOwn(value, 'stops')) {
+    if (!Array.isArray(value.stops) || value.stops.length > 5) throw new Error('Choose no more than five stops.');
+    stops = value.stops.map(stop => {
+      if (!plain(stop) || ![15, 30, 45, 60, 75, 90, 120].includes(stop.waitMinutes) && !(value.service === 'hourly' && stop.waitMinutes === 0)) throw new Error('Choose a valid stop waiting time.');
+      return { ...pointOf(stop, false, now), waitMinutes: value.service === 'hourly' ? 0 : stop.waitMinutes };
+    });
+  }
+  return { service: value.service, hours: value.hours, date: value.date, time: value.time, pickup: pointOf(value.pickup, true, now), dropoff: pointOf(value.dropoff, false, now), ...(stops ? { stops } : {}) };
 }
 
 export function quickWebsiteClock(timezone = 'UTC', now = Date.now()) {
@@ -61,7 +71,7 @@ export function quickWebsiteClock(timezone = 'UTC', now = Date.now()) {
   } catch { return new Date(now).toISOString().slice(0, 16); }
 }
 
-export function validateQuickPickupTime(trip, timezone = 'UTC', now = Date.now()) {
+export function resolveQuickPickupInstant(trip, timezone = 'UTC') {
   const wall = `${trip.date}T${trip.time}`;
   const naive = Date.parse(wall + ':00Z');
   if (!Number.isFinite(naive) || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(wall)) throw new Error('Choose a valid pickup date and time.');
@@ -83,8 +93,13 @@ export function validateQuickPickupTime(trip, timezone = 'UTC', now = Date.now()
   const matches = [...offsets].map(offset => naive - offset * 60000).filter(stamp => quickWebsiteClock(timezone, stamp) === wall);
   if (!matches.length) throw new Error('This pickup time does not exist when daylight saving time changes. Choose another time.');
   if (matches.length > 1) throw new Error('This pickup time occurs twice when daylight saving time ends. Choose a time outside the repeated hour, or contact the booking team.');
-  if (matches[0] <= now) throw new Error('Choose a pickup date and time in the future.');
+  return matches[0];
 }
+
+export function validateQuickPickupTime(trip, timezone = 'UTC', now = Date.now()) {
+  if (resolveQuickPickupInstant(trip, timezone) <= now) throw new Error('Choose a pickup date and time in the future.');
+}
+
 
 function prune(storage, now) {
   // Remove only this feature's bounded stale records, never another plugin's
@@ -109,7 +124,9 @@ export function createQuickHandoff(storage, trip, destination, { base = globalTh
   if (!crypto?.getRandomValues) throw new Error('Your browser could not start a secure booking transfer. Please use the full booking form.');
   const random = crypto.getRandomValues(new Uint8Array(16));
   const reference = [...random].map(value => value.toString(16).padStart(2, '0')).join('');
-  const record = JSON.stringify({ version: 1, destination: url.href, created: now, expires: now + QUICK_HANDOFF_TTL, trip: clean });
+  // A cached pre-stop booking page must reject a new stop-bearing intent,
+  // rather than silently accepting a journey after discarding its stops.
+  const record = JSON.stringify({ version: clean.stops?.length ? 2 : 1, destination: url.href, created: now, expires: now + QUICK_HANDOFF_TTL, trip: clean });
   if (record.length > MAX_RECORD) throw new Error('Your trip details are too long. Please use the full booking form.');
   try {
     prune(storage, now);
@@ -129,7 +146,7 @@ export function consumeQuickHandoff(storage, reference, actualPage, { base = act
   if (typeof raw !== 'string' || !raw || raw.length > MAX_RECORD) throw new Error('The quick booking details are unavailable or already used. Please enter your trip again.');
   let record;
   try { record = JSON.parse(raw); } catch { storage.removeItem(key); throw new Error('The quick booking details are invalid. Please enter your trip again.'); }
-  if (!plain(record) || record.version !== 1 || !Number.isFinite(record.created) || !Number.isFinite(record.expires) || record.created > now + 5000 || record.expires !== record.created + QUICK_HANDOFF_TTL || record.expires <= now) {
+  if (!plain(record) || ![1, 2].includes(record.version) || !Number.isFinite(record.created) || !Number.isFinite(record.expires) || record.created > now + 5000 || record.expires !== record.created + QUICK_HANDOFF_TTL || record.expires <= now) {
     storage.removeItem(key); throw new Error('The quick booking details have expired. Please enter your trip again.');
   }
   if (record.destination !== page.href) throw new Error('The quick booking details belong to a different booking page. Please enter your trip again.');

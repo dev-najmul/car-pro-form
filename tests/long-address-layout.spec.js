@@ -42,7 +42,7 @@ async function install(page, addresses) {
   }
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('13:58');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
   await page.evaluate(() => document.fonts.ready);
@@ -132,10 +132,10 @@ for (const width of [1440, 1024, 768, 390, 320]) {
     await expect(page).toHaveURL(/#trip$/);
     await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(pickup);
     await expect(page.getByLabel('Drop-off location', { exact: true })).toHaveValue(dropoff);
-    for (const [field, id] of [['pickup', pickupId], ['dropoff', dropoffId]]) {
-      const href = await page.locator(`[data-selected-place="${field}"]`).getByRole('link', { name: /Google Maps/ }).getAttribute('href');
-      expect(new URL(href).searchParams.get('query_place_id')).toBe(id);
-    }
+    await expect(page.locator('.selected-location')).toHaveCount(0);
+    const href = new URL(await page.getByRole('link', { name: 'View route on Google Maps', exact: true }).getAttribute('href'));
+    expect(href.searchParams.get('origin_place_id')).toBe(pickupId);
+    expect(href.searchParams.get('destination_place_id')).toBe(dropoffId);
   });
 }
 

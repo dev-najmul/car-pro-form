@@ -16,7 +16,7 @@ test.beforeEach(async ({ page, context }) => {
   const control = { sessions: 0, routes: [], timezones: [], bookings: 0, errors: [], routeStatus: 200, mainSettings: {}, formCount: 1, holdRestore: false, holdRoute: false, routeResolvers: [] };
   controls.set(page, control);
   await context.addInitScript(() => {
-    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-AlphaPickup': 'US', 'test-BetaDropoff': 'US', 'nearby-chicago-pickup': 'US' }, locations: { 'nearby-chicago-pickup': { lat: 41.8831, lng: -87.6251 } } };
+    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-AlphaPickup': 'US', 'test-BetaDropoff': 'US', 'test-MiddleStop': 'US', 'nearby-chicago-pickup': 'US' }, locations: { 'nearby-chicago-pickup': { lat: 41.8831, lng: -87.6251 } } };
     window.__placeCanonicalLabels = { 'test-AlphaPickup': 'Canonical Pickup, New York, USA', 'test-BetaDropoff': 'Canonical Destination, Queens, USA', 'nearby-chicago-pickup': 'Refreshed Chicago Pickup, Chicago, IL, USA' };
     window.__nearbyPickupMock = { places: [] };
   });
@@ -218,7 +218,7 @@ test('editing while the fresh route is pending cancels automatic step-two naviga
   const changed = new Date(Date.now() + 16 * 86400000).toISOString().slice(0, 10);
   await frame.getByLabel('Date', { exact: true }).fill(changed);
   controls.get(page).routeResolvers.shift()();
-  await expect(frame.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(frame.locator('[data-testid="total-duration"]')).toHaveText('30 min');
   await expect(frame.getByLabel('Date', { exact: true })).toHaveValue(changed);
   expect(new URL(frame.url()).hash).toBe('#trip');
 });
@@ -268,7 +268,8 @@ test('an approximate GPS estimate can be corrected on the quick map and hands of
   await frame.getByRole('button', { name: /Edit Trip/i }).click();
   await expect(frame.getByLabel('Pickup location', { exact: true })).toHaveValue('Map-selected pickup (41.88220, -87.62440)');
   await expect(frame.getByLabel('Drop-off location', { exact: true })).toHaveValue('Canonical Destination, Queens, USA');
-  await expect(frame.getByText(/Manually selected map point: 41\.88220, -87\.62440/)).toBeVisible();
+  await expect(frame.locator('.selected-location')).toHaveCount(0);
+  await expect(frame.getByRole('button', { name: 'Choose pickup on map', exact: true })).toBeVisible();
 });
 
 test('a suggested nearby quick pickup is freshly restored, time-zoned and quoted by canonical Place ID on the booking page', async ({ page }) => {
@@ -292,6 +293,38 @@ test('a suggested nearby quick pickup is freshly restored, time-zoned and quoted
   await expect(frame.locator('.vehicle-price strong').first()).toHaveText('$120USD');
   await frame.getByRole('button', { name: /Edit Trip/i }).click();
   await expect(frame.getByLabel('Pickup location', { exact: true })).toHaveValue('Refreshed Chicago Pickup, Chicago, IL, USA');
-  await expect(frame.locator('[data-suggested-pickup]')).toContainText('Suggested pickup nearby. Check or adjust on map.');
+  await expect(frame.locator('[data-suggested-pickup]')).toContainText('Suggested pickup nearby. Check or adjust using the map icon.');
   await expect(frame.getByLabel('Pickup location', { exact: true })).not.toHaveValue(/Device pickup/);
+});
+
+async function chooseQuickStop(page, query = 'MiddleStop') {
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click();
+  await page.getByLabel('Stop 1', { exact: true }).fill(query);
+  await page.getByRole('option', { name: query, exact: true }).click();
+  await page.getByLabel('Stop 1 wait time').selectOption('75');
+}
+
+test('ordered quick stops receive fresh canonical routing and preserve their waiting in the main form', async ({ page }) => {
+  await prepareQuick(page); await chooseQuickStop(page);
+  const frame = await openBooking(page);
+  await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
+  expect(controls.get(page).routes[0].body.stops).toEqual([{ placeId: 'test-MiddleStop' }]);
+  await expect(frame.locator('.vehicle-price strong').first()).toHaveText('$345USD');
+  await frame.getByRole('button', { name: /Edit Trip/i }).click();
+  await expect(frame.getByLabel('Stop 1', { exact: true })).toHaveValue('MiddleStop');
+  await expect(frame.getByLabel('Stop 1 wait time')).toHaveValue('75');
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('tuxano-quick-trip-v1:')))).toEqual([]);
+});
+
+test('hourly quick stops remain in the fresh passenger route without carrying an invisible waiting fare', async ({ page }) => {
+  await prepareQuick(page); await chooseQuickStop(page);
+  await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
+  await page.getByLabel('Hours', { exact: true }).fill('7');
+  const frame = await openBooking(page);
+  await expect.poll(() => new URL(frame.url()).hash).toBe('#vehicles');
+  expect(controls.get(page).routes[0].body.stops).toEqual([{ placeId: 'test-MiddleStop' }]);
+  await expect(frame.locator('.vehicle-price strong').first()).toHaveText('$600USD');
+  await frame.getByRole('button', { name: /Edit Trip/i }).click();
+  await expect(frame.getByLabel('Stop 1', { exact: true })).toHaveValue('MiddleStop');
+  await expect(frame.getByLabel('Stop 1 wait time')).toHaveCount(0);
 });

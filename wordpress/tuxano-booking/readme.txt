@@ -4,7 +4,7 @@ Tags: transportation, reservation, booking, chauffeur
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.0
+Stable tag: 2.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,7 +21,7 @@ Created by Farhan raj Najmul.
 Website: https://farhanrajnajmul.com/
 
 == Installation ==
-1. Upload tuxano-booking-2.6.0.zip in Plugins > Add New > Upload Plugin; activate.
+1. Upload tuxano-booking-2.6.1.zip in Plugins > Add New > Upload Plugin; activate.
 2. Open Tuxano Booking > Settings. Configure the browser Maps/Places key and
    the separate private Google Routes key, notification recipients and business details.
 3. Review every seeded vehicle tariff in Vehicles and global fees in Pricing.
@@ -98,7 +98,8 @@ Contact/billing/passenger/itinerary details are stored privately and sent to
 configured mail recipients. Site operators must complete their privacy policy,
 review lawful retention and secure their hosting/backups/mail provider.
 WordPress privacy export/erase hooks and optional retention are provided.
-Live traffic is excluded; pickup time uses its geographic IANA timezone.
+New Transfer quotes use traffic-aware estimates for the selected pickup time;
+pickup time uses its geographic IANA timezone.
 
 == Data lifecycle ==
 Deactivation retains settings and bookings. Deleting the plugin retains them
@@ -107,6 +108,16 @@ TUXANO_BOOKING_REMOVE_DATA as true in wp-config.php first. Media attachments
 remain in the WordPress media library. Back up needed records before erasure.
 
 == Changelog ==
+
+= 2.6.1 =
+* Apply the requested 3–24-hour service range once, preserving previous limits for rollback and later administrator edits.
+* Add ordered stops to quick booking and retain the current form design.
+* Use a shared AM/PM pickup-time chooser with five-minute entries on desktop and mobile.
+* Simplify Step 1 location information and show compact Transfer or Hourly estimates.
+* Include waiting in new public Hourly service; offer Transfer stop waits of 15, 30, 45, 60, 75, 90 or 120 minutes.
+* Keep numeric hourly controls, existing configured bounds and separate Transfer/Hourly rates.
+* Show waiting in the itemized price summary and simplify review consent with a configured View Terms link that opens a new tab.
+* Preserve historical bookings, existing pricing profiles, pickup timezone authority and duplicate-safe request handling.
 
 = 2.6.0 =
 * Add independent per-vehicle Transfer and Hourly pricing groups.

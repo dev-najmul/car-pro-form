@@ -69,7 +69,7 @@ async function choose(page, label, value) {
 async function trip(page) {
   await choose(page, 'Pickup location', original); await choose(page, 'Drop-off location', dropoff);
   await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('14:30');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function locate(page, point = estimate) {
   await detect(page).click();
@@ -96,9 +96,9 @@ test('coarse GPS fills the closest canonical place and refreshes fares without c
   await suggested(page);
   await expect(page.getByTestId('pickup-map-picker')).toHaveCount(0);
   await expect(selected(page)).not.toContainText('accuracy within');
-  await expect(selected(page).getByRole('link', { name: 'Fixture Maps Provider', exact: true })).toHaveAttribute('href', 'https://example.test/maps-provider');
-  const maps = new URL(await selected(page).getByRole('link', { name: /Google Maps/i }).getAttribute('href'));
-  expect(maps.searchParams.get('query_place_id')).toBe(nearestId);
+  await expect(page.getByRole('link', { name: 'Fixture Maps Provider', exact: true }).first()).toHaveAttribute('href', 'https://example.test/maps-provider');
+  const maps = new URL(await page.getByRole('link', { name: 'View route on Google Maps', exact: true }).getAttribute('href'));
+  expect(maps.searchParams.get('origin_place_id')).toBe(nearestId);
   await page.screenshot({ path: '/tmp/tuxano-242-main-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
@@ -117,7 +117,7 @@ test('a precise device reading whose street lookup is unavailable can still use 
 
 test('adjusting a nearby suggestion starts at its canonical place and a manual choice clears its suggestion marker', async ({ page }) => {
   await install(page); await trip(page); await suggested(page);
-  await selected(page).getByRole('button', { name: 'Adjust on map', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
   await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
   expect(await page.evaluate(() => window.__mapPickerMock.maps.at(-1).options.center)).toEqual({ lat: nearestPoint.latitude, lng: nearestPoint.longitude });
   const search = page.getByLabel('Search map for pickup', { exact: true }); await expect(search).toBeEditable();
@@ -130,7 +130,7 @@ test('adjusting a nearby suggestion starts at its canonical place and a manual c
 
 test('the displayed suggested point can be deliberately kept on the map without converting it to sensor coordinates', async ({ page }) => {
   await install(page); await trip(page); await suggested(page);
-  await selected(page).getByRole('button', { name: 'Adjust on map', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).click();
   await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
   await page.evaluate(() => window.__mapPickerMock.maps.at(-1).emit('idle'));
   await expect(page.getByRole('button', { name: 'Use this map point', exact: true })).toBeEnabled();
@@ -180,7 +180,7 @@ test('when Google has no usable place the existing exact-map correction still wo
 test('a restored nearby suggestion retains its review hint until the customer chooses a new pickup', async ({ page }) => {
   await install(page); await trip(page); await suggested(page);
   await page.reload(); await expect(pickup(page)).toHaveValue(nearestLabel); await expect(note(page)).toContainText(/Suggested pickup/i);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('10 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('10 min');
   await choose(page, 'Pickup location', corrected); await expect(note(page)).toHaveCount(0);
 });
 
@@ -191,7 +191,7 @@ test.describe('phone nearby pickup suggestion', () => {
     await expect(page.getByTestId('pickup-map-picker')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     await page.screenshot({ path: '/tmp/tuxano-242-main-phone.png', fullPage: true });
-    await selected(page).getByRole('button', { name: 'Adjust on map', exact: true }).tap();
+    await page.getByRole('button', { name: 'Choose pickup on map', exact: true }).tap();
     await expect(page.getByTestId('google-map-mock-canvas')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   });

@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, context }) => {
   controls.set(page, control);
   page.on('pageerror', error => control.errors.push(error.message));
   await context.addInitScript(address => {
-    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-Dropoff': 'US', 'test-Pickup': 'US', 'test-Other': 'US' }, locations: { 'test-Pickup': { lat: 41.8818, lng: -87.6232 }, 'test-Other': { lat: 40.7128, lng: -74.006 } } };
+    window.__mapsMock = { calls: [], libraries: [], pending: [], holdSuggestions: [], holdDetails: [], holdRoutes: [], failRoutes: [], routeResults: {}, failSuggestions: [], emptySuggestions: [], countries: { 'test-Dropoff': 'US', 'test-Pickup': 'US', 'test-Other': 'US', 'test-FirstStop': 'US', 'test-SecondStop': 'US' }, locations: { 'test-Pickup': { lat: 41.8818, lng: -87.6232 }, 'test-Other': { lat: 40.7128, lng: -74.006 } } };
     window.__geocodeMock = { results: [{ formatted_address: address, geometry: { location: { lat: 41.8819, lng: -87.6233 } }, types: ['street_address'], address_components: [{ short_name: 'US', long_name: 'United States', types: ['country'] }] }] };
     window.__nearbyPickupMock = { places: [] };
     Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success) { success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 80 }, timestamp: Date.now() }); } } });
@@ -51,7 +51,7 @@ async function complete(page) {
   await choose(page, 'pickup', 'Pickup');
   await choose(page, 'dropoff', 'Dropoff');
   await page.getByLabel('Date', { exact: true }).fill(date);
-  await page.getByLabel('Pickup time', { exact: true }).fill('12:21');
+  await page.getByLabel('Pickup time', { exact: true }).fill('12:20');
 }
 
 test('hourly quantity is editable, bounded and corrects out-of-range values without losing the helper', async ({ page }) => {
@@ -84,7 +84,7 @@ test('tighter administrator hourly bounds remain respected', async ({ page }) =>
   await expect(hours).toHaveValue('4');
   await hours.fill('24'); await hours.press('Tab');
   await expect(hours).toHaveValue('8');
-  await expect(page.locator('.tuxano-quick-booking-hours-limit')).toHaveText('4-hour minimum (max 8 hours)');
+  await expect(page.locator('.tuxano-quick-booking-hours-limit')).toHaveText('4-hour minimum · 8-hour maximum');
 });
 
 test('precise GPS automatically fills a real address and keeps exact device coordinates in the handoff', async ({ page }) => {
@@ -92,7 +92,7 @@ test('precise GPS automatically fills a real address and keeps exact device coor
   await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(geoAddress);
   await expect(page.locator('[data-quick-device]')).toBeHidden();
   await choose(page, 'dropoff', 'Dropoff');
-  await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:21');
+  await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:20');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect.poll(() => controls.get(page).redirects.length).toBe(1);
   await page.waitForURL(url => url.pathname === '/quick-destination/');
@@ -129,17 +129,18 @@ test('approximate GPS opens a corrective map and a missing precise address offer
   await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue('Device pickup (41.88180, -87.62320)');
 });
 
-test('pickup time zone is resolved privately from coordinates and shown with its full name', async ({ page }) => {
+test('pickup time zone is resolved privately without displaying the removed disclosure', async ({ page }) => {
   controls.get(page).timezones = true;
   await visit(page); await complete(page);
   await expect(page.locator('[data-quick-timezone]')).toHaveText('Pickup time: Central Time.');
+  await expect(page.locator('[data-quick-timezone]')).toBeHidden();
   expect(controls.get(page).timezoneRequests).toEqual([{ point: { latitude: 41.8818, longitude: -87.6232 }, token: 'a'.repeat(64) }]);
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect.poll(() => controls.get(page).redirects.length).toBe(1);
   await page.waitForURL(url => url.pathname === '/quick-destination/');
   const trip = await page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('tuxano-quick-trip-v1:')))).trip);
   expect(trip).not.toHaveProperty('timezone');
-  expect(trip).toMatchObject({ date, time: '12:21' });
+  expect(trip).toMatchObject({ date, time: '12:20' });
 });
 
 test('quick future-time validation uses the pickup time zone rather than the server or browser clock', async ({ page }) => {
@@ -147,6 +148,7 @@ test('quick future-time validation uses the pickup time zone rather than the ser
   await page.clock.install({ time: new Date('2030-11-18T17:00:00Z') }); // 11 AM Chicago, noon Eastern.
   await visit(page); await complete(page);
   await expect(page.locator('[data-quick-timezone]')).toHaveText('Pickup time: Central Time.');
+  await expect(page.locator('[data-quick-timezone]')).toBeHidden();
   await page.getByLabel('Pickup time', { exact: true }).fill('11:30');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect.poll(() => controls.get(page).redirects.length).toBe(1);
@@ -197,9 +199,9 @@ test.describe('phone quick booking updated controls', () => {
     await visit(page); await page.getByRole('button', { name: 'HOURLY', exact: true }).tap();
     await page.getByRole('button', { name: 'Increase hours' }).tap();
     await expect(page.getByLabel('Hours', { exact: true })).toHaveValue('4');
-    await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:21');
+    await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:20');
     await expect(page.locator('[data-quick-display="date"]')).toHaveText('Nov 18, 2030');
-    await expect(page.locator('[data-quick-display="time"]')).toHaveText('12:21 PM');
+    await expect(page.locator('[data-quick-display="time"]')).toHaveText('12:20 PM');
     await page.getByRole('button', { name: 'Use current location' }).tap();
     await expect(page.getByLabel('Pickup Location', { exact: true })).toHaveValue(geoAddress);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
@@ -224,7 +226,7 @@ async function mapPoint(page, latitude = 41.8822, longitude = -87.6244) {
 }
 async function finishFromCurrentPickup(page) {
   await choose(page, 'dropoff', 'Dropoff');
-  await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:21');
+  await page.getByLabel('Date', { exact: true }).fill(date); await page.getByLabel('Pickup time', { exact: true }).fill('12:20');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/quick-destination/');
   return page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('tuxano-quick-trip-v1:')))).trip.pickup);
@@ -248,6 +250,7 @@ test('an approximate device position fills a real nearby pickup and hands off it
   expect(new URL(await link.getAttribute('href')).searchParams.get('query_place_id')).toBe('nearby-chicago-pickup');
   await expect(page.getByRole('link', { name: 'Nearby Map Provider', exact: true })).toHaveAttribute('href', 'https://example.com/nearby-attribution');
   await expect(page.locator('[data-quick-timezone]')).toHaveText('Pickup time: Central Time.');
+  await expect(page.locator('[data-quick-timezone]')).toBeHidden();
   expect(controls.get(page).timezoneRequests[0].point).toEqual({ latitude: 41.8821, longitude: -87.6235 });
   await page.locator('.tuxano-quick-booking').screenshot({ path: 'wordpress-test-results/gps-242/quick-nearby-desktop.png' });
   expect(await finishFromCurrentPickup(page)).toEqual({ placeId: 'nearby-chicago-pickup', query: nearbyAddress, suggestedPickup: true });
@@ -416,3 +419,96 @@ for (const action of ['search', 'pin']) {
     if (action === 'pin') await expect(page.locator('[data-quick-map-selection]')).toContainText('41.88220, -87.62440');
   });
 }
+
+
+async function chooseStop(page, number, query) {
+  const input = page.getByLabel(`Stop ${number}`, { exact: true });
+  await input.fill(query);
+  await page.getByRole('option', { name: query, exact: true }).click();
+  await expect(input).toHaveValue(query);
+}
+
+async function handoffTrip(page) {
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/quick-destination/');
+  return page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('tuxano-quick-trip-v1:')))).trip);
+}
+
+test('quick stops retain order and selected waiting while omitting duplicate disclosures', async ({ page }) => {
+  await visit(page); await complete(page);
+  await expect(page.locator('.tuxano-quick-booking-note')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click();
+  await expect(page.getByLabel('Stop 1 wait time')).toHaveValue('15');
+  expect(await page.getByLabel('Stop 1 wait time').locator('option').allTextContents()).toEqual(['15 minutes', '30 minutes', '45 minutes', '60 minutes', '75 minutes', '90 minutes', '120 minutes']);
+  await chooseStop(page, 1, 'FirstStop');
+  await page.getByLabel('Stop 1 wait time').selectOption('75');
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click();
+  await chooseStop(page, 2, 'SecondStop');
+  const trip = await handoffTrip(page);
+  expect(trip.stops).toEqual([
+    { placeId: 'test-FirstStop', query: 'FirstStop', waitMinutes: 75 },
+    { placeId: 'test-SecondStop', query: 'SecondStop', waitMinutes: 15 },
+  ]);
+  expect(trip).not.toHaveProperty('price');
+});
+
+test('hourly quick route stops exclude waiting and the quantity contains numbers only', async ({ page }) => {
+  await visit(page); await complete(page);
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click(); await chooseStop(page, 1, 'FirstStop');
+  await page.getByLabel('Stop 1 wait time').selectOption('75');
+  await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
+  await expect(page.getByLabel('Stop 1 wait time')).toBeHidden();
+  await expect(page.getByLabel('Stop 1 wait time')).toBeDisabled();
+  await expect(page.locator('.tuxano-quick-booking-hours-editor')).toHaveText('');
+  await expect(page.locator('.tuxano-quick-booking-hours-limit')).toHaveText('3-hour minimum · 24-hour maximum');
+  await expect(page.locator('.tuxano-quick-booking-hours-help')).toHaveText('Need more time or multi-day service? Add details in Trip Notes later.');
+  await expect(page.locator('.tuxano-quick-booking-hours-help')).toHaveCSS('border-top-width', '0px');
+  const trip = await handoffTrip(page);
+  expect(trip.stops).toEqual([{ placeId: 'test-FirstStop', query: 'FirstStop', waitMinutes: 0 }]);
+});
+
+test('quick stop removal renumbers labels, respects limits and blocks unselected stops', async ({ page }) => {
+  await visit(page); await complete(page);
+  const add = page.getByRole('button', { name: 'Add stop', exact: true });
+  for (let index = 0; index < 5; index++) await add.click();
+  await expect(add).toBeDisabled();
+  await expect(page.locator('[data-quick-stop]')).toHaveCount(5);
+  await page.getByRole('button', { name: 'Remove stop 2', exact: true }).click();
+  await expect(add).toBeEnabled();
+  expect(await page.locator('[data-quick-stop-place]').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label')))).toEqual(['Stop 1', 'Stop 2', 'Stop 3', 'Stop 4']);
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await expect(page.locator('.tuxano-quick-booking-error')).toContainText('Choose this stop');
+  expect(controls.get(page).redirects).toHaveLength(0);
+});
+
+test('editing a stop while pickup timezone is pending cancels the stale quick handoff', async ({ page }) => {
+  const control = controls.get(page); control.timezones = true; control.holdTimezone = true;
+  await visit(page); await complete(page);
+  await page.getByRole('button', { name: 'Add stop', exact: true }).click(); await chooseStop(page, 1, 'FirstStop');
+  await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
+  await page.getByLabel('Stop 1 wait time').selectOption('75');
+  control.timezoneResolvers.splice(0).forEach(resolve => resolve());
+  await expect(page.locator('[data-quick-timezone]')).toHaveText('Pickup time: Central Time.');
+  expect(control.redirects).toHaveLength(0);
+  const trip = await handoffTrip(page);
+  expect(trip.stops[0].waitMinutes).toBe(75);
+});
+
+test.describe('phone quick stops', () => {
+  test.use({ viewport: { width: 320, height: 900 }, isMobile: true, hasTouch: true });
+  test('ordered stop fields, waiting and matching hour captions fit the existing narrow card', async ({ page }, testInfo) => {
+    await visit(page);
+    const pickupFont = await page.locator('[for$="-pickup"] > .tuxano-quick-booking-label').evaluate(label => getComputedStyle(label).fontSize);
+    await complete(page);
+    await page.getByRole('button', { name: 'Add stop', exact: true }).tap();
+    await chooseStop(page, 1, 'FirstStop');
+    await page.getByLabel('Stop 1 wait time').selectOption('75');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.getByRole('button', { name: 'HOURLY', exact: true }).tap();
+    await expect(page.getByLabel('Stop 1 wait time')).toBeHidden();
+    const hoursFont = await page.locator('.tuxano-quick-booking-hours-title').evaluate(label => getComputedStyle(label).fontSize);
+    expect(hoursFont).toBe(pickupFont);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath('quick-stops-phone.png'), fullPage: true });
+  });
+});

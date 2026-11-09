@@ -12,6 +12,8 @@ defined('ABSPATH') || exit;
 final class Settings
 {
     public const OPTION = 'tuxano_booking_settings';
+    public const FORM_LIMITS_UPGRADE = 'tuxano_booking_form_limits_version';
+    public const FORM_LIMITS_BACKUP = 'tuxano_booking_form_limits_pre_261';
 
     /** Form header/navigation only. These preferences never affect a fare. */
     public const FORM_COLORS = [
@@ -96,6 +98,41 @@ final class Settings
         $defaults = self::defaults();
         $stored = get_option(self::OPTION, []);
         return array_replace($defaults, is_array($stored) ? array_intersect_key($stored, $defaults) : []);
+    }
+
+    /** Apply the client's 3–24-hour range once, without resetting later edits. */
+    public static function upgrade_form_limits(): void
+    {
+        if ((int) get_option(self::FORM_LIMITS_UPGRADE, 0) >= 1) { return; }
+        global $wpdb;
+        // Read the exact current row rather than an option filter/cache. Only
+        // the two duration keys change; unknown legacy settings stay intact.
+        $row = $wpdb->get_row($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::OPTION), ARRAY_A);
+        if ($wpdb->last_error !== '') { return; }
+        $stored = $row === null ? [] : maybe_unserialize($row['option_value']);
+        if (!is_array($stored)) { return; } // A corrupt option needs deliberate repair.
+        $backup = [];
+        foreach (['min_hours', 'max_hours'] as $key) {
+            $value = $stored[$key] ?? null;
+            if ((is_int($value) || is_float($value) || is_string($value)) && is_numeric($value) && is_finite((float) $value)) {
+                $backup[$key] = $value;
+            }
+        }
+        if (get_option(self::FORM_LIMITS_BACKUP, null) === null && !add_option(self::FORM_LIMITS_BACKUP, $backup, '', false)) { return; }
+        $next = array_replace($stored, ['min_hours' => 3, 'max_hours' => 24]);
+        if ($row === null) {
+            // A concurrent creator wins; retry its actual values next request.
+            if (!add_option(self::OPTION, $next, '', false)) { return; }
+        } elseif ($next !== $stored) {
+            // Compare-and-swap protects unrelated preferences saved by another
+            // request during the upgrade. A lost comparison remains unmarked.
+            $changed = $wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND BINARY option_value = %s", maybe_serialize($next), self::OPTION, $row['option_value']));
+            if ($changed !== 1) { return; }
+            wp_cache_delete(self::OPTION, 'options');
+            wp_cache_delete('alloptions', 'options');
+            wp_cache_delete('notoptions', 'options');
+        }
+        update_option(self::FORM_LIMITS_UPGRADE, 1, false);
     }
 
     /**

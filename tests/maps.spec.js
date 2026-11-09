@@ -67,7 +67,7 @@ async function trip(page, destination = 'Demo Destination') {
   await selectPlace(page, 'Pickup location', 'Demo Pickup');
   await selectPlace(page, 'Drop-off location', destination);
   await dateAndTime(page);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function passengers(page) {
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -85,7 +85,7 @@ async function release(page, kind, key) {
   await page.evaluate(({ kind, key }) => window.__mapsMock.release(kind, key), { kind, key });
 }
 
-test('normal mode requires selected places, supports keyboard selection, and calculates read-only driving metrics', async ({ page }) => {
+test('normal mode requires selected places, supports keyboard selection, and shows a compact noneditable trip estimate', async ({ page }) => {
   await page.getByLabel('Pickup location', { exact: true }).fill('Unselected pickup');
   await page.getByLabel('Drop-off location', { exact: true }).fill('Unselected destination');
   await dateAndTime(page);
@@ -94,11 +94,12 @@ test('normal mode requires selected places, supports keyboard selection, and cal
   expect(contexts.get(page).requests).toHaveLength(0);
   await selectPlace(page, 'Pickup location', 'Demo Pickup', true);
   await selectPlace(page, 'Drop-off location', 'Demo Destination', true);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveAttribute('readonly', '');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
-  await expect(page.getByTestId('driving-duration')).toHaveText('30 min');
-  await expect(page.getByTestId('stop-wait-duration')).toHaveText('0 min');
+  await expect(page.getByLabel('Travel time', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
+  await expect(page.getByTestId('driving-duration')).toHaveCount(0);
+  await expect(page.getByTestId('stop-wait-duration')).toHaveCount(0);
+  await expect(page.getByTestId('estimated-arrival')).toBeVisible();
   expect(contexts.get(page).requests.at(-1)).toEqual({ origin: { placeId: pointId('Demo Pickup') }, destination: { placeId: pointId('Demo Destination') }, stops: [] });
   expect(contexts.get(page).sdk).toEqual([{ key: 'test-browser-key', callback: '__tuxanoGoogleMapsReady' }]);
   const fields = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'details').map(call => call.fields));
@@ -119,7 +120,7 @@ test('pickup country restricts drop-off and ordered-stop suggestions using struc
   await expect(page.getByRole('option', { name: destination, exact: true })).toBeVisible();
   await expect(page.getByRole('option', { name: foreign, exact: true })).toHaveCount(0);
   await page.getByRole('option', { name: destination, exact: true }).click();
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await page.getByLabel('Stop 1', { exact: true }).fill('Stop query');
   await expect(page.getByRole('option', { name: stop, exact: true })).toBeVisible();
@@ -139,20 +140,20 @@ test('a conflicting place country cannot calculate a route and changing pickup r
   }, { ids: [pickup, destination, foreign, replacement].map(pointId) });
   await selectPlace(page, 'Pickup location', pickup);
   await selectPlace(page, 'Drop-off location', destination);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   const before = contexts.get(page).requests.length;
   // Simulate an unexpected provider result: details validation must still stop it.
   await page.evaluate(() => { window.__mapsMock.ignoreCountryRestriction = true; });
   await page.getByLabel('Drop-off location', { exact: true }).fill(foreign);
   await page.getByRole('option', { name: foreign, exact: true }).click();
   await expect(page.locator('.places-message').filter({ hasText: 'same country' })).toBeVisible();
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   expect(contexts.get(page).requests).toHaveLength(before);
   await page.evaluate(() => { window.__mapsMock.ignoreCountryRestriction = false; });
   await selectPlace(page, 'Pickup location', replacement);
   await selectPlace(page, 'Drop-off location', foreign);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(contexts.get(page).requests.at(-1)).toEqual({ origin: { placeId: pointId(replacement) }, destination: { placeId: pointId(foreign) }, stops: [] });
   const calls = await page.evaluate(query => window.__mapsMock.calls.filter(call => call.kind === 'suggest' && call.query === query), foreign);
   expect(calls[0].includedRegionCodes).toEqual(['bd']);
@@ -186,7 +187,7 @@ for (const selection of ['keyboard', 'keyboard-up', 'click']) test(`Enter cannot
   } else if (selection === 'keyboard-up') { await pickup.press('ArrowUp'); await pickup.press('Enter'); }
   else await page.getByRole('option', { name: intended, exact: true }).click();
   await expect(pickup).toHaveValue(intended);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(contexts.get(page).requests.at(-1)).toEqual({ origin: { placeId: pointId(intended) }, destination: { placeId: pointId('Sayedabad, Dhaka, Bangladesh') }, stops: [] });
 });
 
@@ -194,28 +195,28 @@ test('ordered stops add vehicle-specific wait fees once and removal keeps the su
   await trip(page);
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await selectPlace(page, 'Stop 1', 'First Demo Stop');
-  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('10');
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await selectPlace(page, 'Stop 2', 'Second Demo Stop');
-  await page.getByLabel('Stop 2 wait time', { exact: true }).selectOption('20');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('1 hr');
-  await expect(page.getByTestId('driving-duration')).toHaveText('30 min');
-  await expect(page.getByTestId('stop-wait-duration')).toHaveText('30 min');
+  await page.getByLabel('Stop 2 wait time', { exact: true }).selectOption('30');
+  await expect(page.getByTestId('total-duration')).toHaveText('1 hr 15 min');
+  await expect(page.getByTestId('driving-duration')).toHaveCount(0);
+  await expect(page.getByTestId('stop-wait-duration')).toHaveCount(0);
   expect(contexts.get(page).requests.at(-1).stops).toEqual([{ placeId: pointId('First Demo Stop') }, { placeId: pointId('Second Demo Stop') }]);
   const requests = contexts.get(page).requests.length;
-  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('5');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('55 min');
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('30');
+  await expect(page.getByTestId('total-duration')).toHaveText('1 hr 30 min');
   expect(contexts.get(page).requests).toHaveLength(requests); // Waiting is not another Google driving route.
-  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('10');
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
   await passengers(page);
-  await total(page, 324); // $225 + 30×$1.50 waiting = $270; 20% tip $54.
+  await total(page, 351); // $225 + 45×$1.50 waiting = $292.50; 20% tip $58.50.
   await page.getByRole('button', { name: 'Step 1: Trip', exact: true }).click();
   await page.getByRole('button', { name: 'Remove stop 1', exact: true }).click();
   await expect(page.getByLabel('Stop 1', { exact: true })).toHaveValue('Second Demo Stop');
-  await expect(page.getByLabel('Stop 1 wait time', { exact: true })).toHaveValue('20');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('50 min');
+  await expect(page.getByLabel('Stop 1 wait time', { exact: true })).toHaveValue('30');
+  await expect(page.getByTestId('total-duration')).toHaveText('1 hr');
   await page.getByRole('button', { name: 'Step 3: Passengers & Extras', exact: true }).click();
-  await total(page, 306); // $225 + $30 waiting + 20% ($51).
+  await total(page, 324); // $225 + $45 waiting + 20% ($54).
 });
 
 test('a changed driving route replaces the old quote and observes the fare minimum', async ({ page }) => {
@@ -223,7 +224,7 @@ test('a changed driving route replaces the old quote and observes the fare minim
   await page.getByRole('button', { name: 'Step 1: Trip', exact: true }).click();
   contexts.get(page).routeHandler = async () => ({ json: { ...sampleRoute, distanceMeters: 6437.376, durationSeconds: 600 } });
   await selectPlace(page, 'Drop-off location', 'Short Destination');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('10 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('10 min');
   await page.getByRole('button', { name: 'Step 3: Passengers & Extras', exact: true }).click();
   await total(page, 150); // max($125, $75 + 4×$3 + 10×$3) + 20% = $150.
 });
@@ -231,7 +232,7 @@ test('a changed driving route replaces the old quote and observes the fare minim
 test('editing selected text invalidates its canonical place and previous route immediately', async ({ page }) => {
   await trip(page);
   await page.getByLabel('Pickup location', { exact: true }).fill('Demo Pickup edited');
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   const count = contexts.get(page).requests.length;
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -240,7 +241,7 @@ test('editing selected text invalidates its canonical place and previous route i
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')));
   expect(saved.trip.pickupPlace).toBeNull();
   await selectPlace(page, 'Pickup location', 'Demo Pickup edited');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 });
 
 test('older suggestions and place details cannot overwrite a newer selection', async ({ page }) => {
@@ -282,7 +283,7 @@ test('pending pickup selection survives blur while drop-off focus and suggestion
   await expect(page.getByRole('option', { name: 'Active Destination', exact: true })).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')).trip.pickupPlace.placeId)).toBe(pointId(pickupQuery));
   await page.getByRole('option', { name: 'Active Destination', exact: true }).click();
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(contexts.get(page).requests.at(-1)).toEqual({ origin: { placeId: pointId(pickupQuery) }, destination: { placeId: pointId('Active Destination') }, stops: [] });
 });
 
@@ -299,7 +300,7 @@ test('a deleted stop cannot apply its delayed place details to the next stop', a
   await release(page, 'details', 'Delayed Removed Stop');
   await expect(page.getByLabel('Stop 1', { exact: true })).toHaveValue('Surviving Stop');
   await expect(page.getByLabel('Stop 2', { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('35 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('45 min');
 });
 
 test('a stale route response cannot replace newer metrics or prices', async ({ page }) => {
@@ -316,9 +317,9 @@ test('a stale route response cannot replace newer metrics or prices', async ({ p
   await selectPlace(page, 'Drop-off location', 'Slow Destination');
   await expect.poll(() => typeof releaseOld).toBe('function');
   await selectPlace(page, 'Drop-off location', 'Current Destination');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   releaseOld();
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
   await dateAndTime(page); await passengers(page); await total(page, 270);
 });
 
@@ -328,10 +329,10 @@ test('provider route failure is visible and retry recovers without a fixture fal
   await selectPlace(page, 'Pickup location', 'Demo Pickup');
   await selectPlace(page, 'Drop-off location', 'Demo Destination');
   await expect(page.getByRole('alert').filter({ hasText: 'Driving route service temporarily unavailable.' })).toBeVisible();
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   expect(control.requests).toHaveLength(2);
 });
 
@@ -353,7 +354,7 @@ test('draft reload retains selected IDs and waits but recomputes route metrics',
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await selectPlace(page, 'Stop 1', 'Persistent Stop');
   await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('45 min');
   const saved = await page.evaluate(() => sessionStorage.getItem('tuxano-booking-v1'));
   const state = JSON.parse(saved);
   expect(state.trip.pickupPlace.placeId).toBe(pointId('Demo Pickup'));
@@ -362,7 +363,7 @@ test('draft reload retains selected IDs and waits but recomputes route metrics',
   const requests = contexts.get(page).requests.length;
   contexts.get(page).routeHandler = async () => ({ json: { ...sampleRoute, durationSeconds: 2400 } });
   await page.reload();
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('55 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('55 min');
   await expect(page.getByLabel('Stop 1 wait time', { exact: true })).toHaveValue('15');
   expect(contexts.get(page).requests.length).toBeGreaterThan(requests);
 });
@@ -379,7 +380,7 @@ test('reload restores fresh canonical addresses and provider attribution from pe
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(canonicalLabel);
   await selectPlace(page, 'Drop-off location', 'Demo Destination');
   await dateAndTime(page);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   const savedText = await page.evaluate(() => sessionStorage.getItem('tuxano-booking-v1'));
   const saved = JSON.parse(savedText);
   expect(saved.trip.pickup).toBe(query);
@@ -392,7 +393,7 @@ test('reload restores fresh canonical addresses and provider attribution from pe
   contexts.get(page).routeHandler = async () => ({ json: { ...sampleRoute, durationSeconds: 2400 } });
   await page.reload();
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(canonicalLabel);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('40 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('40 min');
   await expect(page.getByRole('link', { name: 'Demo Places Provider', exact: true }).first()).toHaveAttribute('href', 'https://example.com/maps-attribution');
   const restored = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'restore').map(call => call.id));
   expect(restored).toEqual(expect.arrayContaining([pointId(query), pointId('Demo Destination')]));
@@ -449,7 +450,7 @@ test('reset discards a pending restored route and late response cannot revive th
   await expect(page).toHaveURL(/#trip$/);
   resume();
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('tuxano-booking-v1')).submitted)).toBe(false);
 });
@@ -460,8 +461,8 @@ test('browser Routes SDK uses Place waypoints, millisecond durations, ordered st
   await page.getByRole('button', { name: 'Add stop', exact: true }).click();
   await selectPlace(page, 'Stop 1', 'Browser Stop');
   await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await expect(page.getByTestId('total-duration')).toHaveText('45 min');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
   const request = await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1).request);
   expect(request).toMatchObject({
     origin: { kind: 'place', placeId: pointId('Demo Pickup') },
@@ -478,7 +479,7 @@ test('browser Routes SDK uses Place waypoints, millisecond durations, ordered st
   expect(await page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1)?.request.origin)).toEqual({ kind: 'place', placeId: pointId('Demo Pickup') });
   await page.getByRole('button', { name: 'Use this pickup location', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__mapsMock.calls.filter(call => call.kind === 'route').at(-1)?.request.origin)).toEqual({ kind: 'coordinates', lat: 41.88, lng: -87.63 });
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('45 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('45 min');
   await passengers(page);
   await total(page, 297); // $225 driving + $22.50 waiting + $49.50 gratuity.
   expect(contexts.get(page).requests).toHaveLength(0);
@@ -490,7 +491,7 @@ test('browser Routes permission failure never displays a fabricated route or swi
   await selectPlace(page, 'Pickup location', 'Demo Pickup');
   await selectPlace(page, 'Drop-off location', 'Denied Destination');
   await expect(page.getByRole('alert').filter({ hasText: /Route calculation is not available for this website yet/i })).toBeVisible();
-  await expect(page.getByLabel('Travel time', { exact: true })).toBeHidden();
+  await expect(page.getByTestId('total-duration')).toBeHidden();
   await expect(page.getByTestId('route-distance')).toHaveCount(0);
   await dateAndTime(page);
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -509,9 +510,9 @@ test('aborted browser Routes callbacks cannot overwrite the newer selection or q
   await selectPlace(page, 'Drop-off location', 'Old Browser Destination');
   await pending(page, 'route', oldId);
   await selectPlace(page, 'Drop-off location', 'New Browser Destination');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await release(page, 'route', oldId);
-  await expect(page.getByTestId('route-distance')).toHaveText('32.2 km / 20.0 mi');
+  await expect(page.getByTestId('route-distance')).toHaveText('20.0 mi');
   await dateAndTime(page); await passengers(page); await total(page, 270);
   expect(contexts.get(page).requests).toHaveLength(0);
 });

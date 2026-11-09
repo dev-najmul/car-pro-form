@@ -69,7 +69,10 @@ async function choose(page, label, query) {
 async function trip(page, city = 'Chicago', time = '17:50') {
   await choose(page, 'Pickup location', city); await choose(page, 'Drop-off location', 'Dropoff');
   await page.getByLabel('Date', { exact: true }).fill(pickupDate); await page.getByLabel('Pickup time', { exact: true }).fill(time);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  if (await page.getByRole('button', { name: 'HOURLY', exact: true }).getAttribute('aria-pressed') === 'true') {
+    await expect(page.getByTestId('service-hours')).toHaveText(`${await page.getByLabel('Hours', { exact: true }).inputValue()} hours`);
+    await expect(page.getByTestId('total-duration')).toHaveCount(0);
+  } else await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function vehicles(page, city = 'Chicago') {
   await visit(page); await trip(page, city);
@@ -82,7 +85,7 @@ async function gpsAddress(page) {
   await expect.poll(() => page.evaluate(() => window.__deviceMock.pending.length)).toBe(1);
   await page.evaluate(() => window.__deviceMock.pending.shift().success({ coords: { latitude: 41.8818, longitude: -87.6232, accuracy: 80 }, timestamp: Date.now() }));
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(deviceAddress);
-  await expect(page.locator('[data-selected-place="pickup"]')).toContainText(deviceAddress);
+  await expect(page.locator('[data-selected-place="pickup"]')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Use this pickup location', exact: true })).toHaveCount(0);
   await expect.poll(() => controls.get(page).routes.at(-1)?.origin).toEqual({ latitude: 41.8818, longitude: -87.6232 });
   expect(await page.evaluate(() => window.__deviceMock.options[0])).toMatchObject({ enableHighAccuracy: true, maximumAge: 0 });
@@ -92,7 +95,7 @@ test('desktop GPS fills the real address automatically and routes to exact origi
   await gpsAddress(page);
 });
 
-test('hourly quantity supports editing and bounds while date/time controls retain client formats and native pickers', async ({ page }) => {
+test('hourly quantity supports editing and bounds while date/time keep client formats and the AM/PM chooser', async ({ page }) => {
   await visit(page); await page.getByRole('button', { name: 'HOURLY', exact: true }).click();
   const hours = page.getByLabel('Hours', { exact: true });
   await expect(hours).toHaveValue('3');
@@ -107,11 +110,19 @@ test('hourly quantity supports editing and bounds while date/time controls retai
   await trip(page, 'Chicago', '12:21');
   await expect(page.locator('[data-display="trip.date"]')).toHaveText('Nov 18, 2030');
   await expect(page.locator('[data-display="trip.time"]')).toHaveText('12:21 PM');
-  for (const label of ['Date', 'Pickup time']) {
+  for (const label of ['Date']) {
     const input = page.getByLabel(label, { exact: true }); await input.click();
     await expect.poll(() => input.evaluate(element => element.matches(':open'))).toBe(true);
     await page.keyboard.press('Escape');
   }
+  await page.getByLabel('Pickup time', { exact: true }).click();
+  const chooser = page.getByRole('dialog', { name: 'Choose pickup time', exact: true });
+  await expect(chooser).toBeVisible();
+  await expect(chooser.getByLabel('AM / PM', { exact: true })).toHaveValue('PM');
+  await expect(chooser.getByLabel('Minutes', { exact: true })).toHaveValue('');
+  await expect(chooser.getByRole('button', { name: 'SET TIME', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Pickup time', { exact: true })).toHaveValue('12:21');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await expect(page).toHaveURL(/#vehicles$/);
   await expect(page.locator('.trip-strip')).toContainText('12:21 PM (Central Time)');
@@ -136,11 +147,11 @@ for (const [city, expected] of Object.entries(cities)) {
 test('the server route time zone overrides a provisional pickup preview in every subsequent summary', async ({ page }) => {
   const control = controls.get(page); control.previewTimezone = cities.Indianapolis.timezone; control.previewLabel = cities.Indianapolis.label;
   await visit(page); await choose(page, 'Pickup location', 'Chicago');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Eastern Time');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await choose(page, 'Drop-off location', 'Dropoff');
   await page.getByLabel('Date', { exact: true }).fill(pickupDate); await page.getByLabel('Pickup time', { exact: true }).fill('17:50');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Central Time');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
   await expect(page).toHaveURL(/#passengers$/);
@@ -166,8 +177,8 @@ test('late route and preview replies for an edited pickup cannot restore the old
   await choose(page, 'Pickup location', 'Indianapolis');
   await expect.poll(() => control.routes.length).toBe(2); await expect.poll(() => control.timezones.length).toBe(2);
   control.timezoneResolvers.splice(0).reverse().forEach(resolve => resolve()); control.routeResolvers.splice(0).reverse().forEach(resolve => resolve());
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Eastern Time');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await page.getByLabel('Date', { exact: true }).fill(pickupDate); await page.getByLabel('Pickup time', { exact: true }).fill('17:50');
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
   await page.getByRole('button', { name: 'Select & continue with City Sedan', exact: true }).click();
@@ -196,7 +207,7 @@ test('editing a pickup during vehicle availability cancels automatic advance and
   await expect.poll(() => control.availability.length).toBe(1);
   await page.getByRole('button', { name: /Edit Trip/i }).click();
   await choose(page, 'Pickup location', 'Indianapolis');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   control.availabilityResolvers.splice(0).forEach(resolve => resolve());
   await expect(page).toHaveURL(/#trip$/);
   control.holdAvailability = false;
@@ -227,7 +238,7 @@ for (const [date, message] of [['2027-03-14', 'does not exist'], ['2027-11-07', 
     const control = controls.get(page);
     await page.clock.install({ time: new Date('2026-11-18T17:00:00Z') });
     await visit(page); await choose(page, 'Pickup location', 'Chicago'); await choose(page, 'Drop-off location', 'Dropoff');
-    await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+    await expect(page.getByTestId('total-duration')).toHaveText('30 min');
     await page.getByLabel('Date', { exact: true }).fill(date);
     await page.getByLabel('Pickup time', { exact: true }).fill(date.endsWith('03-14') ? '02:30' : '01:30');
     await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();

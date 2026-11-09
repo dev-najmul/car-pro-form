@@ -82,7 +82,7 @@ async function fillTrip(page) {
   await selectLocation(page, 'Drop-off location', fixture.destination);
   await page.getByLabel("Date", { exact: true }).fill(fixture.date);
   await page.getByLabel("Pickup time", { exact: true }).fill(fixture.time);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 
 async function selectLocation(page, label, value) {
@@ -262,8 +262,9 @@ test("stops and Hourly service can be edited without losing trip values", async 
   await expect(page.getByLabel("Stop 1", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /Add stop/i }).click();
   await selectLocation(page, 'Stop 1', fixture.stop);
-  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('0');
+  await page.getByLabel('Stop 1 wait time', { exact: true }).selectOption('15');
   await page.getByRole("button", { name: "HOURLY", exact: true }).click();
+  await expect(page.getByLabel('Stop 1 wait time', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Hours", { exact: true })).toBeVisible();
   await page.getByLabel("Hours", { exact: true }).fill("4");
   await page.getByRole("button", { name: "TRANSFER", exact: true }).click();
@@ -539,7 +540,7 @@ test("review data, price, and trip edits use entered values rather than fixtures
   await expectTotal(page, 495);
   await editReviewSection(page, "1. TRIP DETAILS");
   await selectLocation(page, 'Pickup location', 'Updated downtown pickup');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();
@@ -588,7 +589,7 @@ test("consent is required and successful static submission preserves details and
   await route(page, "trip");
   await expect(page.getByRole("alert")).toBeVisible();
   await selectLocation(page, 'Pickup location', fixture.pickup);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();
@@ -672,7 +673,7 @@ test("entered HTML is displayed as text without executing in review or confirmat
   await reachReview(page);
   await editReviewSection(page, "1. TRIP DETAILS");
   await selectLocation(page, 'Pickup location', dangerous);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
   await page
     .getByRole("button", { name: "Step 5: Review & Submit", exact: true })
     .click();

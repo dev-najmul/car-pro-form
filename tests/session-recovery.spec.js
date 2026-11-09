@@ -102,7 +102,7 @@ async function fillTrip(page) {
   await choose(page, 'Drop-off location', 'Selected airport, Chicago');
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function review(page) {
   await trip(page);
@@ -120,8 +120,8 @@ test('GPS selection silently recovers an expired main session without losing its
   await trip(page); const control = controls.get(page); control.expired = true;
   await page.getByRole('button', { name: 'Use current location', exact: true }).click();
   await expect(page.getByLabel('Pickup location', { exact: true })).toHaveValue(gpsAddress);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Central Time');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await expect.poll(() => control.renewals).toBe(1);
   await expect(page.getByLabel('Drop-off location', { exact: true })).toHaveValue('Selected airport, Chicago');
   await expect(page.getByLabel('Date', { exact: true })).toHaveValue(date);

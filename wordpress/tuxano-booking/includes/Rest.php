@@ -7,7 +7,7 @@ final class Rest
 {
     private const NAMESPACE = 'tuxano-booking/v1';
     private const MAX_BODY = 65536;
-    private const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+    private const WAIT_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60, 75, 90, 120];
     private const SESSION_IDLE = 2 * HOUR_IN_SECONDS;
     private const RECOVERY_LIFETIME = 7 * DAY_IN_SECONDS;
     private const CLOCK_SKEW = 60;

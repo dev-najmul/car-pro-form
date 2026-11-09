@@ -49,7 +49,7 @@ async function trip(page, time) {
   await choose(page, 'Drop-off location', 'Selected airport, Chicago');
   await page.getByLabel('Date', { exact: true }).fill(date);
   await page.getByLabel('Pickup time', { exact: true }).fill(time);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
 }
 async function vehicles(page) {
   await page.getByRole('button', { name: 'CHECK PRICE', exact: true }).click();
@@ -89,12 +89,12 @@ test('both time formats follow the authoritative route zone rather than a provis
   controls.get(page).previewLabel = 'Eastern Time';
   await choose(page, 'Pickup location', 'Selected pickup, Chicago');
   await page.getByLabel('Pickup time', { exact: true }).fill('14:44');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Eastern Time');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await expect(page.locator('.picker-time-24h, [data-time24]')).toHaveCount(0);
   await choose(page, 'Drop-off location', 'Selected airport, Chicago');
   await page.getByLabel('Date', { exact: true }).fill(date);
-  await expect(page.getByLabel('Travel time', { exact: true })).toHaveValue('30 min');
-  await expect(page.locator('[data-pickup-timezone]')).toContainText('Central Time');
+  await expect(page.getByTestId('total-duration')).toHaveText('30 min');
+  await expect(page.locator('[data-pickup-timezone]')).toHaveCount(0);
   await vehicles(page);
   await expect(page.locator('.trip-strip .time-12h')).toHaveText('2:44 PM (Central Time)');
   await expect(page.locator('.trip-strip [data-time24]')).toHaveCount(0);

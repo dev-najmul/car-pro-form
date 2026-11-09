@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createQuickHandoff, consumeQuickHandoff, normalizeQuickTrip, quickDestination, quickWebsiteClock, validateQuickPickupTime, QUICK_HANDOFF_PREFIX, QUICK_HANDOFF_TTL } from '../quick-handoff.js';
+import { createQuickHandoff, consumeQuickHandoff, normalizeQuickTrip, quickDestination, quickWebsiteClock, validateQuickPickupTime, resolveQuickPickupInstant, QUICK_HANDOFF_PREFIX, QUICK_HANDOFF_TTL } from '../quick-handoff.js';
 
 const base = 'https://example.test/carbook/';
 const destination = base + 'booking/?language=en';
@@ -135,4 +135,50 @@ test('suggested pickup provenance survives a canonical one-use handoff without d
   assert.deepEqual(received.pickup, { placeId: value.pickup.placeId, query: value.pickup.query, suggestedPickup: true });
   assert.ok(!Object.hasOwn(received.pickup, 'deviceAccuracyMeters') && !Object.hasOwn(received.pickup, 'price'));
   assert.equal(store.length, 0);
+});
+
+
+test('ordered stops transfer only canonical identities and waits, without trusted fare or route fields', () => {
+  const value = { ...trip(), stops: [
+    { placeId: 'ChIJStopA123', query: 'First stop query', waitMinutes: 75, text: 'Not trusted', price: 1, countryCode: 'US' },
+    { placeId: 'ChIJStopB123', query: 'Second stop query', waitMinutes: 15, quoteToken: 'old-token' },
+  ] };
+  const store = storage();
+  const url = write(store, value);
+  assert.equal(JSON.parse(store.getItem(store.key(0))).version, 2);
+  const restored = read(store, url);
+  assert.deepEqual(restored.stops, [
+    { placeId: 'ChIJStopA123', query: 'First stop query', waitMinutes: 75 },
+    { placeId: 'ChIJStopB123', query: 'Second stop query', waitMinutes: 15 },
+  ]);
+  assert.equal(store.length, 0);
+});
+
+test('hourly stop plans carry zero waiting without an invisible transfer charge', () => {
+  const value = { ...trip(), service: 'hourly', hours: 24, stops: [{ placeId: 'ChIJStopA123', query: 'Stop query', waitMinutes: 75 }] };
+  assert.deepEqual(normalizeQuickTrip(value, now).stops, [{ placeId: 'ChIJStopA123', query: 'Stop query', waitMinutes: 0 }]);
+  value.stops[0].waitMinutes = 0;
+  const store = storage();
+  assert.equal(read(store, write(store, value)).stops[0].waitMinutes, 0);
+});
+
+test('stop intent rejects excess stops, unsupported waits and unconfirmed coordinate points', () => {
+  const stop = { placeId: 'ChIJStopA123', query: 'Stop query', waitMinutes: 15 };
+  for (const stops of [null, {}, Array.from({ length: 6 }, () => stop), [{ ...stop, waitMinutes: 5 }], [{ ...stop, waitMinutes: 105 }], [{ ...stop, waitMinutes: 0 }], [{ ...stop, query: ' ' }], [{ ...stop, placeId: undefined, source: 'map', latitude: 41.8, longitude: -87.6, confirmedAt: now }]]) {
+    assert.throws(() => normalizeQuickTrip({ ...trip(), stops }, now));
+  }
+  assert.equal(normalizeQuickTrip({ ...trip(), stops: Array.from({ length: 5 }, () => stop) }, now).stops.length, 5);
+});
+
+test('pickup instant resolver respects geographic timezones, midnight and DST gaps or folds', () => {
+  const schedule = { date: '2030-11-18', time: '23:55' };
+  assert.equal(resolveQuickPickupInstant(schedule, 'America/Chicago'), Date.UTC(2030, 10, 19, 5, 55));
+  assert.equal(resolveQuickPickupInstant(schedule, 'America/Indiana/Indianapolis'), Date.UTC(2030, 10, 19, 4, 55));
+  assert.equal(resolveQuickPickupInstant({ date: '2026-10-25', time: '18:00' }, '+06:00'), now);
+  assert.throws(() => resolveQuickPickupInstant({ date: '2026-03-08', time: '02:30' }, 'America/Chicago'), /does not exist/);
+  assert.throws(() => resolveQuickPickupInstant({ date: '2026-11-01', time: '01:30' }, 'America/Chicago'), /occurs twice/);
+  // Display arithmetic may inspect a historical accepted time; future-only
+  // booking validation remains a separate, unchanged guard.
+  assert.equal(resolveQuickPickupInstant({ date: '2026-10-24', time: '12:00' }, 'UTC'), now - 86400000);
+  assert.throws(() => validateQuickPickupTime({ date: '2026-10-24', time: '12:00' }, 'UTC', now), /future/);
 });
